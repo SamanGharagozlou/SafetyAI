@@ -1,0 +1,37 @@
+# One-line promotions the concierge may mention. Rules (enforced in venue/promotions.py, not by the model):
+#   * at most ONE promotion per guided walk (attached to the guide_to that started the walk, never to other turns);
+#   * never while a safety hold is active (FSM HOLD or RECOVER);
+#   * only inside its time-of-day window (local time, Europe/Zurich) and its months (season; omitted = all year);
+#   * a guest hears each promotion at most once per session; the list order is the priority.
+# Facts come from venue/leukerbad_therme.yaml (hours, Guest Card). VERIFY the wording with the Therme before Sunday.
+timezone: Europe/Zurich
+promotions:
+  - id: sauna_world
+    window: {from: "10:00", to: "19:00"}
+    months: [1, 2, 3, 4, 10, 11, 12]          # season: the colder months
+    text:
+      en: "The Sauna World is open until 7 pm, with a view of the Daubenhorn."
+      de: "Die Saunawelt ist bis 19 Uhr offen, mit Blick aufs Daubenhorn."
+      fr: "Le monde des saunas est ouvert jusqu'à 19 h, avec vue sur le Daubenhorn."
+      it: "Il mondo delle saune è aperto fino alle 19, con vista sul Daubenhorn."
+  - id: massage_beauty
+    window: {from: "10:00", to: "18:00"}
+    text:
+      en: "Massage & Beauty is open until 6 pm; you can book on +41 27 472 20 32."
+      de: "Massage & Beauty ist bis 18 Uhr offen; Buchung unter +41 27 472 20 32."
+      fr: "Massage & Beauté est ouvert jusqu'à 18 h ; réservation au +41 27 472 20 32."
+      it: "Massaggi & Bellezza è aperto fino alle 18; prenotazioni al +41 27 472 20 32."
+  - id: pool_bar
+    window: {from: "08:00", to: "20:00"}      # bath hours; VERIFY the bar's own hours
+    text:
+      en: "The Pool Bar at the Indoor Pool serves drinks in the water."
+      de: "Die Pool-Bar beim Hallenbad serviert Getränke direkt im Wasser."
+      fr: "Le bar de la piscine couverte sert des boissons dans l'eau."
+      it: "Il bar della piscina coperta serve bevande in acqua."
+  - id: guest_card
+    window: {from: "08:00", to: "20:00"}
+    text:
+      en: "With the Leukerbad Guest Card you get up to 15 % off, not on the sauna."
+      de: "Mit der Leukerbad Gästekarte gibt es bis zu 15 % Rabatt, nicht auf die Sauna."
+      fr: "Avec la carte d'hôte de Loèche-les-Bains, jusqu'à 15 % de réduction, sauf sur le sauna."
+      it: "Con la Guest Card di Leukerbad fino al 15 % di sconto, non sulla sauna."

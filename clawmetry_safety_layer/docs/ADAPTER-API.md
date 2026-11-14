@@ -111,7 +111,15 @@ event has `ts` and `kind`; the other fields depend on the kind:
 The same events also go into the ClawMetry robot-session journal (`docs/ROBOT-SESSIONS.md`), with the full turn trace.
 
 ### `POST /ask`: the concierge
-Request `{"text": "Wie viel kostet ein Tagesticket?", "lang": "de" (optional), "session": "kiosk-1" (optional)}`.
+Request `{"text": "Wie viel kostet ein Tagesticket?", "lang": "de" (optional), "session": "kiosk-1" (optional),
+"name": "Anna" (optional)}`.
+
+* **From the QR onboarding:** send `name` and `lang` with the guest's first message and keep the same `session`. The
+  concierge greets the guest by name once, and keeps the language for the session until a message brings another.
+* **The name stays out of the journal:** the `concierge.turn` event records `named: true` and writes `<guest>` in place
+  of the name. The name goes to the brain (and from there to the Anthropic API) only.
+* **Promotions:** a reply that started a guided walk may carry one promotion (`promotion: "<id>"`; on the brain path an
+  `actions` entry `{"type": "promotion"}`). At most one per walk, never while a hold is active (`venue/promotions.yaml`).
 Response:
 ```json
 {"reply": "Ein Tagesticket kostet für Erwachsene CHF 39.", "actions": [{"type": "guide_to", "poi": "bath_entrance", "ok": true,
@@ -121,6 +129,19 @@ Response:
 * `source: "local"` means the brain or the Anthropic API was unreachable and the edge answered from the venue facts. In
   that case `degraded` says why.
 * The reply is also spoken: the `/say` topic, plus local TTS if installed.
+
+### `POST /greet`
+Request `{"name": "Anna" (optional), "lang": "de"}`. The robot says hello, by name if given. Response: a SkillResult
+with `gesture` (`"shake_hand"` or `null`) and `voice_only_because` (a list of reasons).
+
+The gesture runs only when **all** of these hold:
+* `allow_greeting_gesture: true` in the config (default **false**);
+* the robot is stationary;
+* safety is NORMAL;
+* nobody is within 1.5 m, and people detection is working;
+* the battery is above 30 %.
+
+Otherwise the greeting is voice only. It never moves the base. The MCP tool `greet` is the same.
 
 ### `POST /say`
 Request `{"text": "..."}`. The robot says it on `/say` (`std_msgs/String`, for the team's voice stack) and through local
@@ -212,7 +233,7 @@ The ring of the last 30 verdicts, oldest first, no frames.
 
 ### `POST /ask`
 The concierge's Anthropic tool loop. The edge calls it; the adapter should call the edge's `/ask` instead, so the
-exchange lands in the robot's journal. Request `{"text", "lang", "session"}`; response as for the edge's `/ask`.
+exchange lands in the robot's journal. Request `{"text", "lang", "session", "name"}`; response as for the edge's `/ask`.
 
 ### `POST /describe`
 Multipart `frame` and `meta: {"question"}`, returning `{"description": "..."}` (Cosmos; used by the edge's `/look`).

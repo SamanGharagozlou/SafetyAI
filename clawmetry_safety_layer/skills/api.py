@@ -166,6 +166,16 @@ def guide_to(b: Guide):
     return _sk_with(b).guide_to(b.poi, b.lang).dict()
 
 
+class Greet(_Why):
+    name: str | None = None
+    lang: str = "en"
+
+
+@app.post("/skills/greet")
+def greet(b: Greet):
+    return _sk_with(b).greet(b.name, b.lang).dict()
+
+
 class TaskRequest(BaseModel):
     text: str
     requested_by: str = "operator"

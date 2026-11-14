@@ -14,7 +14,7 @@ It sends **goals only**; velocities never leave the team PC. Apache-2.0 (see NOT
 git clone <this repo> && cd SafetyAI/clawmetry_safety_layer
 bash scripts/setup_edge.sh                  # Python 3.10 venv (+ ROS system packages), .env with fresh keys, self-check
 nano .env                                   # same EDGE/BRAIN/COSMOS keys as the brain; BRAIN_URL, BIND_HOST (tailscale ip -4)
-# 1. your bridge:   ros2 launch agibot_d1_bridge bridge.launch.py local_ip:=172.24.1.20 robot_ip:=172.24.1.41
+# 1. your bridge:   ros2 launch agibot_d1_bridge bridge.launch.py local_ip:=172.24.0.239 robot_ip:=172.24.1.41
 # 2. your detector: perception/.venv/bin/python perception/detect.py --source rtsp://172.24.1.41:8554/test --no-show
 # 3. the operator stands the robot with the controller (our code never calls stand_up)
 make edge                                   # skill server + safety + perception on BIND_HOST:8765

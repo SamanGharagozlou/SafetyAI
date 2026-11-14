@@ -53,7 +53,7 @@ if [ -n "$SYS" ]; then check "ros2 topics visible" bash -c "timeout 10 ros2 topi
 finish "setup_edge"
 cat <<'T'
 next:
-  1. team bridge:  ros2 launch agibot_d1_bridge bridge.launch.py local_ip:=172.24.1.20 robot_ip:=172.24.1.41
+  1. team bridge:  ros2 launch agibot_d1_bridge bridge.launch.py local_ip:=172.24.0.239 robot_ip:=172.24.1.41
   2. our edge:     make edge          (skill server on BIND_HOST:8765, D1W_TRANSPORT from .env)
   docs/D1W-RUNBOOK.md has the 30-minute ladder.
 T

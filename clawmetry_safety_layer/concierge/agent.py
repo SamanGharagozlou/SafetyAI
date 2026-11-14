@@ -14,13 +14,15 @@ to concierge/local.py and says so in `source`.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from typing import Any
 
 from leukerbad_g1 import settings
 from venue.facts import Venue
+from venue.promotions import Promotions
 
-from .local import LocalConcierge, detect_lang
+from .local import GuestSessions, LocalConcierge, detect_lang, hello
 
 SYSTEM = """You are the concierge voice of a small wheeled-leg guide robot on the level-4 concourse of Leukerbad Therme,
 the largest thermal bath in Europe. You talk to guests standing next to you.
@@ -38,6 +40,10 @@ How you answer:
   say briefly why you can't go and offer the nearest place you can go.
 - Call guide_to only when the guest wants to be taken somewhere; it starts the walk and returns at once.
 - Use alert_staff when a guest needs a person (lost child, accident, complaint, accessibility help).
+- When the message says [guest name: X, greet by name], greet the guest by that name once in this reply. When it
+  says [guest name: X, already greeted], do not greet again (you may use the name naturally, rarely).
+- Promotions: mention one only when a guide_to result contains a "promotion" field, in one short sentence, in that
+  reply only. Never invent offers, never mention one otherwise.
 """
 
 TOOLS: list[dict[str, Any]] = [
@@ -142,6 +148,9 @@ class Concierge:
         self._client = client
         self.local = LocalConcierge(self.venue)
         self.sessions: dict[str, list] = {}
+        self.guests = GuestSessions()
+        self.promos = Promotions()
+        self._tl = threading.local()  # per ask(): at most one promotion, on the first guide_to that started a walk
 
     def client(self):
         if self._client is None:
@@ -169,6 +178,16 @@ class Concierge:
             )
         if name == "guide_to":
             r = self.edge.call("guide_to", {"poi": args.get("poi", ""), "lang": args.get("lang", "en"), "wait": False})
+            wp = getattr(self._tl, "walk", None) or {"done": True}
+            if r.get("ok") and r.get("started") and not wp.get("done"):
+                wp["done"] = True  # one per walk, whatever the hold check says
+                st = self.edge.call("state")
+                promo = self.promos.for_walk(
+                    (st.get("safety") or {}).get("state"), args.get("lang", "en"), wp.get("session")
+                )
+                if promo:
+                    r = {**r, "promotion": promo["text"]}
+                    actions.append({"type": "promotion", "id": promo["id"]})
             actions.append(
                 {
                     "type": "guide_to",
@@ -182,7 +201,16 @@ class Concierge:
             return json.dumps(
                 {
                     k: r.get(k)
-                    for k in ("ok", "message", "started", "nearest", "nearest_name", "staff_escort", "error")
+                    for k in (
+                        "ok",
+                        "message",
+                        "started",
+                        "nearest",
+                        "nearest_name",
+                        "staff_escort",
+                        "error",
+                        "promotion",
+                    )
                     if k in r
                 }
             )
@@ -200,11 +228,25 @@ class Concierge:
         return json.dumps({"error": f"unknown tool {name}"})
 
     # ------------------------------------------------------------ loop
-    def ask(self, text: str, lang: str | None = None, session: str | None = None, context: dict | None = None) -> dict:
+    def ask(
+        self,
+        text: str,
+        lang: str | None = None,
+        session: str | None = None,
+        context: dict | None = None,
+        name: str | None = None,
+    ) -> dict:
         t0 = time.time()
         actions: list[dict] = []
+        name, lang, greet_now = self.guests.turn(session, name, lang)  # lang sticks for the session
+        self._tl.walk = {"session": session}
         hist = self.sessions.setdefault(session or "default", [])[-12:]
-        user = text if not lang else f"[guest language: {lang}] {text}"
+        tags = []
+        if lang:
+            tags.append(f"[guest language: {lang}]")
+        if name:
+            tags.append(f"[guest name: {name}, {'greet by name' if greet_now else 'already greeted'}]")
+        user = f"{' '.join(tags)} {text}".strip()
         messages: list[Any] = [*hist, {"role": "user", "content": user}]
         try:
             client = self.client()
@@ -254,6 +296,8 @@ class Concierge:
             }
         except Exception as e:  # noqa: BLE001  (no key, API down, refusal): the local fallback still answers
             fb = self.local.ask(text, lang, guide=lambda poi, lg: _EdgeGuide(self.edge, poi, lg))
+            if greet_now and name:
+                fb["reply"] = hello(name, fb.get("lang") or "en") + str(fb.get("reply", ""))
             fb.update(
                 degraded=f"concierge model unavailable: {e.__class__.__name__}: {e}"[:200],
                 latency_s=round(time.time() - t0, 2),

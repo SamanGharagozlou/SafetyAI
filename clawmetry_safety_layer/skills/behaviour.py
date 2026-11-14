@@ -21,7 +21,18 @@ from bridge.zones import Zones
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_FILE = ROOT / "policies" / "behaviour.yaml"
 SPEED_HARD_MAX = 1.5  # m/s: no cap may exceed what the G1 locomotion controller can do
-KNOWN_SKILLS = ("get_state", "navigate_to", "pick", "place", "say", "look_at", "hold_pose", "guide_to", "recover")
+KNOWN_SKILLS = (
+    "get_state",
+    "navigate_to",
+    "pick",
+    "place",
+    "say",
+    "look_at",
+    "hold_pose",
+    "guide_to",
+    "recover",
+    "greet",
+)
 
 
 class PolicyError(ValueError):

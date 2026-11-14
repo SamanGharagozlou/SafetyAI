@@ -1,0 +1,39 @@
+# twist_mux in front of the SafetyAI team's agibot_d1_bridge (ROS 2 Humble: apt install ros-humble-twist-mux).
+# One /cmd_vel for the bridge; every source publishes on its own topic and the mux forwards the highest-priority
+# source that has published within its timeout. Launch: ros2 launch launch/twist_mux.launch.py
+#
+# Priority (highest first), decided for the Sunday demo:
+#   1. our safety edge (zone policy, caps, safety FSM)       /cmd_vel_edge      (edge: D1W_CMD_VEL=/cmd_vel_edge)
+#   2. the developer dashboard's deadman pad (d1_dashboard)   /cmd_vel_dashboard (remap its /cmd_vel)
+#   3. Nav2 (velocity smoother)                               /cmd_vel_nav       (remap its cmd_vel)
+#   4. keyboard_teleop                                        /cmd_vel_teleop    (remap its cmd_vel)
+# The vendor controller and the e-stop sit under all of this in the robot and always win.
+# Lock `mux_stop` (std_msgs/Bool, true = blocks every source): ros2 topic pub --once /mux_stop std_msgs/msg/Bool "{data: true}"
+#
+# NOTE: the edge publishes only while it drives (plus 0.5 s of zeros after a stop). When it is idle, or holding, a
+# lower source gets through after its timeout. That is why, during the demo, ONLY the edge publishes velocity; the
+# dashboard drives the robot with goals (/guide_to /pause /resume /say, docs/ADAPTER-API.md).
+twist_mux:
+  ros__parameters:
+    topics:
+      edge:
+        topic: cmd_vel_edge
+        timeout: 0.5
+        priority: 100
+      dashboard:
+        topic: cmd_vel_dashboard
+        timeout: 0.5
+        priority: 50
+      nav2:
+        topic: cmd_vel_nav
+        timeout: 0.5
+        priority: 30
+      teleop:
+        topic: cmd_vel_teleop
+        timeout: 0.5
+        priority: 10
+    locks:
+      operator_stop:
+        topic: mux_stop
+        timeout: 0.0
+        priority: 255

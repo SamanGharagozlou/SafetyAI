@@ -12,7 +12,7 @@ built to look without keeping.
 | `/look` frame for the concierge | one JPEG, in flight to `POST /describe` | **no** |
 | Detections, distances, floor classes, scene class | the `Observation` record, journal events | yes: metadata only, no pixels |
 | Cosmos verdicts | the brain's ring (30), edge journal | yes: text and flags (`docs/cosmos_probe_*.json` hold verdicts only) |
-| Concierge exchanges | `concierge.turn` events in the robot-session journal | yes: guest text and the reply, no name or image. The brain keeps the last 12 messages per session in memory for context |
+| Concierge exchanges | `concierge.turn` events in the robot-session journal | yes: guest text and the reply, no image. A first name from the QR onboarding is replaced by `<guest>` in the journal (`named: true`); it goes to the brain and the Anthropic API only. The brain keeps the last 12 messages and the name / language per session in memory for context |
 
 * **camera_off zones** (`pool_deck`, `relax_level` in `policies/zones_therme.yaml`): while the robot is in one, no frame
   is read, detected, classified or sent. The Observation says `camera_off: true`

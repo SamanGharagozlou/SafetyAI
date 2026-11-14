@@ -248,6 +248,17 @@ def test_edge_api_keys_and_no_velocity(monkeypatch):
         assert out["source"] == "local" and "CHF 39" in out["reply"] and out["degraded"]
         assert any(e["kind"] == "concierge.turn" for e in local.get("/state").json()["events"])
         assert local.post("/move_velocity", json={"vx": 1}).status_code in (404, 405)
+        # QR onboarding: the name is greeted once, the language sticks; the journal says "named", not the name
+        a1 = local.post(
+            "/ask", json={"text": "Was kostet ein Tagesticket?", "name": "Anna", "lang": "de", "session": "qr1"}
+        )
+        a2 = local.post("/ask", json={"text": "Und die Sauna?", "session": "qr1"}).json()
+        assert a1.json()["reply"].startswith("Grüezi Anna!") and not a2["reply"].startswith("Grüezi Anna")
+        assert a2["lang"] == "de"
+        turns = [e for e in local.get("/state").json()["events"] if e["kind"] == "concierge.turn"]
+        assert "Anna" not in str(turns[-2:]) and "named" in str(turns[-1])
+        g = local.post("/greet", json={"name": "Anna", "lang": "de"}).json()
+        assert g["ok"] and g["gesture"] is None  # allow_greeting_gesture false in config/d1w.yaml
         with TestClient(app, client=("100.64.0.9", 50000)) as remote:
             assert remote.get("/state").status_code == 401
             assert remote.post("/skills/navigate_to", json={"zone": "shop_cafe"}).status_code == 401

@@ -1020,6 +1020,74 @@ class Skills:
 
         return self._guard("say", run, text=text[:60])
 
+    GREETINGS = {
+        "en": ("Hello{n}, welcome to Leukerbad Therme!", ", {name}"),
+        "de": ("Grüezi{n}, willkommen in der Leukerbad Therme!", " {name}"),
+        "fr": ("Bonjour{n}, bienvenue aux thermes de Loèche-les-Bains !", " {name}"),
+        "it": ("Buongiorno{n}, benvenuti alle terme di Leukerbad!", " {name}"),
+    }
+    GREET_CLEAR_M = 1.5
+    GREET_MIN_BATTERY = 30.0
+
+    def gesture_blockers(self) -> list[str]:
+        """Why the greeting gesture may not run right now ([] = it may). Every check must pass; any doubt = voice only."""
+        why = []
+        b = self.bridge
+        if self.cfg.get("allow_greeting_gesture", False) is not True or not hasattr(b, "shake_hand"):
+            why.append("allow_greeting_gesture is false")
+            return why
+        if self._pause.is_set():
+            why.append("paused")
+        st = getattr(getattr(self.safety, "fsm", None), "state", None)
+        if st != "NORMAL":
+            why.append(f"safety state {st or 'unknown'} (needs NORMAL)")
+        if not (getattr(b, "is_stationary", None) and b.is_stationary()):
+            why.append("not stationary")
+        per = getattr(self, "perception", None)
+        obs = per.latest() if per is not None else None
+        if obs is None:
+            why.append("no perception: cannot check for people")
+        elif obs.camera_off or "l2_people_disabled" in obs.degraded or "detector_stale" in obs.degraded:
+            why.append("people detection unavailable")
+        elif obs.nearest_person_m is not None and obs.nearest_person_m < self.GREET_CLEAR_M:
+            why.append(f"person at {obs.nearest_person_m:.1f} m (< {self.GREET_CLEAR_M} m)")
+        # the raw reading (None = unknown); RobotState defaults to 100 % when the robot has not reported yet
+        batt = b.health().get("battery_pct") if hasattr(b, "health") else b.state().battery_pct
+        if batt is None or batt <= self.GREET_MIN_BATTERY:
+            why.append(f"battery {batt} % (needs > {self.GREET_MIN_BATTERY:.0f} %)")
+        return why
+
+    def greet(self, name: str | None = None, lang: str = "en") -> SkillResult:
+        """Say hello (by name if given). The vendor shake_hand gesture runs ONLY when allow_greeting_gesture is true,
+        the robot is stationary, safety is NORMAL, nobody is within 1.5 m and the battery is above 30 %; otherwise the
+        greeting is voice only. Never moves the base."""
+        lang = lang if lang in self.GREETINGS else "en"
+        tpl, ntpl = self.GREETINGS[lang]
+        clean = " ".join(str(name or "").split())[:40]
+        text = tpl.format(n=ntpl.format(name=clean) if clean else "")
+
+        def run():
+            blockers = self.gesture_blockers()
+            gesture = None
+            if not blockers:
+                try:
+                    gesture = "shake_hand" if self.bridge.shake_hand() else None
+                    if gesture is None:
+                        blockers = ["shake_hand was not acknowledged by the robot"]
+                except Exception as e:  # noqa: BLE001  (CommandRefused, service down): voice only
+                    blockers = [f"gesture refused: {e}"[:160]]
+            self.bridge.say(text)
+            self.emit("greet", name=bool(clean), lang=lang, gesture=gesture, voice_only_because=blockers[:4])
+            return SkillResult(
+                True,
+                "greet",
+                text if gesture is None else f"{text} (+ shake_hand)",
+                self.bridge.state().dict(),
+                extra={"gesture": gesture, "voice_only_because": blockers},
+            )
+
+        return self._guard("greet", run, lang=lang)
+
     def look_at(self, target: str) -> SkillResult:
         def run():
             self.bridge.look_at(target)

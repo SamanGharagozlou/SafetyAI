@@ -80,6 +80,12 @@ def guide_to(poi: str, lang: str = "en", rationale: str = "") -> str:
 
 
 @mcp.tool()
+def greet(name: str = "", lang: str = "en", rationale: str = "") -> str:
+    """Greet a guest by voice (by name if known; lang en | de | fr | it). The robot adds its shake_hand gesture only when the venue enabled it (allow_greeting_gesture) and it is stationary, safety is NORMAL, nobody is within 1.5 m and the battery is above 30 %; otherwise voice only. Never moves the base. Pass rationale = your one-line reason for this call."""
+    return _run("greet", lambda: get_skills().greet(name or None, lang), rationale=rationale, lang=lang)
+
+
+@mcp.tool()
 def pick(object: str = "tray", rationale: str = "") -> str:  # noqa: A002
     """Pick up an allowed object (tray, towels) with both arms. One attempt; returns ok=false if it slips. Pass rationale = your one-line reason for this call."""
     return _run("pick", lambda: get_skills().pick(object), rationale=rationale, object=object)

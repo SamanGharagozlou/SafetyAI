@@ -22,12 +22,20 @@
       journal is read only by that user's ClawMetry. On the Spark, :8900 is Vivek's ClawMetry and never shows Eaby's
       runs.
 - [ ] Battery above 30 %; the controller and the e-stop are with a named person; Tracking mode is off on the remote.
+- [ ] **Team PC (`sepa@172.24.0.239`, on Tailscale first):**
+      * its `.env` uses **Vivek's ClawMetry credentials** (the edge journals into his ClawMetry);
+      * the **two Guard rules** above exist in that ClawMetry;
+      * **only one `/cmd_vel` source**: our edge (twist_mux below, or nobody else running);
+      * `D1W_TRANSPORT=ros2`;
+      * our edge listens on **8765**.
+      Deploy from the Spark: `bash scripts/remote/deploy_edge.sh sepa@edge` (its tailnet name), or
+      `sepa@172.24.0.239` from a laptop on the venue LAN.
 
 ## What runs where
 
 | Piece | Machine | Command |
 |---|---|---|
-| Team ROS 2 bridge (`d1_cmd_vel_bridge`, owns the ONE SDK connection) | team PC 172.24.1.20 | `ros2 launch agibot_d1_bridge bridge.launch.py local_ip:=172.24.1.20 robot_ip:=172.24.1.41` |
+| Team ROS 2 bridge (`d1_cmd_vel_bridge`, owns the ONE SDK connection) | team PC 172.24.0.239 | `ros2 launch agibot_d1_bridge bridge.launch.py local_ip:=172.24.0.239 robot_ip:=172.24.1.41` |
 | Team detector (YOLO on their GPU) | team PC | `perception/.venv/bin/python detect.py --source rtsp://172.24.1.41:8554/test --no-show` (serves `:8090/latest.json`) |
 | **Our edge**: skill server, safety FSM, perception, concierge client | team PC | `make edge` (`G1_CONFIG=config/d1w.yaml`, `D1W_TRANSPORT=ros2`, `FRAME_SOURCE=team`) |
 | Brain: Cosmos judge relay, console, concierge | DGX Spark (UK) | `make brain`; Cosmos: `scripts/cosmos/serve_reason2.sh` |
@@ -86,6 +94,35 @@ team's README measured about 13 of 60 fps arriving over a slow link.
 **Teleop warning (found in the mock):** the team's `keyboard_teleop` publishes `cmd_vel` straight to their bridge and
 never passes our gate. Our L1-on-measured-motion catches it and stops the robot by publishing zeros. A keyboard held
 down, however, keeps publishing. **Do not run teleop while the edge is guiding.**
+
+## One velocity source: twist_mux (decided for the demo)
+
+**During the demo only the safety edge publishes velocity.** Sahil's dashboard drives the robot with goals only:
+`/guide_to`, `/pause`, `/resume`, `/say` on the edge (docs/ADAPTER-API.md), never its joystick pad.
+
+As a guard against a stray publisher, put `twist_mux` in front of the team's bridge
+(`apt install ros-humble-twist-mux`):
+
+```bash
+ros2 launch launch/twist_mux.launch.py                    # config/twist_mux.yaml -> /cmd_vel for the bridge
+D1W_CMD_VEL=/cmd_vel_edge make edge                       # our edge publishes on its mux input
+ros2 run agibot_d1_bridge keyboard_teleop --ros-args -r cmd_vel:=/cmd_vel_teleop   # only if needed, lowest
+```
+
+| Priority | Source | Topic |
+|---|---|---|
+| 100 (highest) | our safety edge | `/cmd_vel_edge` |
+| 50 | the dashboard's deadman pad | `/cmd_vel_dashboard` |
+| 30 | Nav2 | `/cmd_vel_nav` |
+| 10 (lowest) | keyboard teleop | `/cmd_vel_teleop` |
+| lock 255 | operator stop: `ros2 topic pub --once /mux_stop std_msgs/msg/Bool "{data: true}"` | `/mux_stop` |
+
+* **What the mux does not do:** the edge publishes only while it drives, plus 0.5 s of zeros after a stop. When it is
+  idle or holding, a lower source gets through after its 0.5 s timeout. That is why the rule above stays: nobody else
+  publishes during the demo.
+* **The human still outranks software:** the vendor controller and the e-stop act inside the robot, under the mux.
+* **Without the mux:** don't run the mux, leave `D1W_CMD_VEL` unset (the edge publishes `/cmd_vel`), and run no other
+  source.
 
 ## No photography in the complex: wet_deck stays uncalibrated by design
 

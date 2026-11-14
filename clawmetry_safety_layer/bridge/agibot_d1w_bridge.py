@@ -18,6 +18,10 @@ Hard rules (tests/test_agibot_d1w_bridge.py):
     attitude_cmd. damp() calls ~/damp only with allow_damp: true (literal), default false.
   * stand() calls ~/stand_up only with auto_stand: true (literal); otherwise it only confirms the robot is standing
     (the operator stands it with the controller).
+  * shake_hand() (greeting gesture) only with allow_greeting_gesture: true (literal), default false, only while
+    stationary; through the team bridge's ~/shake_hand service (SDK shakeHand()), never a robot_cmd publisher.
+    skills.greet() adds safety NORMAL, nobody within 1.5 m, battery > 30 %. D1W_CMD_VEL renames the cmd_vel topic
+    (behind twist_mux: /cmd_vel_edge, config/twist_mux.yaml).
   * gait locked to "move" (never crawl / climb).
   * tilt (IMU roll/pitch) over 15 deg -> zero velocity, refuse motion until level again for 1 s.
   * no state for 1 s (or connected == false) -> zero velocity + one `handover` event; no exception loop.
@@ -77,7 +81,7 @@ DEFAULTS: dict[str, Any] = {
         "service_ns": "/d1_cmd_vel_bridge",
     },
     "sdk": {
-        "local_ip": "172.24.1.20",
+        "local_ip": "172.24.0.239",
         "local_port": 43988,
         "robot_ip": "172.24.1.41",
         "keepalive_hz": 10.0,
@@ -181,7 +185,9 @@ class Ros2Transport:
         r = self.ros = self.ros or self._import()
         if not r.rclpy.ok():
             r.rclpy.init()
-        t = self.c["ros2"]
+        t = dict(self.c["ros2"])
+        if os.environ.get("D1W_CMD_VEL"):  # behind twist_mux (config/twist_mux.yaml): /cmd_vel_edge
+            t["cmd_vel"] = os.environ["D1W_CMD_VEL"]
         n = self.node = r.rclpy.create_node(t["node_name"])
         for k in FORBIDDEN_TOPICS:  # belt and braces: a config typo must not point cmd_vel at robot_cmd
             if any(str(t[x]).rstrip("/").endswith(k) for x in ("cmd_vel", "gait", "say")):
@@ -266,6 +272,9 @@ class Ros2Transport:
 
     def damp(self) -> bool:
         return self._trigger("damp")
+
+    def shake_hand(self) -> bool:  # the team bridge's ~/shake_hand Trigger; never a generic robot_cmd publisher
+        return self._trigger("shake_hand")
 
     def close(self):
         try:
@@ -379,6 +388,9 @@ class SdkTransport:
     def damp(self) -> bool:
         return self.robot.passive() == 0  # vendor: "for emergency stop" (robot drops). allow_damp only.
 
+    def shake_hand(self) -> bool:
+        return self.robot.shakeHand() == 0
+
     def close(self):
         self._run = False
         try:
@@ -400,6 +412,7 @@ class MockTransport:
         self.lock = threading.Lock()
         self.frozen = False  # no state updates (link / node down)
         self.said: list[str] = []
+        self.gestures: list[str] = []
         self.sent: list[tuple[float, float, float]] = []
         self._run = True
         self.speed_scale = float(cfg.get("mock_time_scale", 1.0))  # tests: the twin runs N x real time
@@ -455,6 +468,10 @@ class MockTransport:
             self.v = (0.0, 0.0, 0.0)
         return True
 
+    def shake_hand(self) -> bool:
+        self.gestures.append("shake_hand")
+        return True
+
     # --- test / demo hooks
     def set_tilt(self, roll_deg: float = 0.0, pitch_deg: float = 0.0):
         with self.lock:
@@ -497,6 +514,7 @@ class AgibotD1WBridge(RobotBridge):
         self.cap = (min(MAX_VX, float(caps["vx"])), min(MAX_VY, float(caps["vy"])), min(MAX_WZ, float(caps["wz"])))
         self.auto_stand = cfg_flag(cfg, "auto_stand")
         self.allow_damp = cfg_flag(cfg, "allow_damp")
+        self.allow_greeting_gesture = cfg_flag(cfg, "allow_greeting_gesture")
         self.t = transport or make_transport(cfg, self.c, ros, sdk)
         if self.t.name == "mock":
             self.body = "agibot_d1w_mock"  # simulation on the Physical AI page, not hardware
@@ -731,6 +749,20 @@ class AgibotD1WBridge(RobotBridge):
             return
         self._event("damp.requested", transport=self.t.name, note="emergency: the robot drops")
         self.t.damp()
+
+    def is_stationary(self) -> bool:
+        r = self.t.latest()
+        return self._fresh(r, time.time()) and not any(self._target) and float(r.speed or 0.0) <= 0.05
+
+    def shake_hand(self) -> bool:
+        """Greeting gesture (the vendor's shake_hand). Only with allow_greeting_gesture: true (literal; default false)
+        and only while stationary. skills.greet() adds the rest: safety NORMAL, nobody within 1.5 m, battery > 30 %."""
+        if not self.allow_greeting_gesture:
+            raise CommandRefused("allow_greeting_gesture is false: greet by voice only")
+        if not self.is_stationary():
+            raise CommandRefused("the robot is moving (or has no fresh state): no gesture")
+        self._event("gesture.shake_hand", transport=self.t.name)
+        return self.t.shake_hand() is True
 
     def set_arm_targets(self, q, ramp_s: float = 2.0) -> None:
         if list(q):

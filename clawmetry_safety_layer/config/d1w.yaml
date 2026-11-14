@@ -16,8 +16,11 @@ venue_file: venue/leukerbad_therme.yaml
 # Safety flags (only a literal `true` enables them):
 #   auto_stand: false -> stand() never calls ~/stand_up; the operator stands the robot with the controller.
 #   allow_damp: false -> damp() only zeroes velocity. Nothing in our code ever calls lie_down or passive.
+#   allow_greeting_gesture: false -> greet() is voice only. true: the vendor shake_hand (team bridge ~/shake_hand)
+#     ONLY while stationary, safety NORMAL, nobody within 1.5 m and battery > 30 %.
 auto_stand: false
 allow_damp: false
+allow_greeting_gesture: false
 d1w:
   rate_hz: 20.0
   caps: {vx: 0.4, vy: 0.15, wz: 0.6}   # hard maxima; lower here if needed (guide pace 0.3 = behaviour policy)
@@ -34,7 +37,7 @@ d1w:
     say: /say
     service_ns: /d1_cmd_vel_bridge
   sdk:                                 # fallback only (D1W_TRANSPORT=sdk, nobody else on the SDK)
-    local_ip: 172.24.1.20              # team PC on Event_MyLAG; on-robot fallback B: the robot's own IP (SDK doc 5.7)
+    local_ip: 172.24.0.239              # team PC on Event_MyLAG; on-robot fallback B: the robot's own IP (SDK doc 5.7)
     local_port: 43988
     robot_ip: 172.24.1.41
     keepalive_hz: 10.0

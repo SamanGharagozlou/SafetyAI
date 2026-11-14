@@ -375,3 +375,21 @@ def test_mock_twin_navigate_and_policy(monkeypatch):
         assert r.ok, r.message
     finally:
         sk.bridge.close()
+
+
+def test_cmd_vel_topic_behind_twist_mux(monkeypatch):
+    import yaml
+
+    mux = yaml.safe_load((Path(__file__).resolve().parent.parent / "config/twist_mux.yaml").read_text())
+    topics = mux["twist_mux"]["ros__parameters"]["topics"]
+    ranked = sorted(topics, key=lambda k: -topics[k]["priority"])
+    assert ranked[0] == "edge" and ranked[-1] == "teleop"
+    monkeypatch.setenv("D1W_CMD_VEL", "/cmd_vel_edge")
+    ros = FakeRos()
+    b = AgibotD1WBridge(cfg(transport="ros2"), ros=ros)
+    b.connect("", 0)
+    assert "/cmd_vel_edge" in ros.node.pubs and "/cmd_vel" not in ros.node.pubs
+    b.close()
+    monkeypatch.setenv("D1W_CMD_VEL", "/robot_cmd")
+    with pytest.raises(CommandRefused):
+        AgibotD1WBridge(cfg(transport="ros2"), ros=FakeRos()).connect("", 0)

@@ -459,6 +459,7 @@ def create_app(relay: Relay | None = None, concierge=None) -> FastAPI:
                 d.get("lang"),
                 d.get("session"),
                 d.get("context") or {},
+                d.get("name"),
             )
         )
 

@@ -152,6 +152,37 @@ def detect_lang(text: str) -> str:
     return best if scores[best] > 0 else "en"
 
 
+HELLO = {"en": "Hello {name}! ", "de": "Grüezi {name}! ", "fr": "Bonjour {name} ! ", "it": "Buongiorno {name}! "}
+
+
+class GuestSessions:
+    """Name and language per session, from the team's QR onboarding (POST /ask {name, lang}). The language sticks for
+    the session until the guest sends another; the name is greeted exactly once. Kept in memory only (last 200)."""
+
+    def __init__(self):
+        self.s: dict[str, dict] = {}
+
+    def turn(self, session: str | None, name: str | None, lang: str | None) -> tuple[str | None, str | None, bool]:
+        """-> (name, lang, greet_now)."""
+        key = session or "default"
+        p = self.s.pop(key, None) or {"name": None, "lang": None, "greeted": False}
+        self.s[key] = p
+        while len(self.s) > 200:
+            self.s.pop(next(iter(self.s)))
+        clean = " ".join(str(name or "").split())[:40] or None
+        if clean and clean != p["name"]:
+            p["name"], p["greeted"] = clean, False
+        if lang in HELLO:
+            p["lang"] = lang
+        greet_now = bool(p["name"]) and not p["greeted"]
+        p["greeted"] = p["greeted"] or greet_now
+        return p["name"], p["lang"], greet_now
+
+
+def hello(name: str, lang: str) -> str:
+    return HELLO.get(lang, HELLO["en"]).format(name=name)
+
+
 class LocalConcierge:
     def __init__(self, venue: Venue | None = None):
         self.venue = venue or Venue()

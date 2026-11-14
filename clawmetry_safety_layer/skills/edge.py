@@ -8,7 +8,9 @@ Routes (X-Api-Key = EDGE_API_KEY on every request that does not come from this m
   GET  /observation   newest perception Observation (no pixels)
   GET  /events        server-sent events: every trace event (fsm.transition, person_near, judge_verdict, ...)
   POST /verdict       the brain relay posts Cosmos verdicts here
-  POST /ask           {text, lang?} -> {reply, actions}: the concierge (brain, else the local venue fallback)
+  POST /ask           {text, lang?, name?, session?} -> {reply, actions}: the concierge (brain, else the local venue
+                      fallback). name / lang come from the team's QR onboarding; both stick for the session
+  POST /greet         {name?, lang?}: say hello; shake_hand only if allow_greeting_gesture and every check passes
   POST /say           {text}: /say topic for the team's voice stack + local TTS
   POST /guide_to      {poi}: the guide skill (same local policy as the MCP tool)
   POST /confirm       a person confirmed a load / hand-off (pick / place on the quadruped)
@@ -265,6 +267,12 @@ class Ask(BaseModel):
     text: str
     lang: str | None = None
     session: str | None = None
+    name: str | None = None  # from the team's QR onboarding: greeted once, never sent anywhere but the brain
+
+
+class GreetB(BaseModel):
+    name: str | None = None
+    lang: str = "en"
 
 
 class SayB(BaseModel):
@@ -308,7 +316,13 @@ def verdict(request: Request, v: dict):
 @router.post("/ask")
 def ask(request: Request, b: Ask):
     require_key(request)
-    return rt().get_concierge().ask(b.text, b.lang, b.session)
+    return rt().get_concierge().ask(b.text, b.lang, b.session, name=b.name)
+
+
+@router.post("/greet")
+def greet(request: Request, b: GreetB):
+    require_key(request)
+    return rt().sk.greet(b.name, b.lang).dict()
 
 
 @router.post("/say")

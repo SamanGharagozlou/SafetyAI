@@ -29,6 +29,7 @@ skills:
   hold_pose: {max_duration_s: 5}
   guide_to: {max_duration_s: 240}   # whole guide: intro + every leg + arrival
   recover: {max_duration_s: 12, max_path_m: 1.5}
+  greet: {max_duration_s: 15}   # never moves the base; the gesture is opt-in (allow_greeting_gesture)
 max_retries: 2
 
 forbidden:

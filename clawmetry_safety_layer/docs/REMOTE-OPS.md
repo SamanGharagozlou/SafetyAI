@@ -7,7 +7,7 @@
  ┌───────────────────────────────────────────────┐   tailnet      ┌───────────────────────────────────────────┐
  │ D1 Ultra-W 172.24.1.41 ── UDP 43988 (SDK) ──┐ │  (WireGuard)   │ brain :8780  relay /frame -> verdict      │
  │                                              │ │◀─────────────▶│              console (mission control)    │
- │ team PC 172.24.1.20 (Ubuntu 22.04)           │ │   goals,       │              concierge (Anthropic API)    │
+ │ team PC 172.24.0.239 (Ubuntu 22.04)          │ │   goals,       │              concierge (Anthropic API)    │
  │  d1_cmd_vel_bridge (ROS 2, owns the SDK) ◀───┘ │   frames,      │ Cosmos-Reason2 :8000 (vLLM, --api-key)   │
  │  team detector :8090 (YOLO, GPU)               │   verdicts     │ ClawMetry (brain side)                    │
  │  OUR EDGE :8765  skills/MCP + safety FSM       │                └───────────────────────────────────────────┘
