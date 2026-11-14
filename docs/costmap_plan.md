@@ -89,4 +89,22 @@ Setup: `~/d1_depth_venv` (uv; PyTorch 2.14 + CUDA 13, Transformers, 5.6 GB), RTX
   After a global scale (0.293) the banner base comes out at ~2.9 m, matching the floor geometry (2.3-2.8 m). **An affine fit in inverse depth (1/z = a/d + b) on the floor rows is the right calibration** and should be done per frame, because the camera height changes between lying (0.18 m) and standing (0.40 m).
 - **Caveats:** all 8 frames are from one static viewpoint, so the leave-one-out numbers are optimistic. Not yet tested: standing height, motion, other scenes, and accuracy of depth on *objects* (only the floor has ground truth).
 
-Next: ROS node `d1_depth` (depth image + point cloud with per-frame floor calibration), then validation standing and while driving.
+## 8. Step 2: `d1_depth` node (built, tested offline on saved frames)
+
+Package `ros2_ws/src/d1_depth`. Run: `ros2 launch d1_depth depth.launch.py` (needs `/camera/image_raw` from `d1_camera` and TF `odom -> camera_optical_frame`, i.e. the bridge running).
+Torch/Transformers come from `~/d1_depth_venv` (env `D1_DEPTH_VENV`; same Python 3.10, its NumPy 1.26 is put first on `sys.path`).
+
+Per frame: Depth Anything V2 -> camera pose from TF -> analytic floor depth for every pixel -> robust fit `1/z_floor = a/d + b` on floor pixels (outlier trimming, EMA over frames)
+-> metric depth image `/camera/depth` (32FC1) and XYZ cloud `/camera/points` (camera optical frame, stride 4, `max_range` 3 m).
+
+Measured (replay of the 8 real frames, robot lying):
+- 5.0 Hz sustained (rate-limited; callback ~45-60 ms, model ~35-42 ms, so ~16 Hz capacity), floor fit a = 3.0-3.4, b = 0.10-0.12 on ~19k pixels, median floor error ~1%.
+- Cloud ~31k points; floor points land at z = 0.000 +- 0.012 m in the floor frame (independent check of the TF/geometry math).
+- Bugs found and fixed on the way: the robust fit could collapse (sigma floor added); the rate gate aliased against the 10 Hz input (tolerance added); large Python-side cost was not the problem (post-processing < 10 ms).
+
+**Hard limit found: usable range is only ~3 m.** The raw model returns 12-20 m for far surfaces (a hall wall that is really 25 m+). Through the floor calibration, 12-19 m maps to 2.5-3.6 m, so a far wall is indistinguishable from a near obstacle.
+Masking the model's 20 m cap removed only ~3% of the points; the fix is a hard `max_range` of 3 m (a 3x3-4x4 m local costmap is within that). Objects between ~3 and 6 m are not reliably seen by this setup.
+
+Not yet validated (robot was off): standing height, motion, depth accuracy on real obstacles with measured distances (put a box at 1.5 m and 2.5 m and compare in RViz), false obstacles from far walls at standing height, latency.
+
+Next: with the robot standing, run camera + depth + RViz (PointCloud2 `/camera/points`), measure box distances, then feed the cloud to a standalone Nav2 local costmap (`VoxelLayer`, `min_obstacle_height 0.10`, `max_obstacle_height 0.5`, `obstacle_max_range 3`).
