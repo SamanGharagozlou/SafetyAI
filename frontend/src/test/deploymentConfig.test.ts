@@ -17,6 +17,12 @@ describe('static demo environment boundary', () => {
       expect((error as Error).message).not.toContain('synthetic-test-canary')
     }
   })
+  it.each([{ VITE_VAPI_PUBLIC_KEY: '2cdfae81-9e4a-4215-a17b-7ec2b7bf6aa4' }, { VITE_VAPI_ASSISTANT_ID: '503c0c1a-5592-4148-af15-166811855801' }])('keeps live third-party voice out of the static demo', env => {
+    expect(() => validateDemoEnvironment(env)).toThrow()
+  })
+  it('allows the reviewed voice keys when they are empty', () => {
+    expect(validateDemoEnvironment({ VITE_VAPI_PUBLIC_KEY: '', VITE_VAPI_ASSISTANT_ID: '' }).profile).toBe('static-demo')
+  })
   it.each([{ VITE_TRANSCRIBE_ENDPOINT: '/api/transcribe' }, { VITE_TRANSCRIBE_ENDPOINT: 'https://example.invalid/transcribe' }, { VITE_REQUESTS_ENDPOINT: '/unreviewed/path' }, { VITE_REQUEST_STATUS_ENDPOINT: '/unreviewed/{request_id}' }])('rejects backend-connected or unreviewed demo configuration', env => {
     expect(() => validateDemoEnvironment(env)).toThrow()
   })

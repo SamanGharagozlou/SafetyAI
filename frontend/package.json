@@ -17,6 +17,7 @@
     "preview:static": "node scripts/serve-static.mjs"
   },
   "dependencies": {
+    "@vapi-ai/web": "^3.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

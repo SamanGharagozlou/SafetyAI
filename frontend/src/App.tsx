@@ -5,6 +5,12 @@ import { demoSessionService, sessionDuration } from './services/demoSession'
 import type { DemoSession } from './services/demoSession'
 import { useRoute } from './useRoute'
 import { CallScreen } from './call/CallScreen'
+import { LiveCallScreen } from './call/LiveCallScreen'
+import { resolveVapiConfig } from './voice/vapiSession'
+
+// Live duplex voice is opt-in at build time. With no Vapi keys configured this
+// is null and the existing record -> review -> confirm demo flow is unchanged.
+const vapi = resolveVapiConfig(import.meta.env as unknown as Record<string, string | undefined>)
 
 type Notice = 'ended' | 'expired' | 'unavailable' | null
 const notices = {
@@ -118,7 +124,9 @@ export function App() {
         <div className="privacy-note"><Shield/><p><strong>Your curiosity. Your privacy.</strong><br/>No real name, email, or account needed. Microphone access is your choice after joining.</p></div>
       </section>}
 
-      {route === '/session' && session && <CallScreen key={session.id} session={{ id: session.id, expiresAt: session.expiresAt }} nickname={session.nickname} onExpired={expireSession} onLeave={endSession} onPrivacy={openPrivacy}/>}
+      {route === '/session' && session && (vapi
+        ? <LiveCallScreen key={session.id} config={vapi} session={{ id: session.id, expiresAt: session.expiresAt }} nickname={session.nickname} onExpired={expireSession} onLeave={endSession} onPrivacy={openPrivacy}/>
+        : <CallScreen key={session.id} session={{ id: session.id, expiresAt: session.expiresAt }} nickname={session.nickname} onExpired={expireSession} onLeave={endSession} onPrivacy={openPrivacy}/>)}
 
       {route === '/privacy' && <section className="welcome-card secondary-card privacy-page page-enter" aria-labelledby="privacy-heading">
         <span className="privacy-emblem"><Shield/></span>
