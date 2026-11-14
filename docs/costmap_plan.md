@@ -69,3 +69,24 @@ Missing: `depth_image_proc`, `pointcloud_to_laserscan` (apt), PyTorch / ONNX Run
 - The ~1 m blind zone is physical; only a different sensor or a different camera tilt removes it.
 - Video + control share one Wi-Fi link; a link drop makes the robot damp after ~3 s. A wired link (or running everything on the robot) removes this.
 - Nav2 start delay: the robot needs ~2 s to start moving after standing (SDK state change).
+
+## 7. Step 1 results: Depth Anything V2 Metric Indoor Small on real D1 frames (2026-11-14)
+
+Setup: `~/d1_depth_venv` (uv; PyTorch 2.14 + CUDA 13, Transformers, 5.6 GB), RTX 3070. 8 frames from the live stream, robot **lying** (camera ~0.177 m high), compared with the analytic floor depth from camera height, tilt (16 deg up) and f = 735 px.
+
+- **Speed:** 24 ms/frame (~42 fps) including pre/post-processing, 0.22 GB GPU memory, 59 s first load (download), <1 s afterwards. Not a bottleneck.
+- **Metric scale is wrong zero-shot:** the model overestimates floor depth by **~3.5x** (ratio 3.1-3.6 across frames; 240-335% error). Expected for a camera far lower than the training data (indoor model, ~human-height cameras).
+- **Quality:** the floor gradient is smooth; tables and boxes are well separated. Mid-range objects in front of a far wall (two banners ~2.5 m away) are merged into the far background (>10 m); the model also caps at 20 m.
+- **Floor-based calibration fixes the scale.** Median relative error on floor rows vs the analytic depth:
+
+| Method | 0.4-1 m | 1-2 m | 2-4 m |
+|---|---|---|---|
+| raw model | 241% | 278% | 335% |
+| one scale per frame (stable: 0.293 +-5%) | 2% | 10% | 25% |
+| global affine in 1/depth, leave-one-out | 3% | 2% | 3% |
+| per-frame affine in 1/depth (in-sample) | 0% | 0% | 1% |
+
+  After a global scale (0.293) the banner base comes out at ~2.9 m, matching the floor geometry (2.3-2.8 m). **An affine fit in inverse depth (1/z = a/d + b) on the floor rows is the right calibration** and should be done per frame, because the camera height changes between lying (0.18 m) and standing (0.40 m).
+- **Caveats:** all 8 frames are from one static viewpoint, so the leave-one-out numbers are optimistic. Not yet tested: standing height, motion, other scenes, and accuracy of depth on *objects* (only the floor has ground truth).
+
+Next: ROS node `d1_depth` (depth image + point cloud with per-frame floor calibration), then validation standing and while driving.
