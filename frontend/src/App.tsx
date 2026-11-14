@@ -7,10 +7,21 @@ import { useRoute } from './useRoute'
 import { CallScreen } from './call/CallScreen'
 import { LiveCallScreen } from './call/LiveCallScreen'
 import { resolveVapiConfig } from './voice/vapiSession'
+import { DEMO_VAPI_ASSISTANT_ID, DEMO_VAPI_PUBLIC_KEY } from './voice/vapiDefaults'
 
-// Live duplex voice is opt-in at build time. With no Vapi keys configured this
-// is null and the existing record -> review -> confirm demo flow is unchanged.
-const vapi = resolveVapiConfig(import.meta.env as unknown as Record<string, string | undefined>)
+// Live duplex voice, on by default so the branch runs with no setup.
+//
+// `undefined` means "nobody chose", so the bundled demo assistant is used. An
+// EMPTY string means someone chose to switch it off - which is how
+// vitest.config.ts and the Playwright webServer pin it, so the suite always
+// describes the default artifact. The static demo build is off unconditionally:
+// its CSP is connect-src 'none' and vite.config.ts aliases the SDK away, so a
+// live call there could only ever fail.
+const env = import.meta.env as unknown as Record<string, string | undefined>
+const vapi = env.MODE === 'demo' ? null : resolveVapiConfig({
+  VITE_VAPI_PUBLIC_KEY: env.VITE_VAPI_PUBLIC_KEY ?? DEMO_VAPI_PUBLIC_KEY,
+  VITE_VAPI_ASSISTANT_ID: env.VITE_VAPI_ASSISTANT_ID ?? DEMO_VAPI_ASSISTANT_ID,
+})
 
 type Notice = 'ended' | 'expired' | 'unavailable' | null
 const notices = {
