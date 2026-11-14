@@ -1,0 +1,23 @@
+# Video-source defaults (laptop webcam).  Every value can be overridden by launch args
+# or another YAML passed later on the command line.
+video_source:
+  ros__parameters:
+    source_type: webcam          # webcam | rtsp | file
+    webcam_device: "0"           # index ("0") or path ("/dev/video2")
+    rtsp_url: ""                 # required when source_type=rtsp (launch arg rtsp_url)
+    capture_backend: auto        # auto | ffmpeg | gstreamer | v4l2
+    frame_id: camera_optical_frame
+    output_topic: /camera/image_raw
+    publish_reliability: reliable   # reliable works with best-effort AND reliable subscribers
+    width: 0                     # 0 = driver default
+    height: 0
+    fps: 0.0
+    max_publish_fps: 0.0         # 0 = publish every captured frame
+    output_width: 0              # downscale wider frames to this width before publishing (0 = native)
+    open_timeout_s: 5.0
+    read_timeout_s: 5.0
+    stale_frame_timeout_s: 2.0
+    reconnect_initial_delay_s: 0.5
+    reconnect_max_delay_s: 10.0
+    reconnect_backoff_multiplier: 2.0
+    perf_log_period_s: 10.0

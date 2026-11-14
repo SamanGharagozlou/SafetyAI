@@ -1,0 +1,27 @@
+# AGIBOT D1 Ultra built-in camera over RTSP.  Layered on top of video_source.yaml.
+#
+# Stream facts (measured on the robot, see perception/README.md):
+#   MediaMTX on the robot serves rtsp://<robot-ip>:8554/test (started by robot-launch via
+#   /opt/app_launch/stream_4cams_rtsp.sh). One camera (/dev/video11): 1920x1080 @ 60 fps,
+#   H.264 ~20 Mbit/s, every frame a keyframe. Over slow Wi-Fi only ~13 fps arrive and some
+#   frames decode corrupted; lowering bitrate/fps on the robot side fixes that.
+#
+# The URL comes from the launch argument rtsp_url (make: source=d1-wifi|d1-ethernet,
+# robot_ip=<ip>). Known robot addresses: 192.168.234.1 (robot AP Wi-Fi),
+# 192.168.168.168 (Ethernet), 172.24.1.41 (as seen on a shared event Wi-Fi).
+video_source:
+  ros__parameters:
+    source_type: rtsp
+    capture_backend: ffmpeg      # gstreamer needs a GStreamer-enabled OpenCV build
+    rtsp_transport: tcp          # tcp is more robust over Wi-Fi; udp may lower latency on Ethernet
+    rtsp_latency_ms: 100         # gstreamer jitter buffer only
+    frame_id: d1_front_camera_optical_frame
+    # 1080p bgr8 = 6.2 MB per Image; detector letterboxes to 640 anyway -> publish 960x540.
+    output_width: 960
+    # The detector runs ~10 fps on CPU; publishing all 60 fps only burns DDS bandwidth.
+    max_publish_fps: 15.0
+    open_timeout_s: 5.0
+    read_timeout_s: 3.0
+    stale_frame_timeout_s: 2.0
+    reconnect_initial_delay_s: 0.5
+    reconnect_max_delay_s: 10.0
