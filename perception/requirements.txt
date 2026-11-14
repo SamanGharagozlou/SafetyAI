@@ -1,0 +1,5 @@
+# Install PyTorch with CUDA first, matching your GPU/driver, e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# Tested with torch 2.11.0+cu128 / torchvision 0.26.0+cu128 on an RTX 5060 Laptop GPU.
+ultralytics>=8.4
+opencv-python>=4.10
