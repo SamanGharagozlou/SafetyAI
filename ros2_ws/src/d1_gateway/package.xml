@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>d1_gateway</name>
+  <version>0.1.0</version>
+  <description>Robot gateway: ROS 2 &lt;-&gt; WebSocket bridge. Frontends send goals and intents, the robot answers with goal_received / accepted / progress / reached and state.</description>
+  <maintainer email="sahilrajpurkar1998@gmail.com">sahilrajpurkar03</maintainer>
+  <license>BSD-3-Clause</license>
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav2_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2_ros</depend>
+  <exec_depend>python3-websockets</exec_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
