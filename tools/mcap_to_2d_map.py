@@ -6,7 +6,7 @@ odom-realtime.csv, ray-casts each scan in 2D, and writes map.pgm/png + map.yaml.
 
   pip install mcap mcap-ros1-support numpy opencv-python-headless
   python3 mcap_to_2d_map.py <recording_dir> [-o out_dir] [--res 0.05]
-         [--min-h 0.15 --max-h 0.50] [--range 15] [--info] [--jpegs]
+         [--min-h 0.15 --max-h 1.20] [--range 15] [--info] [--jpegs]
 
 Heights are measured above the estimated floor. Pick --max-h around the robot's
 body height (D1 ~0.5 m): anything the robot would bump into must lie in
@@ -57,6 +57,32 @@ def cmd_jpegs(mcap_path, out):
     print("wrote", n, "jpegs to", out)
 
 
+def pcd_obstacles(rec, floor, x0, y0, res, H, W, min_h, max_h, min_pts):
+    """Occupied cells from the registered cloud Preview.pcd: cells with >= min_pts points in
+    [min_h, max_h] above the floor (box/table sides AND tops), closed by 1 cell, small blobs dropped.
+    The raw-scan ray casting alone loses boxes seen from above (their tops are above the slab and the
+    free-space votes of rays passing over them win)."""
+    path = f"{rec}/Preview.pcd"
+    if not os.path.exists(path):
+        return np.zeros((H, W), bool)
+    with open(path, "rb") as f:
+        while not f.readline().startswith(b"DATA"):
+            pass
+        a = np.frombuffer(f.read(), dtype=np.float32).reshape(-1, 4)[:, :3]
+    a = a[np.isfinite(a).all(1)]
+    h = a[:, 2] - floor
+    a = a[(h >= min_h) & (h < max_h)]
+    ci = ((a[:, 0] - x0) / res).astype(int); ri = ((a[:, 1] - y0) / res).astype(int)
+    ok = (ci >= 0) & (ci < W) & (ri >= 0) & (ri < H)
+    cnt = np.zeros((H, W), np.int32); np.add.at(cnt, (ri[ok], ci[ok]), 1)
+    occ = cv2.morphologyEx((cnt >= min_pts).astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(occ, connectivity=8)
+    for i in range(1, n):
+        if st[i, cv2.CC_STAT_AREA] < 6:
+            occ[lab == i] = 0
+    return occ.astype(bool)
+
+
 def build(a):
     rec = a.recording
     T, P, Q = load_odom(f"{rec}/odom-realtime.csv")
@@ -74,7 +100,7 @@ def build(a):
         pts = pts[(np.abs(pts[:, :2]).max(1) < a.range) & (np.linalg.norm(pts, axis=1) > 0.4)]
         R, t = pose
         w = pts @ R.T.astype(np.float32) + t.astype(np.float32)
-        scans.append((t[:2], w))
+        scans.append((t, w))
         zs.append(w[::20, 2])
     zs = np.concatenate(zs)
     floor = np.percentile(zs, a.floor_pct)
@@ -91,15 +117,24 @@ def build(a):
         w, h = w[keep], h[keep]
         hit = (h >= a.min_h)
         ci = np.clip(((w[:, 0]-x0)/res).astype(int), 0, W-1); ri = np.clip(((w[:, 1]-y0)/res).astype(int), 0, H-1)
-        cells = np.unique(np.stack([ri, ci, hit], 1), axis=0)  # one vote per cell per scan
+        cells, inv = np.unique(np.stack([ri, ci, hit], 1), axis=0, return_inverse=True)  # one vote per cell per scan
+        hz = np.full(len(cells), np.inf); np.minimum.at(hz, inv.ravel(), h)               # lowest return height per cell
+        zs_ = org[2] - floor                                   # sensor height above floor
         o = np.array([(org[1]-y0)/res, (org[0]-x0)/res])
-        fl = set()
         fidx = []
-        for rr, cc, hh in cells:
+        for (rr, cc, hh), hzi in zip(cells, hz):
             n = int(max(abs(rr-o[0]), abs(cc-o[1])))
             if n < 2:
                 continue
-            k = np.arange(0, n if hh else n+1)                 # stop before the obstacle cell
+            # 3D-aware clearing: a ray from a high sensor passes ABOVE low obstacles, so it only
+            # proves a cell free where the ray itself is below the slab top (max_h). Flat 2D
+            # clearing (--flat-rays) erased boxes/tables seen from above.
+            k0 = 0
+            if not a.flat_rays and zs_ > a.max_h + 0.05 and zs_ > hzi:
+                k0 = int(np.clip(np.ceil(n * (zs_ - (a.max_h + 0.05)) / (zs_ - hzi)), 0, n))
+            k = np.arange(k0, n if hh else n+1)                # stop before the obstacle cell
+            if len(k) == 0:
+                continue
             fidx.append(((o[0] + (rr-o[0])*k/n).astype(np.int64)*W + (o[1] + (cc-o[1])*k/n).astype(np.int64)))
         if fidx:
             free[np.unique(np.concatenate(fidx))] += 1
@@ -107,6 +142,8 @@ def build(a):
         occ[np.unique(oc[:, 0]*W + oc[:, 1])] += 1
     occ, free = occ.reshape(H, W), free.reshape(H, W)
     is_occ = (occ >= a.min_hits) & (occ >= 0.3*(occ+free))
+    if not a.no_pcd:
+        is_occ |= pcd_obstacles(rec, floor, x0, y0, res, H, W, a.min_h, a.max_h, a.pcd_min_pts)
     # drop isolated specks
     n, lab, st, _ = cv2.connectedComponentsWithStats(is_occ.astype(np.uint8), connectivity=8)
     for i in range(1, n):
@@ -131,10 +168,13 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("recording"); p.add_argument("-o", "--out")
     p.add_argument("--res", type=float, default=0.05)
-    p.add_argument("--min-h", type=float, default=0.15); p.add_argument("--max-h", type=float, default=0.50)
+    p.add_argument("--min-h", type=float, default=0.15); p.add_argument("--max-h", type=float, default=1.20)
     p.add_argument("--range", type=float, default=15.0)
     p.add_argument("--floor-pct", type=float, default=3.0)
     p.add_argument("--min-hits", type=int, default=3); p.add_argument("--min-blob", type=int, default=3)
+    p.add_argument("--no-pcd", action="store_true", help="do not add obstacles from Preview.pcd")
+    p.add_argument("--pcd-min-pts", type=int, default=3)
+    p.add_argument("--flat-rays", action="store_true", help="old 2D free-space clearing (erases low obstacles)")
     p.add_argument("--info", action="store_true"); p.add_argument("--jpegs", action="store_true")
     a = p.parse_args(); a.out = a.out or f"{a.recording}/map2d"
     m = f"{a.recording}/data/data_raw.mcap"
