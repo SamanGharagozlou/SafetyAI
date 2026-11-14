@@ -14,7 +14,7 @@ export function validateDemoEnvironment(env: Record<string, string | undefined>)
   if (env.VITE_TRANSCRIBE_ENDPOINT) throw new Error('Static demo deployment requires VITE_TRANSCRIBE_ENDPOINT to be empty.')
   // Live Vapi voice sends visitor audio to a third party and needs network access
   // the static demo CSP (connect-src 'none') forbids. It is a separate build.
-  if (env.VITE_VAPI_PUBLIC_KEY || env.VITE_VAPI_ASSISTANT_ID) throw new Error('Static demo deployment requires the Vapi voice keys to be empty.')
+  if (env.VITE_VAPI_PUBLIC_KEY || env.VITE_VAPI_ASSISTANT_ID) throw new Error('Static demo deployment requires the Vapi voice keys to be empty. Clear VITE_VAPI_PUBLIC_KEY and VITE_VAPI_ASSISTANT_ID (they belong in .env.local for `npm run dev` only).')
   if (env.VITE_REQUESTS_ENDPOINT && env.VITE_REQUESTS_ENDPOINT !== '/api/requests') throw new Error('Static demo deployment requires the default, unwired request path.')
   if (env.VITE_REQUEST_STATUS_ENDPOINT && env.VITE_REQUEST_STATUS_ENDPOINT !== '/api/requests/{request_id}') throw new Error('Static demo deployment requires the default, unwired status path.')
   const seconds = env.VITE_DEMO_SESSION_SECONDS || '600'

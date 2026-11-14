@@ -43,10 +43,20 @@ export function resolveVapiConfig(env: Record<string, string | undefined>): Vapi
  * gathering takes ~40s against Vapi's 15s budget. We cannot fix the network
  * from here, but we must never present that as a working call.
  */
-export const CONNECT_TIMEOUT_MS = 20_000
+export const CONNECT_TIMEOUT_MS = 25_000
+
+/**
+ * An unanswered microphone prompt never resolves getUserMedia - it does not
+ * reject, it simply hangs - so the watchdog is armed BEFORE the probe and this
+ * hint is shown while we wait.
+ */
+export const MIC_PROMPT_HINT_MS = 7_000
+
+export const MIC_PROMPT_MESSAGE =
+  'Waiting for microphone permission \u2014 look for your browser\u2019s prompt and choose Allow.'
 
 export const CONNECT_FAILED_MESSAGE =
-  'Could not reach the voice service. A VPN or a restricted network can block this. You can write your request instead.'
+  'Could not reach the voice service. An unanswered microphone prompt, a VPN or a restricted network can block this. You can write your request instead.'
 
 type VapiLike = {
   on(event: string, handler: (payload?: unknown) => void): void
@@ -59,6 +69,7 @@ type VapiLike = {
 export class VapiSession {
   private client: VapiLike | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
+  private hint: ReturnType<typeof setTimeout> | undefined
   private generation = 0
   private settled = false
   private stopped = false
@@ -71,13 +82,22 @@ export class VapiSession {
     this.settled = false
     this.events.onStatus('connecting')
 
+    // Arm the watchdog FIRST, before anything that can hang. Everything below
+    // this line has a way of never returning.
+    this.timer = setTimeout(() => this.fail(CONNECT_FAILED_MESSAGE, generation), CONNECT_TIMEOUT_MS)
+    this.hint = setTimeout(() => {
+      if (generation === this.generation && !this.settled) this.events.onStatus('connecting', MIC_PROMPT_MESSAGE)
+    }, MIC_PROMPT_HINT_MS)
+
     // Permission probe. RELEASE the tracks at once: a held stream leaves the
     // SDK publishing a dead track and the assistant hears silence.
     try {
       const probe = await navigator.mediaDevices.getUserMedia({ audio: true })
       probe.getTracks().forEach(track => track.stop())
+      clearTimeout(this.hint)
+      if (generation === this.generation && !this.settled) this.events.onStatus('connecting')
     } catch {
-      this.fail('Microphone access is needed for a voice call. You can write your request instead.')
+      this.fail('Microphone access was blocked. Allow it in your browser, or write your request instead.', generation)
       return
     }
     if (generation !== this.generation || this.stopped) return
@@ -115,7 +135,6 @@ export class VapiSession {
       if (text) this.events.onTranscript(role, text)
     })
 
-    this.timer = setTimeout(() => this.fail(CONNECT_FAILED_MESSAGE, generation), CONNECT_TIMEOUT_MS)
     try {
       await client.start(this.config.assistantId)
     } catch {
@@ -127,6 +146,7 @@ export class VapiSession {
     if (generation !== this.generation || this.settled) return
     this.settled = true
     clearTimeout(this.timer)
+    clearTimeout(this.hint)
     this.events.onStatus('error', detail)
     this.release()
   }
@@ -140,6 +160,7 @@ export class VapiSession {
     this.stopped = true
     this.generation++
     clearTimeout(this.timer)
+    clearTimeout(this.hint)
     this.release()
   }
 

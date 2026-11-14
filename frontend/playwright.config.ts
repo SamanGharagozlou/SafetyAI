@@ -15,5 +15,9 @@ export default defineConfig({
     command: 'npm run preview:static -- --port 4173',
     url: 'http://127.0.0.1:4173/join',
     reuseExistingServer: false,
+    // These browser tests cover the static demo. A developer running the live
+    // voice build locally keeps real keys in .env.local, which the demo build
+    // deliberately refuses; pin them empty so e2e still describes the artifact.
+    env: { VITE_VAPI_PUBLIC_KEY: '', VITE_VAPI_ASSISTANT_ID: '' },
   },
 })

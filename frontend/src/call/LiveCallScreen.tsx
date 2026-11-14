@@ -4,7 +4,7 @@ import { Robot } from '../Artwork'
 import type { TaskSession } from '../tasks/contracts'
 import { requireActiveSession } from '../tasks/contracts'
 import { VapiSession } from '../voice/vapiSession'
-import type { VapiConfig, VapiRole, VapiStatus } from '../voice/vapiSession'
+import type { VapiConfig, VapiEvents, VapiRole, VapiStatus } from '../voice/vapiSession'
 import { CallVisualizer } from './CallVisualizer'
 import type { CallState } from './state'
 
@@ -46,12 +46,10 @@ export function LiveCallScreen({ config, session, nickname, onExpired, onLeave, 
   const [lines, setLines] = useState<readonly Line[]>([])
   const [muted, setMuted] = useState(false)
   const [seconds, setSeconds] = useState(0)
-  const sessionRef = useRef(new VapiSession(config, {
-    onStatus: (next, why) => { setStatus(next); setDetail(why ?? '') },
-    onLevel: value => { setLevel(value); setLevels(previous => [...previous.slice(1), value]) },
-    onTranscript: (role, text) => setLines(previous => [...previous, { id: previous.length, role, text }].slice(-MAX_LINES)),
-    onSpeaking: setBotSpeaking,
-  }))
+  // ONE VapiSession per call, created on the button press - never one per
+  // component. StrictMode mounts, cleans up and remounts, so an instance held
+  // in a ref initializer is already stopped by the time the user clicks.
+  const sessionRef = useRef<VapiSession | null>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const start = useRef<HTMLButtonElement>(null)
   const active = status === 'connecting' || status === 'live'
@@ -59,7 +57,8 @@ export function LiveCallScreen({ config, session, nickname, onExpired, onLeave, 
   useEffect(() => { heading.current?.focus({ preventScroll: true }) }, [])
 
   const end = useCallback(() => {
-    sessionRef.current.stop()
+    sessionRef.current?.stop()
+    sessionRef.current = null
     setStatus(previous => (previous === 'error' ? previous : 'ended'))
     setLevel(0)
     setLevels(Array(LEVELS).fill(0))
@@ -70,7 +69,7 @@ export function LiveCallScreen({ config, session, nickname, onExpired, onLeave, 
   // The visitor session is still the authority on how long this may run.
   useEffect(() => {
     try { requireActiveSession(session) } catch { end(); onExpired() }
-  }, [session, end, onExpired])
+  }, [session.id, session.expiresAt, session, end, onExpired])
 
   useEffect(() => {
     if (!active) return
@@ -79,19 +78,21 @@ export function LiveCallScreen({ config, session, nickname, onExpired, onLeave, 
       setSeconds(value => value + 1)
     }, 1000)
     return () => clearInterval(timer)
-  }, [active, session, end, onExpired])
+  }, [active, session.id, session.expiresAt, session, end, onExpired])
 
   // A hidden tab, a navigation away or an unmount must drop the call and the mic.
   useEffect(() => {
-    const current = sessionRef.current
     const hide = () => { if (document.visibilityState === 'hidden') end() }
-    const leave = () => current.stop()
+    const leave = () => sessionRef.current?.stop()
     document.addEventListener('visibilitychange', hide)
     window.addEventListener('pagehide', leave)
     return () => {
       document.removeEventListener('visibilitychange', hide)
       window.removeEventListener('pagehide', leave)
-      current.stop()
+      // Read .current at cleanup time: a call started after this effect ran
+      // must still be torn down.
+      sessionRef.current?.stop()
+      sessionRef.current = null
     }
   }, [end])
 
@@ -99,16 +100,25 @@ export function LiveCallScreen({ config, session, nickname, onExpired, onLeave, 
 
   function begin() {
     try { requireActiveSession(session) } catch { end(); onExpired(); return }
+    sessionRef.current?.stop()
+    const events: VapiEvents = {
+      onStatus: (next, why) => { setStatus(next); setDetail(why ?? '') },
+      onLevel: value => { setLevel(value); setLevels(previous => [...previous.slice(1), value]) },
+      onTranscript: (role, text) => setLines(previous => [...previous, { id: previous.length, role, text }].slice(-MAX_LINES)),
+      onSpeaking: setBotSpeaking,
+    }
+    const live = new VapiSession(config, events)
+    sessionRef.current = live
     setLines([])
     setDetail('')
     setSeconds(0)
-    void sessionRef.current.start()
+    void live.start()
   }
 
   function toggleMute() {
     const next = !muted
     setMuted(next)
-    sessionRef.current.setMuted(next)
+    sessionRef.current?.setMuted(next)
   }
 
   const minutes = Math.floor(seconds / 60).toString().padStart(2, '0')
@@ -136,7 +146,7 @@ export function LiveCallScreen({ config, session, nickname, onExpired, onLeave, 
         <div className="call-stage-top"><span className="demo-pill">Live voice</span><span className="call-timer">{clock}</span></div>
         <CallVisualizer state={visualState[status]} active={status === 'live' && !muted} level={muted ? 0 : level} levels={muted ? Array(LEVELS).fill(0) : levels}/>
         <h1 ref={heading} tabIndex={-1} id="call-heading">{spoken}</h1>
-        <p className="call-substatus">{muted ? 'Microphone off' : status === 'live' ? 'No buttons. Interrupt whenever you like.' : 'Setting up the call…'}</p>
+        <p className="call-substatus">{detail || (muted ? 'Microphone off' : status === 'live' ? 'No buttons. Interrupt whenever you like.' : 'Setting up the call…')}</p>
         {lines.length > 0 && <div className="call-history" aria-label="Conversation transcript" aria-live="polite">
           {lines.slice(-4).map(line => <div key={line.id} className={line.role === 'user' ? 'history-user' : 'history-assistant'}>
             <span>{line.role === 'user' ? 'You' : 'ClawMetry'}</span><p>{line.text}</p>
