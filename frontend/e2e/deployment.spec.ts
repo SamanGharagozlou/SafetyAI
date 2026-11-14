@@ -1,3 +1,4 @@
+import { openTextFallback } from './textFallback'
 import { expect, test } from '@playwright/test'
 import { mockMedia } from './media'
 
@@ -77,19 +78,19 @@ test('strict policy preserves deliberate capture and a mock-only task without st
   await page.goto('/join')
   await page.getByRole('button', { name: 'Continue as Guest' }).click()
   expect(await page.evaluate(() => window.__voiceTest.requests)).toBe(0)
-  await expect(page.getByText('ROBOT STATUS · DEMO MODE')).toBeVisible()
-  await expect(page.getByText('Transcription not connected', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Start Recording' }).click()
+  await expect(page.getByText('Demo mode', {exact:true})).toBeVisible()
+  await expect(page.getByText('Local demo · no real robot connection')).toBeVisible()
+  await page.getByRole('button', { name: 'Start Conversation' }).click()
   expect(await page.evaluate(() => window.__voiceTest.requests)).toBe(1)
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.getByRole('button', { name: 'End Call', exact: true }).click()
   expect(await page.evaluate(() => window.__voiceTest.stops)).toBe(1)
-  await page.getByRole('button', { name: 'Type a request' }).click()
+  await openTextFallback(page)
   await page.getByLabel('Your request', { exact: true }).fill('Hello')
-  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await page.getByRole('button', { name: 'Review request', exact: true }).click()
   await page.getByRole('button', { name: 'Confirm demo request' }).click()
   await page.clock.runFor(4500)
-  await expect(page.getByRole('heading', { name: 'Demo complete', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'End Session' }).click()
+  await expect(page.getByRole('heading', { name: 'Demo response ready', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Leave session' }).click()
   expect(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length }))).toEqual({ local: 0, session: 0 })
   expect(await page.evaluate(async () => await indexedDB.databases())).toEqual([])
   expect(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length)).toBe(0)

@@ -4,6 +4,12 @@ export const MAX_RECORDING_MS = 20_000
 let microphoneRequestPending = false
 const MIME_TYPES = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm']
 
+export interface RecorderOptions {
+  onStream?(stream: MediaStream): void
+  onLimit?(): void
+}
+export const MAX_AUDIO_BYTES = 8 * 1024 * 1024
+
 export interface AudioClip {
   readonly blob: Blob
   readonly mimeType: string
@@ -59,6 +65,9 @@ export class VoiceRecorder {
   private recorder: MediaRecorder | null = null
   private chunks: Blob[] = []
   private startedAt = 0
+  private bufferBytes = 0
+  private options: RecorderOptions = {}
+  private permissionStatus: PermissionStatus | null = null
   private limitTimer: ReturnType<typeof setTimeout> | undefined
   private tickTimer: ReturnType<typeof setInterval> | undefined
   private stopTimer: ReturnType<typeof setTimeout> | undefined
@@ -78,13 +87,16 @@ export class VoiceRecorder {
     clearTimeout(this.stopTimer)
   }
   private releaseTracks() {
+    if (this.permissionStatus) this.permissionStatus.onchange = null
+    this.permissionStatus = null
     this.stream?.getTracks().forEach(track => {
       track.onended = null
+      track.onmute = null
       track.stop()
     })
     this.stream = null
   }
-  private releaseRecorder() {
+  private releaseRecorder(releaseStream = true) {
     this.clearTimers()
     if (this.recorder) {
       this.recorder.ondataavailable = null
@@ -93,8 +105,9 @@ export class VoiceRecorder {
       try { if (this.recorder.state !== 'inactive') this.recorder.stop() } catch { /* Tracks still close below. */ }
       this.recorder = null
     }
-    this.releaseTracks()
+    if (releaseStream) this.releaseTracks()
     this.chunks = []
+    this.bufferBytes = 0
   }
   private releaseClip() {
     if (this.snapshot.clip) URL.revokeObjectURL(this.snapshot.clip.url)
@@ -108,7 +121,7 @@ export class VoiceRecorder {
       message })
   }
 
-  start = async () => {
+  start = async (options: RecorderOptions = {}) => {
     // Cancel cannot dismiss the native permission prompt. Do not open another one.
     if (this.pending || ['requesting', 'recording', 'stopping'].includes(this.snapshot.status)) return
     if (microphoneRequestPending) {
@@ -119,6 +132,7 @@ export class VoiceRecorder {
     if (unavailable) { this.fail(unavailable); return }
     this.cancel()
     const generation = ++this.generation
+    this.options = options
     this.pending = true
     microphoneRequestPending = true
     this.update({ status: 'requesting', permission: 'requesting', requestPending: true, message: '' })
@@ -133,19 +147,61 @@ export class VoiceRecorder {
       if (!stream.getAudioTracks().some(track => track.readyState === 'live')) {
         throw new DOMException('No live audio track', 'NotFoundError')
       }
-      const mimeType = supportedMimeType()
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-      this.recorder = recorder
-      this.chunks = []
       stream.getTracks().forEach(track => {
         track.onended = () => {
-          if (generation === this.generation && this.snapshot.status === 'recording') {
-            this.fail('The microphone disconnected. Try again, or type your request.')
-          }
+          if (this.stream === stream) this.fail('The microphone disconnected. Try again, or type your request.')
         }
       })
+      stream.getAudioTracks().forEach(track => {
+        track.onmute = () => { if (this.stream === stream) this.fail('Microphone input was interrupted. Resume deliberately, or type your request.') }
+      })
+      // Optional browser support: watch revocation only after deliberate permission.
+      // Bind to this stream, so rolling silent buffers does not detach the watcher.
+      try { void navigator.permissions?.query?.({ name: 'microphone' as PermissionName }).then(status => {
+        if (this.stream !== stream) return
+        this.permissionStatus = status
+        const changed = () => { if (this.stream === stream && status.state === 'denied') this.fail('Microphone permission was revoked. You can type your request.', true) }
+        status.onchange = changed
+        changed()
+      }).catch(() => { /* Safari may not implement microphone permission queries. */ }) } catch { /* Older implementations can throw synchronously. Track events still guard capture. */ }
+      options.onStream?.(stream)
+      // The analyser can fail/cancel synchronously while attaching.
+      if (generation === this.generation && this.stream === stream) this.beginTurn()
+    } catch (error) {
+      if (generation === this.generation) {
+        const failure = recordingError(error)
+        this.fail(failure.message, failure.denied)
+      }
+    } finally {
+      microphoneRequestPending = false
+      this.pending = false
+      // This also unlocks Start after a canceled permission prompt eventually settles.
+      this.update({ requestPending: false })
+    }
+  }
+
+  private finishLimit() { if (this.options.onLimit) this.options.onLimit(); else this.stop() }
+
+  /** Drop an unsubmitted silent/noise window without opening a second microphone. */
+  restartTurn = () => {
+    if (!this.stream || this.snapshot.status !== 'recording') return
+    this.generation++
+    this.releaseRecorder(false)
+    this.beginTurn()
+  }
+  private beginTurn() {
+    const generation = this.generation
+    this.bufferBytes = 0
+    try {
+      const mimeType = supportedMimeType()
+      const recorder = new MediaRecorder(this.stream!, mimeType ? { mimeType } : undefined)
+      this.recorder = recorder
+      this.chunks = []
       recorder.ondataavailable = event => {
-        if (generation === this.generation && event.data.size > 0) this.chunks.push(event.data)
+        if (generation !== this.generation || event.data.size <= 0) return
+        this.bufferBytes += event.data.size
+        if (this.bufferBytes > MAX_AUDIO_BYTES) { this.fail('The audio buffer reached its safe limit. Please try a shorter turn or type instead.'); return }
+        this.chunks.push(event.data)
       }
       recorder.onerror = () => {
         if (generation === this.generation) this.fail('Recording failed. Your microphone is off. Try again, or type instead.')
@@ -170,22 +226,16 @@ export class VoiceRecorder {
       this.startedAt = performance.now()
       recorder.start(250)
       this.update({ status: 'recording', permission: 'granted', elapsedMs: 0 })
-      this.limitTimer = setTimeout(() => this.stop(), MAX_RECORDING_MS)
+      this.limitTimer = setTimeout(() => { if (generation === this.generation) this.finishLimit() }, MAX_RECORDING_MS)
       this.tickTimer = setInterval(() => {
+        if (generation !== this.generation) return
         const elapsedMs = Math.min(MAX_RECORDING_MS, performance.now() - this.startedAt)
         this.update({ elapsedMs })
-        if (elapsedMs >= MAX_RECORDING_MS) this.stop()
+        if (elapsedMs >= MAX_RECORDING_MS) this.finishLimit()
       }, 100)
     } catch (error) {
-      if (generation === this.generation) {
-        const failure = recordingError(error)
-        this.fail(failure.message, failure.denied)
-      }
-    } finally {
-      microphoneRequestPending = false
-      this.pending = false
-      // This also unlocks Start after a canceled permission prompt eventually settles.
-      this.update({ requestPending: false })
+      const failure = recordingError(error)
+      this.fail(failure.message, failure.denied)
     }
   }
 

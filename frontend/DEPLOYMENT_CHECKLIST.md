@@ -1,6 +1,6 @@
 # ClawMetry Phase 5A deployment checklist
 
-**Status: locally prepared and tested; not deployed.** No public URL, provider account, DNS, certificate, production headers, physical phone, or hosting retention practice has been verified. This profile needs no backend. Do not publish, commit, push, or change production without separate authorization.
+**Status: this update is local only; the existing public Worker is unchanged.** Existing deployment headers, provider account, DNS, certificate, physical phones, and hosting retention have not been verified by this update. The Pages configuration below is an alternative future static-hosting plan, not a change to the deployed Worker. This profile needs no backend. Do not publish, commit, push, or change production without separate authorization.
 
 ## 1. Hosting configuration — Cloudflare Pages, static only
 
@@ -95,7 +95,7 @@ Exact local 200 rewrites cover `/join`, `/join/`, `/session`, `/session/`, `/pri
 | `/assets/missing.js`, `/api/requests`, `/api/transcribe` | HTTP 404; never a 200 SPA or fake backend response |
 | Every entry route | Working local JS/CSS, no CSP violations, no mixed content, no unexpected origin redirect |
 
-After a separately authorized deployment, paste the **actual HTTPS origin without a trailing slash** and inspect final headers. These are future operator checks; no public requests were made by this task:
+After a separately authorized deployment, paste the **actual HTTPS origin without a trailing slash** and inspect final headers. These are future operator checks, not evidence that production headers have been verified:
 
 ```sh
 # zsh; use read -r -p 'Actual HTTPS origin: ' PUBLIC_ORIGIN in bash
@@ -139,21 +139,20 @@ The public headers do not create authentication, robot authorization, legal comp
 
 ## 5. Real-phone acceptance tests — still pending
 
-Use at least one physical iPhone with Safari and one Android phone with Chrome. Record OS/browser versions and the tested deployment ID privately. Open in a full browser; QR scanner webviews may not support microphone APIs. **Do not use a browser security override or bypass an untrusted certificate.**
+Use physical iPhone Safari and Android Chrome on a trusted HTTPS test host, without updating the public demo until manually approved. Record OS/browser versions. QR webviews may lack required media APIs. Do not bypass certificates.
 
-- [ ] Scan/open the actual `/join` URL on HTTPS. Confirm no mic prompt on load or joining.
-- [ ] Join as Guest, then with a nickname. No real name/account/email required. Confirm **Demo mode**, **Transcription not connected**, and simulated task labels remain visible.
-- [ ] Start Recording deliberately, Allow, speak, and Stop. Verify timer, readable indicator, local playback, and the browser's active capture indicator stopping.
-- [ ] Test Cancel during recording; Retry; Discard; 20-second automatic stop; repeated taps; an ignored/canceled permission prompt followed by a late Allow. No overlapping/background capture or automatic restart.
-- [ ] Deny microphone permission. Typed requests must remain usable. Permission may remain granted/denied in browser site settings after session end; stopping tracks does not revoke that setting.
-- [ ] While recording, open privacy, use Back, switch apps/tabs, lock/unlock the phone, and End Session. Verify capture stops and does not resume automatically. Check audio-device/Bluetooth interruption and native playback volume behavior.
-- [ ] Verify session expiry during recording, review, confirmation, and task status. Use the default 10-minute expiry or an independently reviewed **preview-only** short-duration artifact; restore/rebuild the normal tested configuration before publication.
-- [ ] With disconnected transcription, Continue after review must clear the unsent clip and show manual text entry; no invented transcript and no POST.
-- [ ] Type Hello / Robot info / Help; Continue; Edit; Cancel; Confirm. Only Confirm creates a demo task. Observe awaiting-approval and completion labels; unsupported movement must be declined.
-- [ ] Start another interaction; End Session; refresh. No old name/request/transcript/audio/task should reappear in a new session.
-- [ ] Test 320px-equivalent narrow portrait, short landscape, on-screen keyboard, zoom, VoiceOver/TalkBack, large text, and reduced motion. Allow normal vertical scrolling; verify no horizontal overflow or inaccessible controls.
-- [ ] In browser inspection, confirm only same-origin static GETs and local Blob playback: no analytics, API POSTs, WebSockets, cookies, local/session storage, IndexedDB databases, or service-worker registrations created by the app.
-- [ ] Test actual direct route visits and refreshes listed above, on cellular as well as Wi-Fi.
+- [ ] Join as Guest and nickname; no microphone prompt before Start Conversation. Demo and no-real-robot labels stay visible.
+- [ ] Start deliberately, Allow, wait for calibration, speak, then pause. Speech finishes locally after silence; no recorder form/player appears in the disconnected demo. Check actual reactive orb/waveform, not decorative motion.
+- [ ] Test quiet, crowded rooms, normal pauses, soft speech, bumps, Bluetooth, silence, and continuous speech. Tune VAD with evidence; it is an amplitude heuristic. Finish turn remains a small fallback; 20-second maximum ends only the utterance.
+- [ ] Mute during listening and speech: capture indicator stops, partial audio discarded. Wait: no hidden collection. Unmute explicitly resumes.
+- [ ] No connected transcription: blank manual editor, no fabricated transcript or POST. Review → Edit/Cancel → Confirm; only Confirm creates a demo task. Unsupported movement is declined. Verify every simulated task state, unavailable service and timeout.
+- [ ] After a demo response, another turn resumes safely within the same visible unmuted call. Verify fresh AudioContext/capture on Safari; if interrupted, Unmute is required. Never resume during review/upload/task processing, when muted or hidden.
+- [ ] End Call during capture, permission prompt, review, upload development fixture and task processing: resources/history clear, pre-call returns, session remains. Late Allow must stop immediately. Leave session clears nickname/session too.
+- [ ] Open privacy, Back, switch tabs/apps, lock/unlock, revoke permission, unplug/change audio devices. Mic stops and does not restart without deliberate action after interruption.
+- [ ] Expiry during capture/review/confirmation/task clears data and blocks submission. Use default ten minutes, or a preview-only short session setting; rebuild the normal artifact afterward.
+- [ ] Test 320, 375, 390, 430px widths, short landscape, keyboard, zoom/large text, VoiceOver/TalkBack and reduced motion. Mute/End remain reachable; normal page scroll, no horizontal overflow or nested traps.
+- [ ] Inspect network/storage: static same-origin GET only, no audio POST or third-party services, analytics, cookies, local/session storage, IndexedDB or service worker. Optional configured integration belongs in a separate reviewed profile with explicit per-turn upload consent.
+- [ ] Verify actual HTTPS, direct/refresh routes, missing API/asset 404s, cellular/Wi-Fi behavior and privacy wording.
 
 ## 6. QR code — eventual real HTTPS URL only
 
@@ -190,7 +189,7 @@ If no eligible previous production exists, restoring a retained approved static 
 - [ ] Verify actual HTTPS, CSP, microphone policy, `/join`, `/session`, `/privacy`, missing-asset 404s, and a mock task after rollback.
 - [ ] Confirm dashboard injection, cache rules, and environment settings remain appropriate; artifact rollback does not verify account-level settings.
 - [ ] Retain the stable hostname/path so printed QR codes keep working.
-- [ ] Ask active visitors to End Session/reload. Already-open pages may keep their loaded JS/memory until reload; rollback cannot forcibly erase client or server data.
+- [ ] Ask active visitors to Leave session/reload. Already-open pages may keep their loaded JS/memory until reload; rollback cannot forcibly erase client or server data.
 
 ## 8. Privacy/security audit findings and limits
 
@@ -198,13 +197,13 @@ If no eligible previous production exists, restoring a retained approved static 
 
 **Remaining gaps:** hosting requests can expose IP/user-agent/timing to the host/CDN and may be logged. Provider analytics, retention, account settings, TLS/DNS, edge header application, and real-phone capture cannot be inferred from a local artifact. The privacy notice already says hosting practices are unverified; update it if actual hosting adds processing. No GDPR/legal certification or backend deletion behavior is claimed.
 
-React memory and object-URL cleanup remove application references, not a cryptographic memory wipe. Browser/OS buffers, browser history/back-forward cache, crash/session restore, device permissions, and suspended timers remain platform-dependent. An inactive page may remain in browser memory; End Session before handing the device to another visitor. Timers/cleanup execute when the browser schedules JavaScript. The app is a public prototype with client-controlled demo sessions, not an authenticated robot-safety boundary. CSP and pattern scans do not protect against every first-party compromise or unknown hardcoded secret.
+React memory and object-URL cleanup remove application references, not a cryptographic memory wipe. Browser/OS buffers, browser history/back-forward cache, crash/session restore, device permissions, and suspended timers remain platform-dependent. An inactive page may remain in browser memory; Leave session before handing the device to another visitor. Timers/cleanup execute when the browser schedules JavaScript. The app is a public prototype with client-controlled demo sessions, not an authenticated robot-safety boundary. CSP and pattern scans do not protect against every first-party compromise or unknown hardcoded secret.
 
 - [ ] Obtain owner review of actual hosting log/retention practices and privacy wording.
 - [ ] Complete the physical-device tests; local Chrome emulation is not Safari/Android hardware verification.
 - [ ] Obtain separate deployment authorization after these checks and artifact review.
 
-## 9. Recorded local validation — 2026-11-14
+## 9. Historical Phase 5A validation — 2026-11-14 (superseded locally)
 
 | Check | Result |
 | --- | --- |
@@ -216,12 +215,20 @@ React memory and object-URL cleanup remove application references, not a cryptog
 | `npm run test:e2e` | **43 passed** in 8.4s, including all 33 previous journeys, using the strict local static policy |
 | Negative configuration checks | Unexpected synthetic public-token key and nonempty transcription endpoint both rejected before bundling; values not printed |
 | Artifact audit | Passed; no detected credential/private-address/unreviewed-origin patterns; matching route entries; no source maps |
-| HTTPS host / real phones / public QR | **Not performed**; no deployment or production URL exists in this task |
+| HTTPS host / real phones / public QR | **Not performed in that historical phase**; current update leaves the existing public Worker unchanged |
 
-Audited artifact SHA-256 (aggregate of sorted relative filenames and bytes):
+Historical Phase 5A artifact SHA-256 (not the current Phase 5C artifact; aggregate of sorted relative filenames and bytes):
 
 ```text
 489c1d6a29133d42589802301e12d6fe121c13d9b063463981c88d3f353b388e
 ```
 
 Rebuilds may produce a different digest; retain the digest for the exact artifact approved for deployment, not a copied value from an earlier build.
+
+## 10. Final conversational interface — local update
+
+The existing deployed Worker, security headers, environment guards, routes and ZIP archives are unchanged. Old archive contents and historical hashes above are not this update’s release artifact. Do not upload those archives. The current implementation uses a dedicated CallScreen, local calibrated amplitude VAD, a bounded in-memory history, explicit review/confirmation, and anchored Mute/End controls. See [CALL_INTERFACE.md](./CALL_INTERFACE.md) for current validation and known limitations.
+
+No deployment, commit, merge, push, physical phone verification, real API connection or production-header verification is performed. Before any separately authorized deployment, rebuild/re-audit the exact artifact, retain its emitted digest and complete the physical-device checklist. Keep the existing production origin and printed QR unchanged.
+
+Current conversational update: TypeScript passed; **246 unit/integration tests** (17 files) and **52 browser tests** passed; audited 10-file Demo build passed. All seven requested screenshot states were reviewed. Screenshots and test artifacts are ignored local output. Physical-phone tests and backend integration remain pending. See CALL_INTERFACE.md for the exact current artifact audit record.

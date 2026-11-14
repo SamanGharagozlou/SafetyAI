@@ -7,6 +7,13 @@ declare global {
       stops: number
       revoked: number
       resolve: (() => void) | null
+      rms: number
+      contexts: number
+      closedContexts: number
+      nodeDisconnects: number
+      activeTracks: number
+      interrupt: () => void
+      remove: () => void
     }
   }
 }
@@ -14,12 +21,15 @@ declare global {
 /** Synthetic audio and permissions: browser tests never open the real microphone. */
 export async function mockMedia(page: Page, permission: 'grant' | 'pending' | 'NotAllowedError' | 'NotFoundError' | 'NotReadableError' = 'grant') {
   await page.addInitScript(({ permission }) => {
-    const state = { requests: 0, stops: 0, revoked: 0, resolve: null as (() => void) | null }
+    const state = { requests: 0, stops: 0, revoked: 0, resolve: null as (() => void) | null, rms: 0.003, contexts: 0, closedContexts: 0, nodeDisconnects: 0, activeTracks: 0, interrupt: () => {}, remove: () => {} }
     window.__voiceTest = state
     const originalRevoke = URL.revokeObjectURL.bind(URL)
     URL.revokeObjectURL = url => { state.revoked++; originalRevoke(url) }
+    const tracks: { readyState: string; onended: (() => void) | null; stop(): void }[] = []
     function stream() {
-      const track = { readyState: 'live', onended: null, stop() { if (this.readyState === 'live') state.stops++; this.readyState = 'ended' } }
+      state.activeTracks++
+      const track = { readyState: 'live', onended: null as (() => void) | null, stop() { if (this.readyState === 'live') { state.stops++; state.activeTracks-- }; this.readyState = 'ended' } }
+      tracks.push(track)
       return { getTracks: () => [track], getAudioTracks: () => [track] } as unknown as MediaStream
     }
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
@@ -54,6 +64,19 @@ export async function mockMedia(page: Page, permission: 'grant' | 'pending' | 'N
         queueMicrotask(() => { this.ondataavailable?.({ data: wav() } as BlobEvent); this.onstop?.() })
       }
     }
+    const contexts: SyntheticAudioContext[] = []
+    class SyntheticAudioContext {
+      state = 'running'
+      onstatechange: (() => void) | null = null
+      constructor() { state.contexts++; contexts.push(this) }
+      resume() { this.state = 'running'; return Promise.resolve() }
+      close() { if (this.state !== 'closed') state.closedContexts++; this.state = 'closed'; return Promise.resolve() }
+      createMediaStreamSource() { return { connect() {}, disconnect() { state.nodeDisconnects++ } } }
+      createAnalyser() { return { fftSize: 1024, getFloatTimeDomainData(data: Float32Array) { data.fill(state.rms) }, disconnect() { state.nodeDisconnects++ } } }
+    }
+    state.interrupt = () => { for (const context of contexts) if (context.state !== 'closed') { context.state = 'suspended'; context.onstatechange?.() } }
+    state.remove = () => { for (const track of tracks) if (track.readyState === 'live') { track.stop(); track.onended?.() } }
+    Object.defineProperty(window, 'AudioContext', { configurable: true, value: SyntheticAudioContext })
     Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: SyntheticRecorder })
   }, { permission })
 }

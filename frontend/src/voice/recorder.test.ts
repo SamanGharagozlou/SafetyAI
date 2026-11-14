@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { installMediaMocks, MockMediaRecorder } from '../test/media'
-import { MAX_RECORDING_MS, VoiceRecorder } from './recorder'
+import { MAX_AUDIO_BYTES, MAX_RECORDING_MS, VoiceRecorder } from './recorder'
 
 let media: ReturnType<typeof installMediaMocks>
 let recorder: VoiceRecorder
@@ -167,5 +167,48 @@ describe('permissions, compatibility, and unusable recordings', () => {
     recorder.stop()
     expect(media.streams[0].track.stop).toHaveBeenCalledTimes(1)
     expect(recorder.getSnapshot().status).toBe('error')
+  })
+})
+
+
+describe('bounded conversational buffering and interruptions', () => {
+  it('recycles native recorders on the same stream and ignores stale chunks', async () => {
+    await recorder.start()
+    const old = MockMediaRecorder.instances[0]
+    const late = old.ondataavailable
+    recorder.restartTurn()
+    late?.({ data: new Blob(['stale']) } as BlobEvent)
+    expect(media.getUserMedia).toHaveBeenCalledTimes(1)
+    expect(media.streams[0].track.stop).not.toHaveBeenCalled()
+    expect(old.onstop).toBeNull()
+    recorder.stop(); await Promise.resolve()
+    expect(await recorder.getSnapshot().clip!.blob.text()).toBe('test audio')
+    expect(media.streams[0].track.stop).toHaveBeenCalledTimes(1)
+  })
+  it('releases capture if the byte limit is exceeded', async () => {
+    await recorder.start()
+    MockMediaRecorder.instances[0].ondataavailable?.({ data: new Blob([new Uint8Array(MAX_AUDIO_BYTES + 1)]) } as BlobEvent)
+    expect(recorder.getSnapshot().status).toBe('error')
+    expect(recorder.getSnapshot().message).toContain('safe limit')
+    expect(media.streams[0].track.stop).toHaveBeenCalledTimes(1)
+    expect(media.createObjectURL).not.toHaveBeenCalled()
+  })
+  it('stops a temporarily muted device rather than showing ongoing capture', async () => {
+    await recorder.start()
+    const track = media.streams[0].track as unknown as MediaStreamTrack
+    track.onmute?.(new Event('mute'))
+    expect(recorder.getSnapshot().message).toContain('interrupted')
+    expect(track.readyState).toBe('ended')
+    expect(track.onmute).toBeNull()
+  })
+  it('watches permission revocation and detaches the listener on cleanup', async () => {
+    const status = { state: 'granted', onchange: null as (() => void) | null }
+    vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { permissions: { query: vi.fn(async () => status) } }))
+    await recorder.start(); await Promise.resolve()
+    expect(status.onchange).toBeTypeOf('function')
+    status.state = 'denied'; status.onchange?.()
+    expect(recorder.getSnapshot()).toMatchObject({ status: 'error', permission: 'denied' })
+    expect(media.streams[0].track.stop).toHaveBeenCalledTimes(1)
+    expect(status.onchange).toBeNull()
   })
 })

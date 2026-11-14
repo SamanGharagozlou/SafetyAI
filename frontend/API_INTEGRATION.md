@@ -86,7 +86,7 @@ The current demo polls sequentially at 500ms plus adapter latency and has a 12-s
 
 The adapter passes AbortSignals to fetch. Canceling a browser request or disposing UI state **cannot guarantee server-side cancellation, halted robot activity, or deletion**. Only the local mock is disposed today. No cancellation endpoint is proposed or invented. Real cancellation, operator interruption, session expiry during execution, and safe-state behavior require an explicit backend contract before real tasks can be wired.
 
-Agree on what the server stores, who can access it, audio/transcript/request retention, deletion, and logging/redaction. Local End Session clears frontend references; it is not a backend deletion guarantee. There are no application request/transcript logs or analytics in this frontend.
+Agree on what the server stores, who can access it, audio/transcript/request retention, deletion, and logging/redaction. Local Leave session clears frontend references; it is not a backend deletion guarantee. There are no application request/transcript logs or analytics in this frontend.
 
 ## Existing transcription proposal
 
@@ -95,7 +95,7 @@ The separately optional adapter remains disconnected by default:
 - `VITE_TRANSCRIBE_ENDPOINT` blank means no audio uploads.
 - Proposed `POST /api/transcribe`: multipart `audio` Blob/file, actual `mime_type`, rounded `duration_ms`.
 - Proposed response: `{ text: string }`, nonempty and at most 2000 characters.
-- Only **Continue — send for transcription** uploads audio; recording/review do not.
+- Only **Send audio for transcription** uploads the individually authorized audio turn; recording/review do not.
 - Returned text is editable and still requires a separate task confirmation.
 - No nickname or mock session ID is sent. Confirm authentication, accepted formats, size/duration limits, errors, retention, and request binding before enabling.
 
@@ -108,3 +108,13 @@ The separately optional adapter remains disconnected by default:
 5. Keep internal robot addresses/SDK details server-side and return only visitor-safe text and codes.
 6. Verify retention/deletion and logging practices; update visitor privacy information to match actual behavior.
 7. Deliberately wire the real adapter in a separately reviewed change, with tests against the actual API. Setting endpoint environment values alone cannot enable it in Phase 4.
+
+## Local conversational call lifecycle
+
+`src/call/CallController.ts` owns the local call state machine, generation guards, microphone analysis, local amplitude-based turn detector, per-turn upload consent, compact confirmation and mock task polling. `CallScreen` uses the existing transcription adapter and `createMockTaskAdapter` only; the prepared HTTP task adapter is deliberately unwired. The demo controller rejects real/non-demo task responses, so future integration requires deliberate controller changes as well as a verified adapter.
+
+Start Conversation is the first microphone action. VAD finishes turns locally without transmitting audio. The disconnected demo immediately clears audio and offers a manual editor in-call. A configured development transcription client retains one clip for explicit per-turn Send audio for transcription authorization. The proposed multipart contract above is unchanged; authentication and retention are still unverified. No nickname or demo session ID is used as credentials.
+
+After review, Confirm alone creates a mock task. The seven finite task statuses remain simulated. A terminal demo response schedules the next listening turn after 2.5 seconds only while active, visible, unmuted, unexpired and free of pending work. Mute closes tracks/analysis and prevents resumption; End Call additionally clears conversation history, cancels local polling, aborts/ignores uploads and returns to pre-call. Leave session clears the underlying visitor session too. Browser hiding pauses capture and local tracking, requiring deliberate Unmute. Navigation and expiry dispose the call. These controls do not represent backend cancellation, a physical stop command, server deletion, or real robot connection.
+
+The default public demo must remain API-disabled until the backend teammate verifies contracts, credentials, authorization, safety, content/retention policies, timing and idempotency. No deployed Worker changes are included. See [CALL_INTERFACE.md](./CALL_INTERFACE.md) for local state and capture architecture.

@@ -1,3 +1,4 @@
+import { openTextFallback } from '../test/textFallback'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from '../App'
@@ -48,17 +49,17 @@ describe('explicit confirmation', () => {
     render(<App/>)
     fireEvent.change(screen.getByLabelText(/What should I call you/), { target: { value: 'Nova' } })
     fireEvent.click(screen.getByRole('button', { name: /Let's Get Started/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Type a request' }))
+    openTextFallback()
     fireEvent.change(screen.getByLabelText('Your request'), { target: { value: 'Hello' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review request' }))
     fireEvent.click(screen.getByRole('button', { name: 'Edit request' }))
     fireEvent.change(screen.getByLabelText('Your request'), { target: { value: 'Robot info' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review request' }))
     expect(screen.getByText('Robot info')).toBeInTheDocument()
-    expect(screen.getByText('ROBOT_INFO', { selector: 'code' })).toBeInTheDocument()
+    expect(screen.getByText(/ROBOT_INFO/, { selector: 'code' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel request' }))
     expect(screen.getByLabelText('Your request')).toHaveValue('')
-    expect(screen.getByRole('heading', { name: 'Nice to meet you, Nova!' })).toBeInTheDocument()
+    expect(screen.getByText('Nice to meet you, Nova!')).toBeInTheDocument()
     expect(screen.queryByText('Demo request ID')).not.toBeInTheDocument()
   })
   it('blocks Confirm at the absolute session deadline even before a timer fires', () => {
