@@ -384,18 +384,16 @@ error and does not silently fall back to CPU. Export with the same `imgsz` you c
 - The capture thread always keeps only the newest frame, so a slow link lowers the FPS but
   does not build up latency.
 
-**Host-side `ros2 topic echo` or your own node gets small topics but no `detections`**
-- The container runs as root with `ipc: host`. Fast DDS creates its shared-memory segments
-  `0644` (umask does not change this), so a normal-user process on the host cannot read data
-  the container sends over shared memory. `count` and `present` (a few bytes) still arrive,
-  but `detections` with boxes never does. Inside the container everything works.
-- Fix on the host process: use a UDP-only profile.
-  ```bash
-  export FASTRTPS_DEFAULT_PROFILES_FILE=$PWD/scripts/fastdds_udp_only.xml
-  ```
-  Verified: a host subscriber received `Detection2DArray` (4 boxes) at once with this
-  profile, and nothing without it.
-- Also, a stale `ros2 daemon` on the host can hang `ros2` commands; `kill -9` it.
+**Host-side `ros2 topic echo` or your own node gets `count`/`present` but no `detections`**
+- On WSL2, UDP datagrams above the 1500-byte MTU are IP-fragmented and get lost between the
+  container and host processes. Small messages arrive; a `Detection2DArray` with 4 or more
+  boxes (about 1.9 KB) never does. Inside the container everything works.
+- The image therefore ships `docker/fastdds_profile.xml` (`FASTRTPS_DEFAULT_PROFILES_FILE`):
+  the usual shared-memory and UDP transports, with UDP datagrams capped at 1400 bytes so Fast
+  DDS fragments them itself. Rebuild with `make build` if you have an older image.
+- Verified on WSL2 with synthetic messages of 0/1/2/4/8 boxes (default host profile): all
+  arrived; with the old image, 4 boxes never arrived.
+- A stale `ros2 daemon` on the host can hang `ros2` commands; `kill -9` it.
 
 **RTSP stream does not connect**
 - Test outside ROS first: `ffprobe -rtsp_transport tcp rtsp://192.168.234.1:8554/test`, or
@@ -528,8 +526,8 @@ commercialising. Nothing here is legal advice.
 
 ```
 Makefile  docker-compose.yml  .dockerignore     # make build / up / down / logs / shell / test
-docker/   Dockerfile  entrypoint.sh
-scripts/  wsl_webcam_pipe.sh  fastdds_udp_only.xml   # WSL2 webcam pipe; host-side DDS profile
+docker/   Dockerfile  entrypoint.sh  fastdds_profile.xml
+scripts/  wsl_webcam_pipe.sh                    # WSL2 dev: Windows webcam -> named pipe
 docs/     perception.md  perception_architecture.md
 perception/  detect.py  README.md               # standalone (non-ROS) YOLO11 viewer
 ros2_ws/src/human_perception/

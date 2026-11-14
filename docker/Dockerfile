@@ -40,6 +40,8 @@ RUN mkdir -p /root/.cache/human_perception/models && for m in ${PRELOAD_MODELS};
         python3 -c "from ultralytics import YOLO; YOLO('/root/.cache/human_perception/models/$m')" \
         || exit 1; done
 
+COPY docker/fastdds_profile.xml /etc/fastdds_profile.xml
+ENV FASTRTPS_DEFAULT_PROFILES_FILE=/etc/fastdds_profile.xml
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
