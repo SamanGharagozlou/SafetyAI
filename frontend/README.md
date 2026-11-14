@@ -1,4 +1,4 @@
-# ClawMetry frontend — Phase 3
+# ClawMetry frontend — Phase 4
 
 Mobile-first visitor onboarding for the SafetyAI Robotics Hackathon. React, Vite, TypeScript, and Tailwind CSS. The Phase 1 avatar, palette, and card design are preserved.
 
@@ -24,7 +24,7 @@ Use the actual network URL printed by Vite, with `/join` appended. A phone's `lo
 
 - Enter an optional nickname (40 characters maximum), leave it blank, or choose **Continue as Guest**. Whitespace-only names become Guest.
 - The session-ready screen says **Demo mode**, greets the visitor, explains the simulation, and offers deliberate browser recording or typed input. No robot is connected.
-- **End Session** clears the active in-memory session, nickname, recording, and typed request, returning to welcome. Browser Back to welcome also ends the session.
+- **End Session** clears the active in-memory session, nickname, recording, typed request, and simulated task, returning to welcome. Browser Back to welcome also ends the session.
 - Privacy opens a separate view; returning preserves an unexpired session but clears recording/transcript/request state and releases the microphone. Expiry while reading privacy clears the session without interrupting the page; Back then returns to welcome with an expiry message.
 - Refreshing `/join` starts fresh. Refreshing `/session`, opening it in a new tab, or navigating forward to an ended session returns to welcome. No session is restored.
 - Unknown client routes provide a welcome-page recovery button (requires the hosting fallback below for direct unknown URLs).
@@ -49,7 +49,7 @@ Allowed range: integer seconds from 1 through 86400. Invalid values prevent demo
 3. Recording shows a live timer and animated indicator, with **Stop Recording** and **Cancel**. It stops automatically at 20 seconds. Reduced-motion preferences suppress animation.
 4. **Stop Recording** immediately releases microphone tracks, then prepares the final Blob and local playback URL. No automatic playback or upload occurs. **Retry recording** discards the old clip and deliberately starts another capture; **Discard** clears the Blob and revokes its URL.
 5. With default configuration, **Continue** says **Transcription not connected**, clears the unsent audio, and focuses the typed-request alternative. No speech is invented or recognized. You can also choose **Type a request** at any time, which cancels capture and clears audio.
-6. Typed requests are limited to 2000 characters. **Continue** shows a local preview; **Edit request** returns to the field. Nickname and the current demo session are preserved. Nothing is dispatched to a robot or AI service.
+6. Typed requests are limited to 2000 characters. **Continue** opens confirmation; **Edit request** returns to the field. **Cancel request** clears the draft. **Confirm demo request** explicitly submits to the in-memory task simulation. Nickname and the current demo session are preserved. Nothing is dispatched to a robot or AI service.
 
 Denied permissions, absent/busy microphones, unsupported/insecure browsers, failed recording, empty audio, and playback errors offer a typed path. Canceling a pending native permission prompt cannot dismiss the browser's dialog; dismiss it manually. If permission is granted after Cancel, navigation, expiry, or unmount, newly returned tracks are stopped immediately. Another permission request is blocked until the outstanding one settles.
 
@@ -67,7 +67,7 @@ VITE_TRANSCRIBE_ENDPOINT=/api/transcribe
 
 Paths are configurable, but cross-origin URLs, protocol-relative URLs, backslashes, query strings, and fragments are rejected. Audio is sent only to a same-origin path; deploy/reverse-proxy the teammate's FastAPI endpoint under that origin. No proxy/backend configuration is added here. Cookies are omitted and redirects are not followed. The UI labels the action **Continue — send for transcription**, displays the endpoint path, and explains that this button uploads audio.
 
-**Proposed wire contract, pending agreement:** `POST` multipart/form-data, with `audio` containing the Blob and a format-based filename, `mime_type` containing the actual recording MIME type (including codec information), and `duration_ms` containing rounded duration. The browser sets the multipart boundary. No nickname or mock session ID is sent. Accept only a successful JSON response with a nonempty string `text` (at most 2000 characters). This is an interface proposal, not a claim that FastAPI already supports it. Runtime response validation rejects malformed/empty responses. Displayed transcripts come only from that response and can be edited before the local preview; test fixture responses exist only in tests.
+**Proposed wire contract, pending agreement:** `POST` multipart/form-data, with `audio` containing the Blob and a format-based filename, `mime_type` containing the actual recording MIME type (including codec information), and `duration_ms` containing rounded duration. The browser sets the multipart boundary. No nickname or mock session ID is sent. Accept only a successful JSON response with a nonempty string `text` (at most 2000 characters). This is an interface proposal, not a claim that FastAPI already supports it. Runtime response validation rejects malformed/empty responses. Displayed transcripts come only from that response and can be edited before confirmation; test fixture responses exist only in tests.
 
 Uploads time out after 30 seconds. Failure keeps the review available for retry or typed input. Cancel transcription, Discard, switching input method, navigation, expiry, or End Session abort the browser request and ignore late responses. **Abort does not guarantee that the server has not received/processed audio, and no server deletion is promised.** Clearing browser memory cannot clear backend copies.
 
@@ -90,6 +90,48 @@ Open `http://localhost:5173/join` in a current browser with MediaRecorder suppor
 - Repeat with browser microphone permission blocked, then reset permission via the browser's site settings if desired. Text input must still work.
 - While recording, open privacy, press browser Back, switch tabs, or End Session. Confirm capture stops and never restarts on its own. Temporarily set `VITE_DEMO_SESSION_SECONDS=5`, restart, and verify expiry cleanup, then restore the normal duration.
 - For iPhone Safari/Android Chrome, use a real trusted HTTPS URL; plain LAN HTTP will intentionally disable capture. Check narrow portrait and short landscape layouts, native playback, permission prompts, and device interruption behavior.
+
+## Phase 4: review, confirmation, and simulated tasks
+
+The complete journey is **Join → Speak or Type → Review → Confirm → Demo task status → Friendly text response**. Actual transcription is used only if the separately configured transcription adapter returns text. Otherwise the visitor types manually; no recognized speech is invented.
+
+Try **Hello**, **Robot info**, or **Help**. The demo vocabulary is deliberately small:
+
+| Demo action | Example input | Simulated result |
+| --- | --- | --- |
+| `GREET` | Hello / Say hello / GREET | Friendly text greeting |
+| `ROBOT_INFO` | Robot info / Tell me about yourself / ROBOT_INFO | Introduction to this robot demo |
+| `HELP` | Help / What can I ask / HELP | Supported request suggestions |
+
+The classifier accepts only exact normalized phrases in `src/tasks/vocabulary.ts`, not substrings or model-generated commands. “Hello then walk forward” is unsupported, even if a forged proposed action says GREET. The mock independently resolves the request. All other commands, including locomotion, are declined. This frontend allowlist is **not** real authorization; the real backend remains the final authority.
+
+On confirmation, check the request and proposed demo response. **Edit request** returns to editing; **Cancel request** clears it without submitting. **Confirm demo request** is the only task-submission action. A synchronous submission lock and stable client request ID prevent accidental duplicates. The mock also deduplicates identical client IDs and rejects a changed payload with a reused key. No task endpoint is called by the app.
+
+The default simulation follows `queued → processing → awaiting_approval → executing → completed`, with simulated approval and execution explicitly labeled. Only `completed` has a friendly demo text response. A mock request ID starts with `demo-request-`; it is not a robot command ID or authorization credential. Status observations have monotonic revisions; older results cannot overwrite a newer view.
+
+Open **Try a demo outcome** before confirming to exercise **Friendly response**, **Approval denied**, **Task failure**, **Robot unavailable**, **Status timeout**, or **Service unavailable**. These choices change only a local simulation; they cannot grant real approval. Unsupported requests are declined regardless of the chosen outcome. The UI supports all seven task statuses: `queued`, `processing`, `awaiting_approval`, `executing`, `completed`, `denied`, and `failed`.
+
+Task status is checked sequentially, roughly every 500ms plus mock latency. Default phase steps are 900ms; a response usually completes in about four seconds. An absolute 12-second frontend deadline handles stalled creation/status. Timeout does not pretend the task completed or change its last known status to a fabricated backend failure. Task identity, client request ID, and revision guard stale results. Failed/unavailable outcomes never display a completed response.
+
+**Start another interaction** clears the old local simulation and draft, preserving the demo visitor session. Leaving for privacy, browser Back, refresh, End Session, expiry, or unmount stops polling, aborts pending frontend work, and disposes the in-memory mock. A final expiry check blocks confirmation, polling, audio upload, and late results even before suspended session timers resume. No request text, task ID, nickname, or token goes into the URL or browser storage. Leaving this demo does not assert cancellation or deletion on a future real backend.
+
+### Manual task walkthrough
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+1. Open `http://localhost:5173/join`, then join with a nickname or as Guest.
+2. Choose **Type a request**, enter `Hello`, and Continue. Verify no task ID exists yet.
+3. Edit to `Robot info`, Continue, and select **Confirm demo request**. Watch the labeled demo states through the final text response.
+4. Start another interaction. Enter `Help`, Continue, then Cancel; verify the draft clears and the visitor session remains.
+5. Try each demo outcome under the expandable selector. Try `Walk forward` and verify it is declined, not executed.
+6. End Session during a pending task. Repeat with a short configured session duration and verify expiry clears the interaction.
+7. Optionally record audio with default disconnected transcription: Continue clears the clip and opens manual text; review and confirm separately. No automatic task submission or invented transcript should appear.
+
+The prepared request/status adapter is separate and **never selected by this UI**, even when `VITE_REQUESTS_ENDPOINT` and `VITE_REQUEST_STATUS_ENDPOINT` are set. See [API_INTEGRATION.md](./API_INTEGRATION.md) for exact proposed fields, authorization, idempotency, and required backend decisions.
 
 ## Production build and routes
 
@@ -148,11 +190,15 @@ Playwright runs against the production preview using **installed Google Chrome**
 
 Phase 3 browser tests mock `getUserMedia` and `MediaRecorder`; **they never access your physical microphone**. A synthetic silent WAV exercises real local audio playback. Tests cover recording/review/text at 320×568, 390×844, and 667×375, errors and unsupported browsers, permission cancellation, the 20-second cap, navigation, and session cleanup. They check that disconnected journeys make no POST or unexpected external requests. Screenshots are saved under ignored `test-results/`. These tests cannot verify physical devices or the real FastAPI/Whisper service.
 
+Phase 4 adds tests for explicit confirmation, editing/canceling, duplicate submission, every task state/outcome, independent allowlist checks, unsupported requests, polling failures, absolute timeouts, session expiry, stale/late results, request identity/revisions, separate authorization credentials, endpoint validation, and actual returned-transcript confirmation. The complete current suite has **143 unit/integration tests** and **33 browser tests**. All earlier tests remain unchanged.
+
+The task browser journeys verify confirmation, awaiting-approval, and completion layouts at 320×568, 390×844, and 667×375; mock task journeys make no POSTs or unexpected external requests. Existing onboarding and media viewport checks remain in the suite. Production build and typecheck pass. Physical iPhone/Android hardware, actual microphone devices, and real FastAPI services still require integration testing.
+
 ## Privacy and integration scope
 
-Nicknames, mock session IDs, expiry times, typed requests, and temporary recordings remain in page memory. There are no cookies, local/session storage, IndexedDB, persistent audio files, analytics, trackers, external fonts, or robot controls. Microphone use is deliberate, time-limited, and stopped when leaving the view or hiding the tab. Transcription is disconnected by default; only an explicitly configured same-site endpoint and the labeled send action permit an audio upload. No audio or transcript is logged by application code. Typed Continue is a local preview, not AI interpretation or robot dispatch. Artwork is local SVG. The local QR generator encodes only the provided link. A hosting provider may retain standard request logs; its practices are unverified. There is no certified GDPR compliance claim or invented backend deletion behavior.
+Nicknames, mock session IDs, expiry times, typed requests, and temporary recordings remain in page memory. There are no cookies, local/session storage, IndexedDB, persistent audio files, analytics, trackers, external fonts, or robot controls. Microphone use is deliberate, time-limited, and stopped when leaving the view or hiding the tab. Transcription is disconnected by default; only an explicitly configured same-site endpoint and the labeled send action permit an audio upload. No audio or transcript is logged by application code. Typed Continue opens confirmation. Only Confirm demo request submits to the in-memory task service; it performs no AI interpretation or robot dispatch. Mock tasks and IDs stay in memory and are cleared with the interaction/session; they are not logged. Artwork is local SVG. The local QR generator encodes only the provided link. A hosting provider may retain standard request logs; its practices are unverified. There is no certified GDPR compliance claim or invented backend deletion behavior.
 
-Remaining work: deploy to the real HTTPS host and verify its routes; generate and proof-scan the real QR; agree on the FastAPI session/transcription API and privacy/retention contract; connect real transcription, interpretation, robot responses, SDK, and hardware in a future phase. None of those integrations is simulated as backend authentication.
+Remaining work: deploy to the real HTTPS host and verify its routes; generate and proof-scan the real QR; agree on the FastAPI session/transcription/request/status APIs and privacy/retention contract; connect real transcription, interpretation, robot responses, SDK, and hardware in a future phase. None of those integrations is simulated as backend authentication.
 
 ## Source layout
 
@@ -163,10 +209,16 @@ Remaining work: deploy to the real HTTPS host and verify its routes; generate an
 - `src/styles.css`: preserved Phase 1 styling plus responsive session, voice, and text controls.
 - `src/voice/recorder.ts`: capture lifecycle, MIME negotiation, 20-second limit, and resource cleanup.
 - `src/voice/useVoiceRecorder.ts`: React subscription plus visibility/unmount cleanup.
-- `src/voice/VoiceInteraction.tsx`: voice review, explicit upload consent, and local typed preview.
+- `src/voice/VoiceInteraction.tsx`: voice review, explicit upload consent, typed editing, and entry to request confirmation.
+- `src/tasks/contracts.ts`: typed task, submission, and session context contracts.
+- `src/tasks/vocabulary.ts`: exact-phrase demonstration allowlist.
+- `src/tasks/mockTaskAdapter.ts`: network-free task lifecycle and demo outcomes.
+- `src/tasks/RequestFlow.tsx`: confirmation, status conversation, expiry guards, polling, and cleanup.
+- `src/tasks/requestApiAdapter.ts`: configurable, validated, **unwired** future request/status API adapter.
+- `API_INTEGRATION.md`: exact proposed FastAPI contract and remaining integration decisions.
 - `src/services/transcription.ts`: optional same-origin multipart transcription adapter.
 - `scripts/generate-qr.mjs`: explicit-target local printable SVG generation.
 - `scripts/static-routes.mjs`: build-time directory entries for static hosting.
 - `src/**/*.test.ts*`, `scripts/*.test.mjs`: unit/integration tests.
-- `e2e/visitor.spec.ts`: production-preview mobile viewport checks.
+- `e2e/visitor.spec.ts`, `e2e/voice.spec.ts`, `e2e/tasks.spec.ts`: production-preview visitor, mocked-media, and task journeys.
 - `.env.example`: documented public demo configuration.

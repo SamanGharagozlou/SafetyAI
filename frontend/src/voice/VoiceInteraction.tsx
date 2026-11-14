@@ -2,22 +2,25 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createTranscriptionClient, MAX_REQUEST_LENGTH } from '../services/transcription'
 import { recordingUnavailable } from './recorder'
 import { useVoiceRecorder } from './useVoiceRecorder'
+import { RequestFlow } from '../tasks/RequestFlow'
+import type { RequestSource, TaskSession } from '../tasks/contracts'
+import { requireActiveSession } from '../tasks/contracts'
 
 function Microphone() {
   return <svg width="22" height="25" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" strokeWidth="1.7"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
 }
 
-export function VoiceInteraction() {
+export function VoiceInteraction({ session, onExpired }: { session: TaskSession; onExpired(): void }) {
   const { recorder, snapshot } = useVoiceRecorder()
   const [mode, setMode] = useState<'voice' | 'text'>('voice')
   const [text, setText] = useState('')
   const [ready, setReady] = useState(false)
+  const [source, setSource] = useState<RequestSource>('typed')
   const [notice, setNotice] = useState('')
   const [textError, setTextError] = useState('')
   const [sending, setSending] = useState(false)
   const [playbackError, setPlaybackError] = useState('')
   const input = useRef<HTMLTextAreaElement>(null)
-  const preview = useRef<HTMLHeadingElement>(null)
   const audio = useRef<HTMLAudioElement>(null)
   const reviewHeading = useRef<HTMLHeadingElement>(null)
   const stopButton = useRef<HTMLButtonElement>(null)
@@ -48,7 +51,6 @@ export function VoiceInteraction() {
   }, [status])
   useEffect(() => {
     if (mode === 'text' && !ready) input.current?.focus()
-    if (ready) preview.current?.focus()
   }, [mode, ready])
   useEffect(() => {
     const element = audio.current
@@ -89,13 +91,22 @@ export function VoiceInteraction() {
     setTextError('')
     setMode(next)
   }
+  function sessionIsActive() {
+    try { requireActiveSession(session); return true } catch {
+      abortRequest()
+      recorder.cancel()
+      onExpired()
+      return false
+    }
+  }
   function startRecording() {
+    if (!sessionIsActive()) return
     discard('')
     void recorder.start()
   }
 
   async function continueAudio() {
-    if (!clip || sending) return
+    if (!clip || sending || !sessionIsActive()) return
     if (!client.connected) {
       audio.current?.pause()
       recorder.cancel()
@@ -115,12 +126,13 @@ export function VoiceInteraction() {
     requestTimer.current = setTimeout(() => { timedOut = true; controller.abort() }, 30_000)
     try {
       const result = await client.transcribe(clip, controller.signal)
-      if (version !== requestVersion.current) return
+      if (version !== requestVersion.current || !sessionIsActive()) return
       if (result.status === 'not-connected') {
         setNotice('Transcription not connected. Please type your request instead.')
         return
       }
       setText(result.text)
+      setSource('transcript')
       recorder.cancel()
       setMode('text')
       setReady(false)
@@ -148,10 +160,10 @@ export function VoiceInteraction() {
   return <section className="interaction-panel" aria-labelledby="interaction-title">
     <span className="feature-label">YOUR VOICE. YOUR CHOICE.</span>
     <h2 id="interaction-title">What’s on your mind?</h2>
-    <div className="input-modes" aria-label="Choose an input method">
+    {!ready && <div className="input-modes" aria-label="Choose an input method">
       <button type="button" aria-pressed={mode === 'voice'} onClick={() => chooseMode('voice')}>Use voice</button>
       <button type="button" aria-pressed={mode === 'text'} onClick={() => chooseMode('text')}>Type a request</button>
-    </div>
+    </div>}
 
     {mode === 'voice' && <div className="voice-panel">
       <p className="robot-message" role={status === 'error' ? 'alert' : 'status'}>{stateMessage}</p>
@@ -178,21 +190,20 @@ export function VoiceInteraction() {
 
     {mode === 'text' && !ready && <form className="typed-request" onSubmit={event => {
       event.preventDefault()
+      try { requireActiveSession(session) } catch { onExpired(); return }
       if (!text.trim()) { setTextError('Please enter a request before continuing.'); input.current?.focus(); return }
       setText(text.trim()); setReady(true); setTextError(''); setNotice('')
     }}>
       <label htmlFor="typed-request">Your request</label>
       <textarea ref={input} id="typed-request" rows={4} value={text} maxLength={MAX_REQUEST_LENGTH} placeholder="For example, ask a question about the robot…" autoComplete="off" onChange={event => { setText(event.target.value); setTextError('') }} aria-describedby={`typed-help${textError ? ' typed-error' : ''}`} aria-invalid={!!textError}/>
-      <p id="typed-help" className="field-help">Type freely. Your request stays in this page’s memory and is not sent to the robot. {text.length}/{MAX_REQUEST_LENGTH}</p>
+      <p id="typed-help" className="field-help">Type freely. Review comes next. Confirmation submits to a local demo only, never the robot. {text.length}/{MAX_REQUEST_LENGTH}</p>
       {textError && <p id="typed-error" role="alert" className="form-error">{textError}</p>}
       <button type="submit" className="primary-button">Continue</button>
     </form>}
-    {mode === 'text' && ready && <div className="request-preview">
-      <h3 ref={preview} tabIndex={-1}>Your request is ready</h3>
-      <blockquote>{text}</blockquote>
-      <p>This is a local request preview. Continuing here does not send a robot command or submit this text.</p>
-      <button type="button" className="secondary-button" onClick={() => setReady(false)}>Edit request</button>
-    </div>}
+    {mode === 'text' && ready && <RequestFlow text={text} source={source} session={session} onExpired={onExpired}
+      onEdit={() => setReady(false)}
+      onCancel={() => { setReady(false); setText(''); setSource('typed'); setNotice('Request canceled. No demo task was submitted.') }}
+      onRestart={() => { setReady(false); setText(''); setSource('typed'); setNotice('Ready for another hello. Try “Hello”, “Robot info”, or “Help”.') }}/>}
     {notice && <p className="session-notice" role="status">{notice}</p>}
     <div className="transcription-status"><span className="mic-off-dot" aria-hidden="true"/>{client.connected ? 'Transcription endpoint configured' : 'Transcription not connected'}</div>
     <p className="field-help interaction-privacy">{client.connected ? 'Audio is uploaded only with the labeled send button. Typed requests stay local. Server retention must be confirmed by the event team.' : 'No audio uploads. No speech recognition is connected. Typed requests stay local.'}</p>
