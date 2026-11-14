@@ -43,6 +43,8 @@ from rclpy.time import Time  # noqa: E402
 from sensor_msgs.msg import BatteryState, PointCloud2  # noqa: E402
 from std_msgs.msg import Bool, Int32, String  # noqa: E402
 
+BAG_TOPICS = ['/camera/image_raw', '/camera/camera_info', '/camera/depth', '/odom', '/odom_sdk', '/imu', '/tf', '/tf_static',
+              '/cmd_vel', '/ctrl_mode', '/connected', '/battery']
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
 MODE_NAMES = {0: 'damping', 1: 'standing', 3: 'moving', 18: 'moving', 51: 'lying'}
 STANDING_MODES = (1, 3, 18)
@@ -183,10 +185,13 @@ class Dashboard(Node):
             return
         self._live_t = now
         target = 'map' if self.localized else 'odom'
-        try:
-            tf = self.tf_buffer.lookup_transform(target, m.header.frame_id, Time())
+        try:   # the cloud is stamped with capture time (~1.4 s before it arrives): use the pose at that time
+            tf = self.tf_buffer.lookup_transform(target, m.header.frame_id, Time.from_msg(m.header.stamp))
         except Exception:  # noqa: BLE001
-            return
+            try:
+                tf = self.tf_buffer.lookup_transform(target, m.header.frame_id, Time())
+            except Exception:  # noqa: BLE001
+                return
         q, t = tf.transform.rotation, tf.transform.translation
         x, y, z, w = q.x, q.y, q.z, q.w
         R = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
@@ -329,8 +334,10 @@ class Dashboard(Node):
             self.procs[name] = p
         return p
 
-    def proc_cmds(self, name, db=None):
+    def proc_cmds(self, name, db=None, bag=None):
         a = self.args
+        if name == 'bag':
+            return ['ros2', 'bag', 'record', '-o', bag] + BAG_TOPICS
         if name == 'robot':
             return ['ros2', 'launch', 'agibot_d1_bridge', 'bridge.launch.py', f'local_ip:={a.local_ip}', f'robot_ip:={a.robot_ip}']
         if name == 'perception':
@@ -347,8 +354,8 @@ class Dashboard(Node):
                 os.popen('ros2 pkg prefix d1_slam').read().strip(), 'share/d1_slam/rviz/mapping.rviz')]
         raise KeyError(name)
 
-    def start(self, name, db=None):
-        return self.make_proc(name, self.proc_cmds(name, db)).start()
+    def start(self, name, db=None, bag=None):
+        return self.make_proc(name, self.proc_cmds(name, db, bag)).start()
 
     def stop(self, name):
         p = self.procs.get(name)
@@ -368,7 +375,7 @@ class Dashboard(Node):
             started.append('perception')
         return {'ok': True, 'started': started}
 
-    def start_map(self, name=None):
+    def start_map(self, name=None, record=True):
         if self.running('mapping'):
             return {'ok': False, 'error': 'mapping is already running'}
         for n in ('nav2', 'localization'):
@@ -384,7 +391,12 @@ class Dashboard(Node):
             self.plan = []
             self.current_map, self.ui_mode = name, 'mapping'
         self.start('mapping', db=os.path.join(self.maps_dir, name + '.db'))
-        return {'ok': True, 'name': name}
+        bag = None
+        if record:
+            bag = os.path.join(self.maps_dir, name + '_bag')
+            self.stop('bag')
+            self.start('bag', bag=bag)
+        return {'ok': True, 'name': name, 'bag': bag}
 
     def _job(self, name, status, message=''):
         with self.lock:
@@ -414,10 +426,14 @@ class Dashboard(Node):
             self._job('save_map', 'running', 'flushing the RTAB-Map database (stopping mapping)...')
             db = os.path.join(self.maps_dir, (self.current_map or name) + '.db')
             self.stop('mapping')
+            self.stop('bag')                                   # SIGINT: rosbag2 finalises the bag
             if db != base + '.db' and os.path.exists(db):
                 os.replace(db, base + '.db')
+            bagdir = os.path.join(self.maps_dir, (self.current_map or name) + '_bag')
             meta = {'name': name, 'created': time.strftime('%F %T'), 'db': base + '.db', 'grid': base + '_grid.yaml',
                     'db_bytes': os.path.getsize(base + '.db') if os.path.exists(base + '.db') else 0}
+            if os.path.isdir(bagdir):
+                meta['bag'] = bagdir
             with open(base + '.json', 'w') as f:
                 json.dump(meta, f, indent=1)
             with self.lock:
@@ -446,7 +462,7 @@ class Dashboard(Node):
         if not os.path.exists(db):
             return {'ok': False, 'error': f'no database for "{name}"'}
         self.cancel_goal('load map')
-        for n in ('mapping', 'nav2', 'localization'):
+        for n in ('mapping', 'bag', 'nav2', 'localization'):
             self.stop(n)
         if not self.running('robot') or not self.running('perception'):
             self.start_process()
@@ -463,7 +479,7 @@ class Dashboard(Node):
     def clear_all(self, stop_robot=False):
         self.cancel_goal('clear all')
         self.teleop = (0.0, 0.0, 0.0, 0.0)
-        for n in ('nav2', 'localization', 'mapping', 'rviz', 'perception'):
+        for n in ('nav2', 'localization', 'mapping', 'bag', 'rviz', 'perception'):
             self.stop(n)
         kept_robot = False
         standing = self.mode in STANDING_MODES
@@ -483,7 +499,7 @@ class Dashboard(Node):
         return {'ok': True, 'message': msg}
 
     def shutdown_all(self):
-        for n in ('nav2', 'localization', 'mapping', 'rviz', 'perception'):
+        for n in ('nav2', 'localization', 'mapping', 'bag', 'rviz', 'perception'):
             self.stop(n)
         if self.mode not in STANDING_MODES:
             self.stop('robot')
@@ -600,7 +616,7 @@ def make_handler(dash):
                     if a == 'start_process':
                         return self._send(200, dash.start_process())
                     if a == 'start_map':
-                        return self._send(200, dash.start_map(b.get('name')))
+                        return self._send(200, dash.start_map(b.get('name'), bool(b.get('record', True))))
                     if a == 'save_map':
                         return self._send(200, dash.save_map(b.get('name')))
                     if a == 'load_map':
@@ -610,11 +626,12 @@ def make_handler(dash):
                     return self._send(400, {'ok': False, 'error': 'unknown action'})
                 if u == '/api/process':
                     name, act = b.get('name', ''), b.get('action', '')
-                    if name not in ('robot', 'perception', 'mapping', 'localization', 'nav2', 'rviz'):
+                    if name not in ('robot', 'perception', 'mapping', 'bag', 'localization', 'nav2', 'rviz'):
                         return self._send(400, {'ok': False, 'error': 'unknown process'})
                     if act == 'start':
                         db = os.path.join(dash.maps_dir, (dash.current_map or 'manual') + '.db')
-                        return self._send(200, {'ok': dash.start(name, db=db)})
+                        bag = os.path.join(dash.maps_dir, time.strftime('manual_%Y%m%d_%H%M%S') + '_bag')
+                        return self._send(200, {'ok': dash.start(name, db=db, bag=bag)})
                     if act == 'stop':
                         if name == 'robot' and dash.mode in STANDING_MODES:
                             return self._send(200, {'ok': False, 'error': 'robot is standing: lie it down first'})

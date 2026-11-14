@@ -40,8 +40,8 @@ def generate_launch_description():
         'approx_sync': True,
         'qos_image': 2,
         'qos_camera_info': 2,
-        'sync_queue_size': 20,
-        'topic_queue_size': 20,
+        'sync_queue_size': 40,
+        'topic_queue_size': 40,
         'wait_for_transform': 0.5,
         'database_path': s('database_path'),
         # --- registration / loop closure (visual, with the estimated depth for 3D->2D PnP)

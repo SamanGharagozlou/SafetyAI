@@ -70,6 +70,7 @@
     <span class="chip" id="cLink">Robot link: <b>?</b></span>
     <span class="chip" id="cMode">Mode: <b>?</b></span>
     <span class="chip" id="cBatt">Battery: <b>?</b></span>
+    <span class="chip bad" id="cRec" style="display:none">&#9679; REC <b>rosbag</b></span>
     <span class="chip" id="cUi">Workflow: <b>idle</b></span>
     <span class="chip" id="cLoc">Localized: <b>no</b></span>
     <span class="chip" id="cNav">Nav: <b>idle</b></span>
@@ -82,6 +83,7 @@
       <h2>Workflow</h2>
       <button id="bStart" class="primary"><span>1&nbsp;&nbsp;Start process</span><span class="n">robot + camera + depth</span></button>
       <input type="text" id="mapName" placeholder="map name (optional)">
+      <label class="dim" style="font-size:12px;display:flex;gap:6px;margin:0 0 6px"><input type="checkbox" id="rec" checked> record a rosbag of the run (~300 MB/min)</label>
       <button id="bMap" class="go"><span>2&nbsp;&nbsp;Start map</span><span class="n">RTAB-Map</span></button>
       <button id="bSave"><span>3&nbsp;&nbsp;Save map</span><span class="n">grid + database</span></button>
       <select id="mapSel"></select>
@@ -189,12 +191,13 @@ function addGrid(g) {
 }
 
 // ---------------------------------------------------------------- state -> UI
-const PROCS = ['robot','perception','mapping','localization','nav2'];
+const PROCS = ['robot','perception','mapping','bag','localization','nav2'];
 function renderState() {
   const r = S.robot, el = (id, html, cls) => { const e = $(id); e.innerHTML = html; if (cls !== undefined) e.className = 'chip ' + cls; };
   el('cLink', 'Robot link: <b>' + (r.connected === null ? 'no data' : r.connected ? 'connected' : 'DOWN') + '</b>', r.connected ? 'ok' : (r.connected === null ? 'dim' : 'bad'));
   el('cMode', 'Mode: <b>' + (r.mode === null ? '?' : r.mode_name) + '</b>', r.standing ? 'warn' : '');
   el('cBatt', 'Battery: <b>' + (r.battery === null ? '?' : r.battery + '%') + '</b>', r.battery !== null && r.battery < 25 ? 'bad' : (r.battery !== null && r.battery < 40 ? 'warn' : ''));
+  $('cRec').style.display = (S.procs.bag && S.procs.bag.running) ? '' : 'none';
   el('cUi', 'Workflow: <b>' + S.ui_mode + (S.current_map ? ' · ' + S.current_map : '') + '</b>', '');
   el('cLoc', 'Localized: <b>' + (S.localized ? 'yes' : 'no') + '</b>', S.localized ? 'ok' : 'dim');
   const ns = S.nav.status + (S.nav.distance_remaining != null && S.nav.status === 'navigating' ? ' · ' + S.nav.distance_remaining + ' m' : '');
@@ -240,7 +243,7 @@ function refreshMaps() { fetch('/api/maps').then(r => r.json()).then(list => { c
 
 // ---------------------------------------------------------------- workflow buttons
 $('bStart').onclick = async () => { toast('starting robot link + perception…'); const r = await post('/api/workflow', {action:'start_process'}); toast(r.ok ? 'started: ' + (r.started.join(', ') || 'already running') : r.error, !r.ok); };
-$('bMap').onclick = async () => { toast('starting map…'); const r = await post('/api/workflow', {action:'start_map', name:$('mapName').value.trim()}); toast(r.ok ? 'mapping "' + r.name + '" — drive the robot around, then Save map' : r.error, !r.ok); };
+$('bMap').onclick = async () => { toast('starting map…'); const r = await post('/api/workflow', {action:'start_map', name:$('mapName').value.trim(), record:$('rec').checked}); toast(r.ok ? 'mapping "' + r.name + '"' + (r.bag ? ' · recording a rosbag' : '') + ' — drive the robot around, then Save map' : r.error, !r.ok); };
 $('bSave').onclick = async () => { const r = await post('/api/workflow', {action:'save_map', name:$('mapName').value.trim()}); toast(r.ok ? 'saving "' + r.name + '"…' : r.error, !r.ok); };
 $('bLoad').onclick = async () => { const n = $('mapSel').value; if (!n) return; toast('loading "' + n + '"…'); const r = await post('/api/workflow', {action:'load_map', name:n}); toast(r.ok ? 'localizing in "' + n + '" and starting Nav2 (drive a little if it does not localize)' : r.error, !r.ok); };
 $('bClear').onclick = async () => { if (!confirm('Stop all processes and clear the view?' + ($('stopRobot').checked ? '\n(the robot link is stopped too if the robot is lying)' : ''))) return; const r = await post('/api/workflow', {action:'clear_all', stop_robot:$('stopRobot').checked}); toast(r.message || r.error, !r.ok); };
