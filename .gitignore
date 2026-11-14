@@ -7,3 +7,22 @@ __pycache__/
 perception/.venv/
 *.pt
 *.jsonl
+
+# human_perception (ROS 2 stack, docker/, Makefile)
+.venv/
+.pytest_cache/
+*.egg-info/
+benchmark_results/
+*.onnx
+*.engine
+*.plan
+*_openvino_model/
+# never commit camera data (privacy): recordings, captures, bags
+*.mp4
+*.avi
+*.mkv
+*.mjpeg
+rosbag2_*/
+*.db3
+*.mcap
+captures/

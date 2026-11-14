@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>human_perception</name>
+  <version>0.1.0</version>
+  <description>
+    Source-agnostic 2D human (person) detection for ROS 2 using Ultralytics YOLO26.
+    Includes a webcam/RTSP video-source node, a detector node, launch files and a
+    model benchmark. Not a safety-rated person-detection system.
+  </description>
+  <maintainer email="jayaprakashnis619@gmail.com">vivek</maintainer>
+  <!-- Placeholder chosen to match Ultralytics' default AGPL-3.0 licence; confirm with the
+       project owner (an Ultralytics Enterprise licence changes this). See README. -->
+  <license>AGPL-3.0-only</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>builtin_interfaces</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <!-- ultralytics / torch are installed with pip (see requirements.txt); there is no
+       rosdep key for them. -->
+
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

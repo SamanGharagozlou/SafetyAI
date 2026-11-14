@@ -2,6 +2,8 @@
 
 `detect.py` runs YOLO11 object detection on the D1 camera stream. It runs on a PC with an NVIDIA GPU, not on the robot.
 
+> **ROS 2 stack:** the ROS 2 human-detection stack (`ros2_ws/src/human_perception`, started with `make up` from the repo root) publishes `vision_msgs/Detection2DArray`, presence/count and diagnostics for the rest of the robot software. See [docs/perception.md](../docs/perception.md). `detect.py` stays useful as a quick standalone check without ROS.
+
 ## Camera stream
 
 The robot publishes its camera through MediaMTX. The pipeline is started by `robot-launch`, which runs `/opt/app_launch/stream_4cams_rtsp.sh` on the robot.
