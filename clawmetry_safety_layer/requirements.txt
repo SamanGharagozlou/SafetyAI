@@ -1,0 +1,3 @@
+# Edge (team PC, Python 3.10 + ROS 2 Humble from the system): pip install -e ".[edge,dev]"
+# Brain (DGX Spark): pip install -e ".[brain,edge,dev]"
+-e .[edge,dev]

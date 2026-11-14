@@ -1,0 +1,139 @@
+# Leukerbad Therme: facts for the concierge (given by the team 2026-11-14, NOT scraped) + points of interest mapped to
+# the zones in policies/zones_therme.yaml. venue/refresh.py writes live open/closed into venue/live.json; these static
+# hours stay the fallback. Every POI the robot may not enter has a no_go reason and a nearest allowed alternative.
+venue:
+  name: Leukerbad Therme
+  address: Thermenstrasse 56, CH-3954 Leukerbad
+  phone: "+41 27 472 20 20"
+  email: info@leukerbad.ch
+  web: https://www.leukerbad.ch/en/therme
+  coordinates: {lat: 46.37762, lon: 7.62537}
+  altitude_m: 1411
+  claims: ["largest thermal bath in Europe", "thermal water up to 51 °C", "the water spends about 40 years underground"]
+
+hours:
+  - {areas: [Vitality Pool, Fun Bath, Adventure Pool, Relax Pool, Sports Pool, Grotto, Tread Bath, Indoor Pool, Kids Basin], days: daily, open: "08:00", close: "20:00"}
+  - {areas: [Sauna World, Waterslides, Kids Paradise], days: daily, open: "10:00", close: "19:00"}
+  - {areas: [Massage & Beauty], days: daily, open: "10:00", close: "18:00", phone: "+41 27 472 20 32"}
+  - {areas: [Aqualis Hair Studio], days: Mon-Fri, open: "08:30", close: "18:30", phone: "+41 27 470 12 13"}
+  - {areas: [Aqualis Hair Studio], days: Sat, open: "08:30", close: "17:00", phone: "+41 27 470 12 13"}
+
+temperatures_c:
+  Vitality Pool: 36
+  Fun Bath: 36
+  Adventure Pool: 35
+  Indoor Pool: 35
+  Children's Pool: 35
+  Kids' Paradise (to age 4): 36
+  Relax Pool: 36
+  Tread Bath: 41
+  Grotto: 44
+  Sports Pool: 28
+  Waterslides: 28
+extras: ["beach-volleyball sand court 11 x 16 m next to the Sports Pool"]
+
+prices_chf:
+  thermal_bath_3h: {adult_16plus: 33, child_6plus: 20}
+  thermal_bath_1day: {adult_16plus: 39, child_6plus: 23}
+  sauna_without_bath_adult: 25
+  family_2_adults_2_children: {"3h": 95, "1day": 112}
+  five_entries_3h: {adult: 157, child: 95, note: "valid 1 year, non-transferable"}
+  under_6: {price: 0, note: "free, ID required"}
+  sauna_and_steam_surcharge_16plus: 15
+  rentals: {swimsuit: 8, towel: 5, bathrobe: 12}
+  discounts:
+    - "Leukerbad Guest Card: up to 15 % off (not on the sauna)"
+    - "Magic Pass: bathing area only, max 3 h from the turnstile, surcharge after that"
+  nearby: ["Walliser Alpentherme & Spa from CHF 33", "Summer Card from CHF 53"]
+
+rules:
+  - "The Sauna World is textile-free and for ages 16 and over."
+  - "No photography or video anywhere in the complex."
+  - "No animals; service dogs must be registered in advance."
+  - "School groups register at reception and stay supervised."
+  - "Pool Bar: drinks only in the bar area or in the water, no glass, alcohol in moderation, follow the staff."
+  - "Lost property is kept for one month at reception."
+
+facilities:
+  - "Sauna World: saunas and steam baths named after mountains, with a view of the Daubenhorn."
+  - "Massage & Beauty: massages, naturopathy (Fontisana), cosmetics, manicure and pedicure, facials."
+  - "Pool Bar at the Indoor Pool."
+  - "Souvenir shop and café on the level-4 concourse."
+  - "Ticket desk (Kasse) on level 4."
+
+floors:
+  "4": "Therme / Relax entrance and the Kasse (ticket desk)"
+  "3": "Relax (barefoot zone)"
+  "2": "Technik: Kein Eingang / No Entry"
+  "1": "Technik: Kein Eingang / No Entry"
+  "0": "Parking (Kasse Parking)"
+
+# Points of interest. zone = where the robot stops (policies/zones_therme.yaml). no_go = the robot never goes there;
+# the concierge offers `nearest` instead. requires_approval = ClawMetry Approve/Deny decides whether STAFF escort the
+# guest (the robot never enters either way).
+pois:
+  kasse:
+    zone: reception
+    names: {en: ticket desk (Kasse), de: Kasse, fr: caisse, it: cassa}
+    intro: {en: "This way to the ticket desk.", de: "Hier entlang zur Kasse.", fr: "Par ici pour la caisse.", it: "Da questa parte per la cassa."}
+  shop:
+    zone: shop_cafe
+    names: {en: souvenir shop, de: Souvenirshop, fr: boutique de souvenirs, it: negozio di souvenir}
+  cafe:
+    zone: shop_cafe
+    names: {en: café, de: Café, fr: café, it: caffè}
+  bath_entrance:
+    zone: bath_entrance
+    names: {en: Therme entrance, de: Eingang Therme, fr: entrée des thermes, it: ingresso delle terme}
+    intro: {en: "Follow me to the Therme entrance.", de: "Folgen Sie mir zum Eingang der Therme.", fr: "Suivez-moi jusqu'à l'entrée des thermes.", it: "Mi segua fino all'ingresso delle terme."}
+    arrival: {en: "Here is the entrance. The turnstiles are just ahead; enjoy the water!", de: "Hier ist der Eingang. Die Drehkreuze sind gleich vorne. Viel Vergnügen!", fr: "Voici l'entrée. Les tourniquets sont juste devant. Bon bain !", it: "Ecco l'ingresso. I tornelli sono proprio davanti. Buon bagno!"}
+  concourse:
+    zone: concourse
+    names: {en: concourse, de: Halle, fr: hall, it: atrio}
+  lost_property:
+    zone: reception
+    names: {en: lost property (at reception), de: Fundbüro (Kasse), fr: objets trouvés (caisse), it: oggetti smarriti (cassa)}
+  pool_deck:
+    zone: pool_deck
+    names: {en: pools, de: Becken, fr: bassins, it: piscine}
+    no_go: {en: "the pool deck is wet and guests there are in swimwear, so I don't go past the turnstiles", de: "der Beckenbereich ist nass und dort sind Gäste in Badekleidung, deshalb fahre ich nicht hinter die Drehkreuze", fr: "le bord des bassins est mouillé et les clients y sont en maillot, donc je ne passe pas les tourniquets", it: "il bordo vasca è bagnato e gli ospiti sono in costume, quindi non oltrepasso i tornelli"}
+    nearest: bath_entrance
+    requires_approval: true
+  sauna_world:
+    zone: pool_deck
+    names: {en: Sauna World, de: Saunawelt, fr: monde des saunas, it: mondo delle saune}
+    no_go: {en: "the Sauna World is behind the turnstiles and textile-free", de: "die Saunawelt ist hinter den Drehkreuzen und textilfrei", fr: "le monde des saunas est derrière les tourniquets et sans textile", it: "il mondo delle saune è oltre i tornelli ed è senza costume"}
+    nearest: bath_entrance
+  pool_bar:
+    zone: pool_deck
+    names: {en: Pool Bar, de: Pool-Bar, fr: bar de la piscine, it: bar della piscina}
+    no_go: {en: "the Pool Bar is at the Indoor Pool, behind the turnstiles", de: "die Pool-Bar ist beim Hallenbad hinter den Drehkreuzen", fr: "le bar est à la piscine couverte, derrière les tourniquets", it: "il bar è alla piscina coperta, oltre i tornelli"}
+    nearest: bath_entrance
+  massage_beauty:
+    zone: pool_deck
+    names: {en: Massage & Beauty, de: Massage & Beauty, fr: Massage & Beauté, it: Massaggi & Bellezza}
+    no_go: {en: "Massage & Beauty is inside the bath complex; you can book on +41 27 472 20 32", de: "Massage & Beauty ist im Badbereich; Buchung unter +41 27 472 20 32", fr: "Massage & Beauté est dans les thermes ; réservation au +41 27 472 20 32", it: "Massaggi & Bellezza è dentro le terme; prenotazioni al +41 27 472 20 32"}
+    nearest: kasse
+  relax_level:
+    zone: relax_level
+    names: {en: Relax level, de: Relax-Ebene, fr: niveau Relax, it: livello Relax}
+    no_go: {en: "the Relax level is a barefoot zone, so I keep my wheels out of it", de: "die Relax-Ebene ist eine Barfusszone, da fahre ich nicht hinein", fr: "le niveau Relax est une zone pieds nus, je n'y entre pas", it: "il livello Relax è una zona a piedi nudi, non ci entro"}
+    nearest: kasse
+  technik:
+    zone: technik
+    names: {en: Technik (staff only), de: Technik, fr: technique, it: tecnica}
+    no_go: {en: "Technik is staff only", de: "Technik ist nur für Personal", fr: "la technique est réservée au personnel", it: "la tecnica è riservata al personale"}
+    nearest: kasse
+  stairs:
+    zone: stairs
+    names: {en: stairs, de: Treppe, fr: escalier, it: scale}
+    no_go: {en: "I never use the stairs", de: "ich benutze nie die Treppe", fr: "je ne prends jamais l'escalier", it: "non uso mai le scale"}
+    nearest: kasse
+  parking:
+    zone: stairs
+    names: {en: parking (level 0), de: Parking (Ebene 0), fr: parking (niveau 0), it: parcheggio (livello 0)}
+    no_go: {en: "parking is on level 0, down the stairs or the lift, where I can't go; the Kasse staff will point you there", de: "das Parking ist auf Ebene 0, über Treppe oder Lift, dahin kann ich nicht; die Kasse hilft gern weiter", fr: "le parking est au niveau 0, par l'escalier ou l'ascenseur, où je ne vais pas ; la caisse vous indiquera le chemin", it: "il parcheggio è al livello 0, con scale o ascensore, dove non vado; la cassa le indicherà la strada"}
+    nearest: kasse
+
+# guide_to routes: when the straight line from the robot to a POI crosses a no-go zone, go via these hub zones first.
+hubs: [concourse, reception]

@@ -1,0 +1,146 @@
+{
+ "docs/venue/walk_001.jpg": [
+  [
+   "concourse_tile",
+   60,
+   760,
+   460,
+   240
+  ]
+ ],
+ "docs/venue/walk_002.jpg": [
+  [
+   "concourse_tile",
+   150,
+   760,
+   400,
+   240
+  ]
+ ],
+ "docs/venue/walk_003.jpg": [
+  [
+   "concourse_tile",
+   100,
+   800,
+   450,
+   200
+  ]
+ ],
+ "docs/venue/walk_028.jpg": [
+  [
+   "concourse_tile",
+   100,
+   800,
+   450,
+   200
+  ]
+ ],
+ "docs/venue/walk_005.jpg": [
+  [
+   "wood",
+   80,
+   800,
+   450,
+   200
+  ]
+ ],
+ "docs/venue/walk_006.jpg": [
+  [
+   "wood",
+   150,
+   760,
+   400,
+   240
+  ]
+ ],
+ "docs/venue/walk_007.jpg": [
+  [
+   "wood",
+   40,
+   860,
+   300,
+   140
+  ]
+ ],
+ "docs/venue/walk_025.jpg": [
+  [
+   "wood",
+   330,
+   840,
+   230,
+   160
+  ]
+ ],
+ "docs/venue/walk_010.jpg": [
+  [
+   "terracotta",
+   30,
+   860,
+   300,
+   150
+  ]
+ ],
+ "docs/venue/walk_011.jpg": [
+  [
+   "terracotta",
+   100,
+   840,
+   400,
+   170
+  ]
+ ],
+ "docs/venue/walk_013.jpg": [
+  [
+   "terracotta",
+   60,
+   820,
+   450,
+   190
+  ]
+ ],
+ "docs/venue/walk_014.jpg": [
+  [
+   "terracotta",
+   30,
+   870,
+   500,
+   140
+  ]
+ ],
+ "docs/venue/walk_020.jpg": [
+  [
+   "terracotta",
+   40,
+   820,
+   500,
+   190
+  ]
+ ],
+ "docs/venue/walk_016.jpg": [
+  [
+   "checker_tile",
+   160,
+   700,
+   340,
+   300
+  ]
+ ],
+ "docs/venue/walk_017.jpg": [
+  [
+   "checker_tile",
+   120,
+   820,
+   300,
+   180
+  ]
+ ],
+ "docs/venue/walk_019.jpg": [
+  [
+   "checker_tile",
+   100,
+   780,
+   400,
+   200
+  ]
+ ]
+}

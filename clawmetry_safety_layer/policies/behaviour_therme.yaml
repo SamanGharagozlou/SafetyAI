@@ -1,0 +1,55 @@
+# Behaviour policy for the D1 Ultra-W at Leukerbad Therme (level-4 concourse). Same schema and enforcement as
+# policies/behaviour.yaml; zones from policies/zones_therme.yaml. The D1W bridge's own hard caps (0.4 m/s max,
+# 0.15 lateral, 0.6 rad/s) sit under these numbers; config can lower caps, never raise them.
+name: leukerbad-therme-d1w
+version: 1
+zones_file: policies/zones_therme.yaml
+
+zones:
+  reception: {speed_cap: 0.3}     # guide pace
+  concourse: {speed_cap: 0.3}
+  shop_cafe: {speed_cap: 0.2}
+  bath_entrance: {speed_cap: 0.2}
+  pool_deck: {speed_cap: 0.15}
+  relax_level: {speed_cap: 0.15}
+  stairs: {speed_cap: 0.15}
+  technik: {speed_cap: 0.15}
+near_person_speed_cap: 0.15       # person 1-2 m (perception/proximity.py); < 1 m the safety FSM holds
+
+allowed_objects: [tray, towels]
+place_targets: [reception]
+
+skills:
+  get_state: {max_duration_s: 5}
+  navigate_to: {max_duration_s: 90, max_path_m: 25.0}
+  pick: {max_duration_s: 30, max_path_m: 1.0}
+  place: {max_duration_s: 30, max_path_m: 1.0}
+  say: {max_duration_s: 15}
+  look_at: {max_duration_s: 5}
+  hold_pose: {max_duration_s: 5}
+  guide_to: {max_duration_s: 240}   # whole guide: intro + every leg + arrival
+  recover: {max_duration_s: 12, max_path_m: 1.5}
+max_retries: 2
+
+forbidden:
+  enter_restricted_zones: true
+  enter_camera_off_zones: true
+  max_hold_height_m: 1.2
+  max_speed_while_holding_mps: 0.3
+  max_tilt_deg: 15.0
+
+monitor:
+  period_s: 0.2
+  soft_speed_margin: 0.10
+  hard_speed_margin: 0.50
+
+prediction:
+  horizon_s: 2.0                  # L1 geofence horizon (safety/geofence.py)
+  dt_s: 0.1
+
+quiet_hours:
+  enabled: false
+  start: "22:00"
+  end: "07:00"
+  forbid_skills: [say]
+  speed_cap: 0.2

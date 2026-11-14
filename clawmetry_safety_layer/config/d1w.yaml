@@ -1,0 +1,63 @@
+# AgiBot D1 Ultra-W (wheeled-leg quadruped, SDK model zsl-1w) at Leukerbad Therme, level-4 concourse.
+# Transport: ros2 through the SafetyAI team's d1_cmd_vel_bridge (default) | sdk | mock. D1W_TRANSPORT overrides.
+# Runbook: docs/D1W-RUNBOOK.md. Remote ops (edge / brain split): docs/REMOTE-OPS.md.
+bridge: agibot_d1w
+transport: ros2
+iface: wlan0
+domain: 0
+speed_scale: 1.0
+settle_timeout_s: 2.0
+nav_tolerance_m: 0.4
+nav_max_s: 90
+start_pose: [2.5, 1.0, 0.0]        # mock only: the twin starts in front of the Kasse
+zones_file: policies/zones_therme.yaml
+behaviour_file: policies/behaviour_therme.yaml
+venue_file: venue/leukerbad_therme.yaml
+# Safety flags (only a literal `true` enables them):
+#   auto_stand: false -> stand() never calls ~/stand_up; the operator stands the robot with the controller.
+#   allow_damp: false -> damp() only zeroes velocity. Nothing in our code ever calls lie_down or passive.
+auto_stand: false
+allow_damp: false
+d1w:
+  rate_hz: 20.0
+  caps: {vx: 0.4, vy: 0.15, wz: 0.6}   # hard maxima; lower here if needed (guide pace 0.3 = behaviour policy)
+  odom_to_zone: [0.0, 0.0, 0.0]        # VERIFY: python -m bridge.zones --calibrate --config config/d1w.yaml
+  confirm_timeout_s: 30.0
+  ros2:                                # the team's node publishes/subscribes these relative names at the root
+    cmd_vel: /cmd_vel
+    gait: /gait
+    odom: /odom
+    imu: /imu
+    battery: /battery
+    ctrl_mode: /ctrl_mode
+    connected: /connected
+    say: /say
+    service_ns: /d1_cmd_vel_bridge
+  sdk:                                 # fallback only (D1W_TRANSPORT=sdk, nobody else on the SDK)
+    local_ip: 172.24.1.20              # team PC on Event_MyLAG; on-robot fallback B: the robot's own IP (SDK doc 5.7)
+    local_port: 43988
+    robot_ip: 172.24.1.41
+    keepalive_hz: 10.0
+safety:
+  judge_required: false                # true: no guide_to while the Cosmos judge is unavailable
+  judge_every_m: 2.0
+  on_control_plane_loss: hold_at_waypoint   # hold_at_waypoint | continue_caution
+  caution_speed: 0.15
+  person_slow_m: 2.0                   # person closer than this -> 0.15 m/s
+  person_stop_m: 1.0                   # person closer than this -> HOLD
+  go_zone_margin_m: 0.3
+  recover: {speed: 0.15, max_m: 1.5, max_s: 8.0}
+  go_zone_description: >-
+    The robot may only drive on the dry, flat public floor of the entrance hall: light tiles or wood.
+perception:
+  source: team                         # FRAME_SOURCE overrides: team | rtsp | video | stills | none
+  team_detector_url: http://127.0.0.1:8090
+  rtsp: rtsp://172.24.1.41:8554/test
+  video: assets/venue/spa_walkthrough.mp4
+  stills: docs/venue
+  camera: {height_m: 0.30, pitch_deg: -10.0, vfov_deg: 60.0}   # VERIFY on site: low and tilted UP (negative = up)
+  person_height_m: 1.70
+  boundary:
+    detector: floor_transition         # floor_transition | colour_marker | apriltag_board
+    model: perception/floor_classes.json
+  sampler: {fps: 2.0, max_w: 640, max_h: 360, jpeg_quality: 70}

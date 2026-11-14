@@ -1,0 +1,511 @@
+{
+ "summary": {
+  "url": "http://127.0.0.1:8000/v1",
+  "frames": 28,
+  "cold_first_s": 2.261,
+  "warm_p50_s": 1.909,
+  "warm_p90_s": 2.255,
+  "warm_max_s": 2.814,
+  "unavailable": 0
+ },
+ "rows": [
+  {
+   "file": "walk_001.jpg",
+   "repeat": 0,
+   "bytes": 11975,
+   "latency_s": 2.261,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "person",
+     "person",
+     "person"
+    ],
+    "people_within_2m": 3,
+    "stop": true,
+    "confidence": 0.97,
+    "reason": "Persons are in the vicinity of the robot, restricting its movement.",
+    "latency_s": 2.261,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_002.jpg",
+   "repeat": 0,
+   "bytes": 13046,
+   "latency_s": 2.172,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "person",
+     "child",
+     "adult"
+    ],
+    "people_within_2m": 3,
+    "stop": true,
+    "confidence": 0.98,
+    "reason": "Child and adult are in the path, so must stop",
+    "latency_s": 2.172,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_003.jpg",
+   "repeat": 0,
+   "bytes": 11139,
+   "latency_s": 1.9,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; clear forward area",
+    "latency_s": 1.9,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_004.jpg",
+   "repeat": 0,
+   "bytes": 9958,
+   "latency_s": 2.282,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 1,
+    "stop": false,
+    "confidence": 0.987,
+    "reason": "Guests are seated and walking in the background, but the path ahead is clear of obstacles and people.",
+    "latency_s": 2.282,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_005.jpg",
+   "repeat": 0,
+   "bytes": 8314,
+   "latency_s": 2.814,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 2,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "Guests are within 2 meters of the robot's path, but they are not in the way. The floor ahead is clear of obstacles and the intended action is to proceed forward safely.",
+    "latency_s": 2.814,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_006.jpg",
+   "repeat": 0,
+   "bytes": 9547,
+   "latency_s": 1.903,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; clear forward area",
+    "latency_s": 1.903,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_007.jpg",
+   "repeat": 0,
+   "bytes": 12683,
+   "latency_s": 1.868,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "person",
+     "plant"
+    ],
+    "people_within_2m": 2,
+    "stop": true,
+    "confidence": 0.98,
+    "reason": "Person is in the way",
+    "latency_s": 1.868,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_008.jpg",
+   "repeat": 0,
+   "bytes": 8399,
+   "latency_s": 2.011,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "poster"
+    ],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward motion is safe; no obstacles or people in the path",
+    "latency_s": 2.011,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_009.jpg",
+   "repeat": 0,
+   "bytes": 8483,
+   "latency_s": 1.893,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; forward movement permitted",
+    "latency_s": 1.893,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_010.jpg",
+   "repeat": 0,
+   "bytes": 6167,
+   "latency_s": 1.9,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; forward movement permitted",
+    "latency_s": 1.9,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_011.jpg",
+   "repeat": 0,
+   "bytes": 6045,
+   "latency_s": 1.894,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; forward movement permitted",
+    "latency_s": 1.894,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_012.jpg",
+   "repeat": 0,
+   "bytes": 5366,
+   "latency_s": 2.278,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "Straight ahead is a tiled floor, not steps or water, and no obstacles or people are in the way.",
+    "latency_s": 2.278,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_013.jpg",
+   "repeat": 0,
+   "bytes": 9370,
+   "latency_s": 1.877,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; forward movement permitted",
+    "latency_s": 1.876,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_014.jpg",
+   "repeat": 0,
+   "bytes": 6355,
+   "latency_s": 1.889,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; forward movement permitted",
+    "latency_s": 1.889,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_015.jpg",
+   "repeat": 0,
+   "bytes": 8310,
+   "latency_s": 1.909,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; forward movement permitted",
+    "latency_s": 1.909,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_016.jpg",
+   "repeat": 0,
+   "bytes": 8551,
+   "latency_s": 1.922,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "Clear path ahead, no obstacles or people in the way.",
+    "latency_s": 1.922,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_017.jpg",
+   "repeat": 0,
+   "bytes": 11180,
+   "latency_s": 1.858,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; clear forward area",
+    "latency_s": 1.858,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_018.jpg",
+   "repeat": 0,
+   "bytes": 2187,
+   "latency_s": 2.224,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "Clear view of the entrance hall floor; no obstacles or people in the path; forward movement permitted.",
+    "latency_s": 2.224,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_019.jpg",
+   "repeat": 0,
+   "bytes": 6251,
+   "latency_s": 1.896,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; clear forward area",
+    "latency_s": 1.896,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_020.jpg",
+   "repeat": 0,
+   "bytes": 6098,
+   "latency_s": 1.938,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "Clear path ahead, no obstacles or people in the way.",
+    "latency_s": 1.938,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_021.jpg",
+   "repeat": 0,
+   "bytes": 5869,
+   "latency_s": 2.157,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "Straight ahead is a staircase, not a public floor; the intended action violates the safety zone.",
+    "latency_s": 2.157,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_022.jpg",
+   "repeat": 0,
+   "bytes": 4976,
+   "latency_s": 2.255,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "Straight ahead is a flat tiled floor, no steps or obstacles, no people in the way, safe to proceed",
+    "latency_s": 2.255,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_023.jpg",
+   "repeat": 0,
+   "bytes": 4159,
+   "latency_s": 1.9,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.99,
+    "reason": "No obstacles or people in the path; forward movement permitted",
+    "latency_s": 1.9,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_024.jpg",
+   "repeat": 0,
+   "bytes": 8572,
+   "latency_s": 1.9,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; forward movement safe",
+    "latency_s": 1.9,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_025.jpg",
+   "repeat": 0,
+   "bytes": 11549,
+   "latency_s": 1.891,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "No obstacles or people in the path; clear forward area",
+    "latency_s": 1.891,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_026.jpg",
+   "repeat": 0,
+   "bytes": 10917,
+   "latency_s": 1.983,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "person"
+    ],
+    "people_within_2m": 1,
+    "stop": true,
+    "confidence": 0.98,
+    "reason": "Guests are in the path ahead, restricting forward movement.",
+    "latency_s": 1.983,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_027.jpg",
+   "repeat": 0,
+   "bytes": 10975,
+   "latency_s": 2.089,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "person",
+     "cart"
+    ],
+    "people_within_2m": 2,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "Guests are in the path ahead, restricting forward movement.",
+    "latency_s": 2.089,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "walk_028.jpg",
+   "repeat": 0,
+   "bytes": 11574,
+   "latency_s": 2.019,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "person",
+     "child",
+     "adult"
+    ],
+    "people_within_2m": 3,
+    "stop": true,
+    "confidence": 0.97,
+    "reason": "Child and adult are in the way",
+    "latency_s": 2.018,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  }
+ ]
+}
