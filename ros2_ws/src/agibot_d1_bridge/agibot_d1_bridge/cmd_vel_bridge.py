@@ -11,6 +11,7 @@ Topics out: imu, odom, battery, joint_states, ctrl_mode, connected
 All velocity-style commands have a watchdog: silence -> stop.
 """
 import importlib
+import json
 import math
 import os
 import platform
@@ -25,6 +26,8 @@ from sensor_msgs.msg import BatteryState, Imu, JointState
 from std_msgs.msg import Bool, Int32, String
 from tf2_ros import TransformBroadcaster
 from std_srvs.srv import Trigger
+
+from agibot_d1_bridge.heading_bias import HeadingBias
 
 SDK_SUBMODULE = os.path.join('third_party', 'agibot_D1_Edu-Ultra')
 
@@ -107,6 +110,8 @@ class CmdVelBridge(Node):
         p('link_timeout', 15.0)     # exit if the SDK link stays down this long (launch respawns us); 0 = never
         p('odom_source', 'integrated')  # 'integrated' (body velocity x IMU yaw) | 'sdk' (SDK getPosition)
         p('odom_rate', 50.0)        # Hz integration rate
+        p('heading_bias_comp', True)    # remove the SDK's constant gyro/yaw bias (-9.4 deg/min measured) via zero-velocity updates
+        p('bias_file', '~/.d1_heading_bias.json')   # remembers the last bias estimate between runs
         p('vel_deadband', 0.02)     # m/s: body-velocity noise below this is treated as 0
         p('publish_footprint_tf', True)  # also broadcast odom -> base_footprint (x, y, yaw only, z = 0 = floor)
         p('footprint_frame', 'base_footprint')
@@ -168,6 +173,18 @@ class CmdVelBridge(Node):
         self.int_yaw0 = None
         self.int_last_t = None
         self.int_quat = None            # (w, x, y, z) with yaw relative to the start
+        self.hb_on = bool(g('heading_bias_comp'))
+        self.bias_file = os.path.expanduser(str(g('bias_file')))
+        self.hb = HeadingBias()
+        self._hb_saved = -1
+        try:                            # start from the last known bias (it drifts slowly); stationary updates correct it within seconds
+            with open(self.bias_file) as f:
+                saved = json.load(f)
+            if time.time() - float(saved.get('t', 0)) < 12 * 3600 and abs(float(saved['bias'])) < 0.02:
+                self.hb.bias, self.hb.have_bias = float(saved['bias']), True
+                self.get_logger().info(f'heading bias loaded: {math.degrees(self.hb.bias) * 60:+.2f} deg/min')
+        except (OSError, ValueError, KeyError):
+            pass
         self.link_timeout = float(g('link_timeout'))
         self.last_link_ok = time.monotonic()
         self.publish_tf = bool(g('publish_tf'))
@@ -442,6 +459,9 @@ class CmdVelBridge(Node):
             self.int_x = self.int_y = 0.0
             self.int_yaw0 = None
             self.int_last_t = None
+            nb = HeadingBias()                         # keep the bias estimate, restart the unwrapped yaw / integral
+            nb.bias, nb.have_bias = self.hb.bias, self.hb.have_bias
+            self.hb = nb
             return
         vel = self._get('getBodyVelocity')
         quat = self._get('getQuaternion')      # [w, x, y, z]
@@ -449,10 +469,23 @@ class CmdVelBridge(Node):
             self.int_last_t = None
             return
         roll, pitch, yaw = _quat_to_rpy(*quat)
+        now = time.monotonic()
+        if self.hb_on:
+            gyro = self._get('getBodyGyro')
+            gz = gyro[2] if gyro else 0.0
+            yaw = self.hb.update(now, yaw, gz, math.hypot(vel[0], vel[1]))   # unwrapped, bias removed
+            if self.hb.updates != self._hb_saved and self.hb.updates % 20 == 1:
+                self._hb_saved = self.hb.updates
+                self.get_logger().info(f'heading bias {math.degrees(self.hb.bias) * 60:+.2f} deg/min '
+                                       f'({self.hb.updates} stationary updates)', throttle_duration_sec=20.0)
+                try:
+                    with open(self.bias_file, 'w') as f:
+                        json.dump({'bias': self.hb.bias, 't': time.time()}, f)
+                except OSError:
+                    pass
         if self.int_yaw0 is None:
             self.int_yaw0 = yaw
         yaw_rel = _wrap(yaw - self.int_yaw0)
-        now = time.monotonic()
         if self.int_last_t is not None:
             dt = now - self.int_last_t
             if 0.0 < dt < 0.5:

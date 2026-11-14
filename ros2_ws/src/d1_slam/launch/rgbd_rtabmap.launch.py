@@ -23,6 +23,8 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     args = [('database_path', os.path.expanduser('~/d1_maps/d1_rgbd_map.db'), 'RTAB-Map database'),
             ('delete_db', 'true', 'start a new map'),
+            ('imu_gravity', 'false', 'publish base_link->imu_link and use the IMU gravity constraint (Optimizer/GravitySigma 0.3)'),
+            ('neighbor_refine', 'false', 'refine consecutive pose links with visual registration (RGBD/NeighborLinkRefining)'),
             ('localization', 'false', 'localise in an existing database (no new nodes) instead of mapping'),
             ('rviz', 'true', 'open RViz'),
             ('max_depth', '3.0', 'ignore depth beyond this (m)'),
@@ -54,7 +56,8 @@ def generate_launch_description():
         'Kp/MaxFeatures': '600',
         'Vis/MaxFeatures': '600',
         'Rtabmap/DetectionRate': '2',
-        'RGBD/NeighborLinkRefining': 'false',
+        'RGBD/NeighborLinkRefining': s('neighbor_refine'),
+        'Optimizer/GravitySigma': ParameterValue(PythonExpression(["'0.3' if '", c('imu_gravity'), "' == 'true' else '0'"]), value_type=str),
         'RGBD/LinearUpdate': s('linear_update'),
         'RGBD/AngularUpdate': s('angular_update'),
         'Optimizer/Slam2D': 'true',
@@ -92,7 +95,10 @@ def generate_launch_description():
                     parameters=[params], remappings=remaps, condition=mapping_when(False))
     localize = Node(package='rtabmap_slam', executable='rtabmap', name='rtabmap', output='screen',
                     parameters=[loc_params], remappings=remaps, condition=IfCondition(is_true('localization')))
+    tf_imu = Node(package='tf2_ros', executable='static_transform_publisher', name='tf_base_to_imu',
+                  arguments=['--frame-id', 'base_link', '--child-frame-id', 'imu_link'],
+                  condition=IfCondition(PythonExpression(["'", c('imu_gravity'), "' == 'true'"])))
     rviz = Node(package='rviz2', executable='rviz2', name='rviz2_mapping', output='log',
                 arguments=['-d', PathJoinSubstitution([FindPackageShare('d1_slam'), 'rviz', 'mapping.rviz'])],
                 condition=IfCondition(c('rviz')))
-    return LaunchDescription(la + [SetEnvironmentVariable('PYTHONNOUSERSITE', '1'), new_map, keep_map, localize, rviz])
+    return LaunchDescription(la + [SetEnvironmentVariable('PYTHONNOUSERSITE', '1'), new_map, keep_map, localize, tf_imu, rviz])
