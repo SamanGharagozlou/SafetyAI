@@ -1,6 +1,27 @@
-# ClawMetry frontend — Phase 4
+# ClawMetry frontend — Phase 5A deployment readiness
 
 Mobile-first visitor onboarding for the SafetyAI Robotics Hackathon. React, Vite, TypeScript, and Tailwind CSS. The Phase 1 avatar, palette, and card design are preserved.
+
+## Static HTTPS deployment readiness
+
+See [DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md) for exact Cloudflare Pages settings, environment rules, route/HTTPS acceptance tests, real-phone checks, QR generation, rollback, and privacy/security limitations. **Nothing has been deployed and no production URL is assumed.**
+
+For a backend-free deployable artifact:
+
+```sh
+cd frontend
+npm ci --include=dev
+npm run typecheck
+npm test
+npm run build:demo
+npm run test:e2e
+```
+
+`build:demo` validates the public environment, requires disconnected transcription/default unwired request paths, creates a non-sensitive demo manifest, disables source maps, packages static routes/security rules, and audits the output for unreviewed files, common credentials/private addresses, and URL origins. This is a best-effort audit, not a guarantee against every secret or first-party compromise. Deploy only `frontend/dist/` after separate authorization. The publishing build uses Vite's `demo` mode, not `.env.production`.
+
+`public/_headers` enforces CSP with **`connect-src 'none'`**, same-origin scripts/styles, local Blob audio playback, top-level-only microphone permission policy, framing restrictions, and other headers. These headers deliberately block API connections on the static demo. Future verified integration requires a different reviewed deployment profile/policy. Optional transcription remains available for development; it cannot be enabled in the Phase 5A release by setting an endpoint.
+
+`public/_redirects` covers exact `/join`, `/session`, and `/privacy` routes (including trailing slashes). A generated HTTP 404 entry prevents missing API/asset URLs from returning fake SPA success. Browser tests now use `npm run preview:static`, a loopback-only read-only QA server applying this project's header/routing rules. It does not emulate Cloudflare's edge, implement a backend, deploy anything, or verify TLS.
 
 ## Run locally
 
@@ -65,7 +86,7 @@ The capture implementation follows the browser APIs documented in [getUserMedia]
 VITE_TRANSCRIBE_ENDPOINT=/api/transcribe
 ```
 
-Paths are configurable, but cross-origin URLs, protocol-relative URLs, backslashes, query strings, and fragments are rejected. Audio is sent only to a same-origin path; deploy/reverse-proxy the teammate's FastAPI endpoint under that origin. No proxy/backend configuration is added here. Cookies are omitted and redirects are not followed. The UI labels the action **Continue — send for transcription**, displays the endpoint path, and explains that this button uploads audio.
+This is a development/future integration option; the audited static release rejects any nonempty transcription endpoint and its CSP blocks network connections. Paths are configurable, but cross-origin URLs, protocol-relative URLs, backslashes, query strings, and fragments are rejected. Audio is sent only to a same-origin path; deploy/reverse-proxy the teammate's FastAPI endpoint under that origin. No proxy/backend configuration is added here. Cookies are omitted and redirects are not followed. The UI labels the action **Continue — send for transcription**, displays the endpoint path, and explains that this button uploads audio.
 
 **Proposed wire contract, pending agreement:** `POST` multipart/form-data, with `audio` containing the Blob and a format-based filename, `mime_type` containing the actual recording MIME type (including codec information), and `duration_ms` containing rounded duration. The browser sets the multipart boundary. No nickname or mock session ID is sent. Accept only a successful JSON response with a nonempty string `text` (at most 2000 characters). This is an interface proposal, not a claim that FastAPI already supports it. Runtime response validation rejects malformed/empty responses. Displayed transcripts come only from that response and can be edited before confirmation; test fixture responses exist only in tests.
 
@@ -142,11 +163,11 @@ npm run build
 npm run preview
 ```
 
-Build checks TypeScript, bundles local assets to `dist/`, and creates `dist/join/index.html`, `dist/session/index.html`, and `dist/privacy/index.html`. Hosts supporting directory indexes can serve direct/refresh visits without a special SPA rewrite (some redirect `/join` to `/join/`, which the app also handles). The app expects deployment at the domain root, not a URL subdirectory.
+This standard developer build checks TypeScript, bundles local assets to `dist/`, and creates `dist/join/index.html`, `dist/session/index.html`, and `dist/privacy/index.html`. Hosts supporting directory indexes can serve direct/refresh visits without a special SPA rewrite (some redirect `/join` to `/join/`, which the app also handles). The app expects deployment at the domain root, not a URL subdirectory.
 
-For a host without directory-index support, configure internal fallback rewrites for `/join`, `/session`, and `/privacy` to `/index.html`, preserving the requested browser path. Optionally use that fallback for other non-asset routes to show the in-app missing-page screen. Do not rewrite missing assets to HTML. FastAPI deployment/static-serving configuration belongs to the backend teammate; it is not changed here.
+For Cloudflare Pages, the included `_redirects` already provides exact route rewrites. A generated `404.html` boots the recovery screen for unknown routes while keeping HTTP 404; missing API/assets are not rewritten to success. The Phase 5A publishing command is `npm run build:demo`, not the developer build above. FastAPI deployment/static-serving configuration belongs to the backend teammate; it is not changed here.
 
-Preview normally serves **http://localhost:4173/join**. Deploy `dist/` only when deployment is authorized. On the real host, verify direct `/join` access and refresh from a phone before printing a QR code.
+Vite preview normally serves **http://localhost:4173/join** but does not apply hosting rules. Use `npm run build:demo` then `npm run preview:static` for the policy-aware local QA server at **http://127.0.0.1:4173/join**. Deploy `dist/` only when deployment is authorized. On the real host, verify direct `/join` access and refresh from a phone before printing a QR code.
 
 ## Generate a QR code locally
 
@@ -178,19 +199,19 @@ Open the SVG in a local viewer and print without cropping its white border, at l
 ```sh
 npm run typecheck
 npm test
-npm run build
+npm run build:demo
 npm run test:e2e
 ```
 
 Vitest covers named and guest onboarding, retry errors, config validation, session expiry, wake-from-sleep expiry, ending sessions, privacy navigation, and missing/refresh session handling. QR tests verify validation, file generation, overwrite protection, and encoding/decoding round-trip, using a reserved test-only domain in temporary files.
 
-Playwright runs against the production preview using **installed Google Chrome** (`channel: chrome`); it does not download a browser. Install Chrome separately if absent, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to an existing compatible binary. The preview port 4173 must be free. Tests cover direct `/join` and refresh, a 40-character name, voice/text controls, privacy, ending/rejoining, browser history, empty browser storage, reduced motion, and horizontal overflow at 320×568, 375×667, 390×844, 412×915, and 667×375. Long pages scroll naturally; nickname input text is 16px to avoid iOS focus zoom. Chrome viewport checks do not replace testing on actual iOS Safari and Android devices.
+Playwright runs against the built artifact through the policy-aware static QA server using **installed Google Chrome** (`channel: chrome`); it does not download a browser. Install Chrome separately if absent, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to an existing compatible binary. The preview port 4173 must be free. Tests cover direct `/join` and refresh, a 40-character name, voice/text controls, privacy, ending/rejoining, browser history, empty browser storage, reduced motion, and horizontal overflow at 320×568, 375×667, 390×844, 412×915, and 667×375. Long pages scroll naturally; nickname input text is 16px to avoid iOS focus zoom. Chrome viewport checks do not replace testing on actual iOS Safari and Android devices.
 
 `npm run test:watch` runs the unit tests interactively. Phase 3 unit tests also cover capture transitions, MIME fallback, the 20-second limit, denied/missing/busy devices, pending permission races, stopped tracks, revoked URLs, cancel/retry, hidden tabs, navigation/expiry/End Session, typed editing, playback failure, upload consent, invalid API responses, and request aborts.
 
 Phase 3 browser tests mock `getUserMedia` and `MediaRecorder`; **they never access your physical microphone**. A synthetic silent WAV exercises real local audio playback. Tests cover recording/review/text at 320×568, 390×844, and 667×375, errors and unsupported browsers, permission cancellation, the 20-second cap, navigation, and session cleanup. They check that disconnected journeys make no POST or unexpected external requests. Screenshots are saved under ignored `test-results/`. These tests cannot verify physical devices or the real FastAPI/Whisper service.
 
-Phase 4 adds tests for explicit confirmation, editing/canceling, duplicate submission, every task state/outcome, independent allowlist checks, unsupported requests, polling failures, absolute timeouts, session expiry, stale/late results, request identity/revisions, separate authorization credentials, endpoint validation, and actual returned-transcript confirmation. The complete current suite has **143 unit/integration tests** and **33 browser tests**. All earlier tests remain unchanged.
+Phase 4 adds tests for explicit confirmation, editing/canceling, duplicate submission, every task state/outcome, independent allowlist checks, unsupported requests, polling failures, absolute timeouts, session expiry, stale/late results, request identity/revisions, separate authorization credentials, endpoint validation, and actual returned-transcript confirmation. Phase 4 had **143 unit/integration tests** and **33 browser tests**; Phase 5A adds 25 environment/artifact checks and 10 deployment browser checks, for **168 unit/integration tests** and **43 browser tests**. All earlier tests remain unchanged.
 
 The task browser journeys verify confirmation, awaiting-approval, and completion layouts at 320×568, 390×844, and 667×375; mock task journeys make no POSTs or unexpected external requests. Existing onboarding and media viewport checks remain in the suite. Production build and typecheck pass. Physical iPhone/Android hardware, actual microphone devices, and real FastAPI services still require integration testing.
 
@@ -222,3 +243,8 @@ Remaining work: deploy to the real HTTPS host and verify its routes; generate an
 - `src/**/*.test.ts*`, `scripts/*.test.mjs`: unit/integration tests.
 - `e2e/visitor.spec.ts`, `e2e/voice.spec.ts`, `e2e/tasks.spec.ts`: production-preview visitor, mocked-media, and task journeys.
 - `.env.example`: documented public demo configuration.
+- `config/deployment.ts`: public-environment validation for the demo release.
+- `public/_headers`, `public/_redirects`: static Cloudflare Pages policy/routing.
+- `scripts/audit-dist.mjs`: deployment artifact allowlist, pattern checks, and digest.
+- `scripts/serve-static.mjs`: loopback-only read-only QA of the built static policy.
+- `DEPLOYMENT_CHECKLIST.md`: hosting, phone acceptance, QR, rollback, and audit findings.

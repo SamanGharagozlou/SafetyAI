@@ -6,4 +6,5 @@ for (const route of ['join', 'session', 'privacy']) {
   await mkdir(`dist/${route}`, { recursive: true })
   await copyFile('dist/index.html', `dist/${route}/index.html`)
 }
-console.log('Static route entries generated: /join, /session, /privacy')
+await copyFile('dist/index.html', 'dist/404.html')
+console.log('Static route entries generated: /join, /session, /privacy; HTTP 404 recovery entry generated.')

@@ -2,6 +2,10 @@
 
 Phase 4 always uses `createMockTaskAdapter`. No real request/status endpoint has been verified, instantiated by the UI, or called. No backend, robot SDK, movement command, or safety authorization is implemented here. This document describes a proposal the backend teammate must review, not an existing API guarantee.
 
+## Static deployment boundary (Phase 5A)
+
+The deployable backend-free profile is `npm run build:demo`. It requires blank transcription configuration, defaults/unwired request paths, and an approved public environment allowlist. Its enforced CSP uses `connect-src 'none'`, blocking API fetches/uploads even on the same origin. The prepared adapters remain available for development and future integration; environment paths alone cannot enable a real task backend. A future connection requires a separately reviewed build profile, CSP, authentication/retention contract, and updated acceptance tests. See [DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md). No API is connected as part of deployment readiness.
+
 ## Prepared frontend adapter
 
 `src/tasks/requestApiAdapter.ts` exports `createRequestApiAdapter(config, getAuthorization)` and `requestApiConfig`. The proposed configurable paths are:

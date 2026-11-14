@@ -12,7 +12,7 @@ export default defineConfig({
     launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH },
   },
   webServer: {
-    command: 'npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
+    command: 'npm run preview:static -- --port 4173',
     url: 'http://127.0.0.1:4173/join',
     reuseExistingServer: false,
   },

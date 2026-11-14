@@ -11,7 +11,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "qr": "node scripts/generate-qr.mjs"
+    "qr": "node scripts/generate-qr.mjs",
+    "build:demo": "tsc -b && vite build --mode demo && node scripts/static-routes.mjs && node scripts/audit-dist.mjs",
+    "audit:dist": "node scripts/audit-dist.mjs",
+    "preview:static": "node scripts/serve-static.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",
