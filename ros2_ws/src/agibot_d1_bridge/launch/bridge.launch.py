@@ -15,6 +15,8 @@ def generate_launch_description():
             executable='cmd_vel_bridge',
             name='d1_cmd_vel_bridge',
             output='screen',
+            respawn=True,          # restart if the SDK link dies (see link_timeout)
+            respawn_delay=2.0,
             parameters=[{
                 'local_ip': LaunchConfiguration('local_ip'),
                 'robot_ip': LaunchConfiguration('robot_ip'),
