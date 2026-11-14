@@ -17,6 +17,7 @@ setup(
         'console_scripts': [
             'cmd_vel_bridge = agibot_d1_bridge.cmd_vel_bridge:main',
             'test_sequence = agibot_d1_bridge.test_sequence:main',
+            'keyboard_teleop = agibot_d1_bridge.keyboard_teleop:main',
         ],
     },
 )

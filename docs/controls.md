@@ -43,18 +43,70 @@ a.passive()                 # emergency: damping, robot drops
 - Keep the process alive: no SDK data for **3 s** → the robot goes into damping and lies down.
 - While an SDK program runs, the remote controller is overridden.
 
-## ROS 2 (`cmd_vel`)
+## ROS 2 bridge (`agibot_d1_bridge`)
 
 ```bash
 cd ros2_ws && source /opt/ros/humble/setup.bash && source install/setup.bash
 ros2 launch agibot_d1_bridge bridge.launch.py local_ip:=172.24.1.20 robot_ip:=172.24.1.41
+```
 
+**Commands in**
+
+| Topic / service | Type | What it does |
+|---|---|---|
+| `cmd_vel` | `Twist` | Drive with the active gait: `x`=vx, `y`=vy, `angular.z`=yaw rate |
+| `gait` | `String` | `move` (default) \| `crawl` \| `climb`; switching stops motion first and cancels the old gait |
+| `attitude_cmd` | `Twist` | Body wobble/height while standing: `angular.x/y/z` = roll/pitch/yaw rate, `linear.z` = height rate (each ±0.5) |
+| `robot_cmd` | `String` | `stand_up` \| `lie_down` \| `damp` \| `shake_hand` \| `cancel_crawl` \| `cancel_climb` |
+| `~/stand_up` `~/lie_down` `~/damp` `~/passive` `~/shake_hand` | `Trigger` | Same posture commands as services (`passive` = `damp`) |
+
+```bash
 ros2 service call /d1_cmd_vel_bridge/stand_up std_srvs/srv/Trigger
-ros2 service call /d1_cmd_vel_bridge/lie_down std_srvs/srv/Trigger
-ros2 service call /d1_cmd_vel_bridge/passive  std_srvs/srv/Trigger   # emergency
-
+ros2 service call /d1_cmd_vel_bridge/damp     std_srvs/srv/Trigger   # emergency, robot drops
+ros2 topic pub --once /robot_cmd std_msgs/msg/String "{data: shake_hand}"
+ros2 topic pub --once /gait std_msgs/msg/String "{data: crawl}"
 ros2 run agibot_d1_bridge test_sequence   # fwd 2s, stop, rev 2s, stop, then yaw (not yet run on robot)
 ```
 
-The bridge clamps speeds (default 1.0 m/s, 0.5 m/s, 1.5 rad/s), zeroes values below the
-SDK minimum, and stops if `cmd_vel` is silent for 0.5 s.
+**Data out** (published only while the SDK is connected, `state_rate` = 10 Hz)
+
+| Topic | Type | Source |
+|---|---|---|
+| `imu` | `sensor_msgs/Imu` | quaternion, gyro, accel |
+| `odom` | `nav_msgs/Odometry` | SDK position + orientation, body velocity |
+| `battery` | `sensor_msgs/BatteryState` | percentage only (other fields NaN) |
+| `joint_states` | `sensor_msgs/JointState` | `FR/FL/RR/RL` x `abad/hip/knee/foot` position, velocity, torque |
+| `ctrl_mode` | `std_msgs/Int32` | SDK control mode |
+| `connected` | `std_msgs/Bool` | SDK link status (always published) |
+
+**Safety built in:** speeds are clamped to the SDK limit for the active gait *and* your caps
+(`max_vx/vy/wz`, default 1.0 / 0.5 / 1.5); values below the SDK minimum become 0;
+`cmd_vel` and `attitude_cmd` stop after 0.5 s of silence.
+
+| Gait | vx | vy | yaw (min..max) |
+|---|---|---|---|
+| move | 0.05..3.7 m/s | 0.1..1.0 | 0.1..3.0 rad/s |
+| crawl | 0.1..3.0 | 0.1..0.5 | 0.1..1.0 |
+| climb | 0.1..1.0 | 0.1..1.0 | 0.1..3.0 |
+
+Not exposed: `zsl-1`-only acrobatics (`jump`, `frontJump`, `backflip`, `twoLegStand`) - not
+available on the wheel-foot robot.
+
+## Keyboard control
+
+With the bridge running, in another terminal (ROS sourced):
+```bash
+ros2 run agibot_d1_bridge keyboard_teleop            # --lin 0.2 --ang 0.4 --hold 0.5
+```
+
+| Key | Action | Key | Action |
+|---|---|---|---|
+| `w` / `s` (or Up/Down) | forward / back | `1` | stand up |
+| `a` / `d` (or Left/Right) | turn left / right | `2` | lie down |
+| `q` / `e` | strafe left / right | `3` | shake hand |
+| space | stop | `c` | cycle gait (move/crawl/climb) |
+| `+` / `-` | speed up / down | `x` | **damp (emergency, robot drops)** |
+
+Terminals don't report key releases, so the robot keeps moving for `--hold` seconds after the
+last key event: hold a key to move, release to stop. Ctrl-C stops and quits (it does not damp;
+the bridge watchdog does that ~3 s later if the SDK link goes quiet).
