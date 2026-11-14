@@ -36,6 +36,7 @@ ARGS = [
     ('model_path', '', 'Local model file/dir (overrides model_name)'),
     ('device', '', 'cpu | cuda:0 | intel:cpu ... (empty = from YAML)'),
     ('backend', '', 'pytorch | onnx | openvino | tensorrt (empty = from YAML)'),
+    ('input_reliability', '', 'reliable | best_effort image QoS (empty = from YAML)'),
     ('publish_annotated_image', '', 'true | false (empty = from YAML; rviz:=true turns it on)'),
     ('rviz', 'false', 'Start rviz2 showing the annotated detections'),
     ('rviz_config', 'human_perception.rviz', 'rviz config: file in package rviz/ dir or abs path'),
@@ -75,7 +76,7 @@ def _setup(context):
 
     det_params = [_resolve_yaml(a['detector_params'])]
     overrides = {}
-    for key in ('model_name', 'model_path', 'device', 'backend'):
+    for key in ('model_name', 'model_path', 'device', 'backend', 'input_reliability'):
         if a[key]:
             overrides[key] = a[key]
     if a['publish_annotated_image']:

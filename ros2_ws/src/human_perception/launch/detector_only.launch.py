@@ -14,7 +14,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
 PASS_THROUGH = ['image_topic', 'detector_params', 'model_name', 'model_path', 'device',
-                'backend', 'publish_annotated_image', 'rviz']
+                'backend', 'input_reliability', 'publish_annotated_image', 'rviz']
 
 
 def generate_launch_description():
@@ -26,6 +26,7 @@ def generate_launch_description():
             DeclareLaunchArgument('model_path', default_value=''),
             DeclareLaunchArgument('device', default_value=''),
             DeclareLaunchArgument('backend', default_value=''),
+            DeclareLaunchArgument('input_reliability', default_value=''),
             DeclareLaunchArgument('publish_annotated_image', default_value=''),
             DeclareLaunchArgument('rviz', default_value='false')]
     forwarded = {'launch_source': 'false'}

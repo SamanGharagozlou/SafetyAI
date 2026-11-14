@@ -10,6 +10,16 @@ if [[ $# -gt 0 ]]; then
   exec "$@"
 fi
 
+if [[ "${SOURCE_TYPE:-}" == "d1_camera" ]]; then
+  # Teammate's d1_camera driver + detector in this container (RTSP_URL = robot stream).
+  args=()
+  [[ -n "${RTSP_URL:-}" ]] && args+=("url:=${RTSP_URL}")
+  [[ -n "${DETECTOR_PARAMS:-}" ]] && args+=("detector_params:=${DETECTOR_PARAMS}")
+  [[ -n "${MODEL_NAME:-}" ]] && args+=("model_name:=${MODEL_NAME}")
+  [[ -n "${DEVICE:-}" ]] && args+=("device:=${DEVICE}")
+  exec ros2 launch human_perception d1_camera.launch.py rviz:="${RVIZ:-false}" "${args[@]}"
+fi
+
 args=()
 add() { [[ -n "$2" ]] && args+=("$1:=$2") || true; }
 add source_type     "${SOURCE_TYPE:-webcam}"

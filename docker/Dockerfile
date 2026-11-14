@@ -33,6 +33,7 @@ RUN pip3 install "packaging>=24.2"
 
 WORKDIR /ws
 COPY ros2_ws/src/human_perception/ src/human_perception/
+COPY ros2_ws/src/d1_camera/ src/d1_camera/
 RUN . /opt/ros/humble/setup.sh && colcon build --event-handlers console_direct- \
     && rm -rf build log
 

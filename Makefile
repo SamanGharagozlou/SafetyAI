@@ -5,11 +5,12 @@
 #   make up rviz=true                    ... plus rviz2 showing the detections
 #   make up source=d1-wifi rviz=true     AGIBOT D1 camera over Wi-Fi
 #   make up source=d1-wifi robot_ip=172.24.1.41   D1 on another network (e.g. event Wi-Fi)
+#   make up source=d1-camera robot_ip=<ip>   teammate's d1_camera driver + detector, one container
 #   make down | make logs | make shell | make test
 #
 # Variables (all optional):
 #   rviz=false|true        start rviz2 (default false)
-#   source=webcam          webcam | d1-wifi | d1-ethernet | rtsp | file | wsl-webcam
+#   source=webcam          webcam | d1-wifi | d1-ethernet | d1-camera | rtsp | file | wsl-webcam
 #   webcam=0               webcam index or /dev/videoN
 #   robot_ip=<ip>          D1 address for source=d1-* (default 192.168.234.1 Wi-Fi AP,
 #                          192.168.168.168 Ethernet); same name as agibot_d1_bridge's robot_ip
@@ -54,6 +55,10 @@ ifeq ($(source),d1-ethernet)
   rtsp_url := $(or $(rtsp_url),rtsp://$(or $(robot_ip),192.168.168.168):8554/test)
   SOURCE_PARAMS := d1_rtsp.yaml
 endif
+ifeq ($(source),d1-camera)
+  SOURCE_TYPE := d1_camera
+  rtsp_url := $(or $(rtsp_url),rtsp://$(or $(robot_ip),192.168.234.1):8554/test)
+endif
 ifeq ($(source),file)
   FILE_DIR := $(dir $(abspath $(file)))
   FILE_PATH := $(abspath $(file))
@@ -79,9 +84,9 @@ build:
 		docker compose build
 
 up:
-	@case "$(source)" in webcam|d1-wifi|d1-ethernet|rtsp|file|wsl-webcam) ;; \
+	@case "$(source)" in webcam|d1-wifi|d1-ethernet|d1-camera|rtsp|file|wsl-webcam) ;; \
 		*) echo "unknown source=$(source)"; exit 2;; esac
-	@if [ "$(SOURCE_TYPE)" = rtsp ] && [ -z "$(rtsp_url)" ]; then echo "source=rtsp needs rtsp_url=..."; exit 2; fi
+	@if { [ "$(SOURCE_TYPE)" = rtsp ] || [ "$(SOURCE_TYPE)" = d1_camera ]; } && [ -z "$(rtsp_url)" ]; then echo "source=rtsp needs rtsp_url=..."; exit 2; fi
 	@if [ "$(source)" = file ] && [ ! -f "$(FILE_PATH)" ]; then echo "source=file needs file=<existing path>"; exit 2; fi
 	@mkdir -p $(MEDIA_DIR)
 	@if [ "$(rviz)" = true ] && command -v xhost >/dev/null 2>&1; then xhost +local:root >/dev/null 2>&1 || true; fi

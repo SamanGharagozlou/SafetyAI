@@ -173,6 +173,20 @@ make up source=d1-wifi rviz=true                         # robot AP Wi-Fi (192.1
 make up source=d1-wifi robot_ip=172.24.1.41 rviz=true    # robot on another network
 ```
 
+### AGIBOT D1 Ultra with the teammate's `d1_camera` driver
+
+`d1_camera` (calibration-ready `camera_info`, used by the SLAM and depth packages) publishes
+`/camera/image_raw` as best-effort, so the detector must subscribe best-effort too. Large
+frames only arrive reliably when camera and detector share one container (Fast DDS shared
+memory); across a host running another DDS vendor they are dropped.
+
+```bash
+make up source=d1-camera robot_ip=<ip>      # d1_camera + detector, one container
+ros2 launch human_perception d1_camera.launch.py url:=rtsp://<ip>:8554/test   # native
+```
+
+Use this or `source=d1-wifi` (our own `video_source`), never both: they publish the same topic.
+
 ### AGIBOT D1 Ultra over Wi-Fi
 
 ```bash
