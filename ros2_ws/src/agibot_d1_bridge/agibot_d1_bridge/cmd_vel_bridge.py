@@ -11,16 +11,19 @@ Topics out: imu, odom, battery, joint_states, ctrl_mode, connected
 All velocity-style commands have a watchdog: silence -> stop.
 """
 import importlib
+import math
 import os
 import platform
 import sys
+import time
 
 import rclpy
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import BatteryState, Imu, JointState
 from std_msgs.msg import Bool, Int32, String
+from tf2_ros import TransformBroadcaster
 from std_srvs.srv import Trigger
 
 SDK_SUBMODULE = os.path.join('third_party', 'agibot_D1_Edu-Ultra')
@@ -59,6 +62,25 @@ def _find_sdk_lib(override: str, robot_type: str) -> str:
         'AGIBOT_SDK_DIR / the sdk_lib_dir parameter. Tried: ' + ', '.join(candidates))
 
 
+def _quat_to_rpy(w, x, y, z):
+    roll = math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
+    pitch = math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))
+    yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    return roll, pitch, yaw
+
+
+def _rpy_to_quat(roll, pitch, yaw):
+    cr, sr = math.cos(roll / 2), math.sin(roll / 2)
+    cp, sp = math.cos(pitch / 2), math.sin(pitch / 2)
+    cy, sy = math.cos(yaw / 2), math.sin(yaw / 2)
+    return (cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy,
+            cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy)   # w, x, y, z
+
+
+def _wrap(a):
+    return math.atan2(math.sin(a), math.cos(a))
+
+
 def _shape(v: float, vmin: float, vmax: float) -> float:
     """Clamp to +-vmax; values below vmin must be sent as exactly 0 (SDK rule)."""
     if abs(v) < vmin:
@@ -82,6 +104,15 @@ class CmdVelBridge(Node):
         p('state_rate', 10.0)       # Hz sensor publish rate
         p('auto_stand', False)      # stand up on startup
         p('gait', 'move')           # initial gait: move | crawl | climb
+        p('link_timeout', 15.0)     # exit if the SDK link stays down this long (launch respawns us); 0 = never
+        p('odom_source', 'integrated')  # 'integrated' (body velocity x IMU yaw) | 'sdk' (SDK getPosition)
+        p('odom_rate', 50.0)        # Hz integration rate
+        p('vel_deadband', 0.02)     # m/s: body-velocity noise below this is treated as 0
+        p('publish_footprint_tf', True)  # also broadcast odom -> base_footprint (x, y, yaw only, z = 0 = floor)
+        p('footprint_frame', 'base_footprint')
+        p('publish_tf', True)       # broadcast odom -> base_link TF from the SDK odometry
+        p('odom_frame', 'odom')
+        p('base_frame', 'base_link')
         # Your own (conservative) caps; the SDK per-gait limits always apply on top.
         p('max_vx', 1.0)
         p('max_vy', 0.5)
@@ -128,6 +159,22 @@ class CmdVelBridge(Node):
         # --- outputs
         self.pub_imu = self.create_publisher(Imu, 'imu', 10)
         self.pub_odom = self.create_publisher(Odometry, 'odom', 10)
+        self.pub_odom_sdk = self.create_publisher(Odometry, 'odom_sdk', 10)   # raw SDK position, for comparison
+        self.odom_source = str(g('odom_source'))
+        self.vel_deadband = float(g('vel_deadband'))
+        self._connected = False
+        self._connected_since = 0.0
+        self.int_x = self.int_y = 0.0
+        self.int_yaw0 = None
+        self.int_last_t = None
+        self.int_quat = None            # (w, x, y, z) with yaw relative to the start
+        self.link_timeout = float(g('link_timeout'))
+        self.last_link_ok = time.monotonic()
+        self.publish_tf = bool(g('publish_tf'))
+        self.odom_frame, self.base_frame = g('odom_frame'), g('base_frame')
+        self.publish_fp_tf = bool(g('publish_footprint_tf'))
+        self.footprint_frame = g('footprint_frame')
+        self.tf_broadcaster = TransformBroadcaster(self) if self.publish_tf else None
         self.pub_batt = self.create_publisher(BatteryState, 'battery', 10)
         self.pub_joint = self.create_publisher(JointState, 'joint_states', 10)
         self.pub_mode = self.create_publisher(Int32, 'ctrl_mode', 10)
@@ -135,6 +182,7 @@ class CmdVelBridge(Node):
 
         self.create_timer(1.0 / float(g('rate')), self._tick)
         self.create_timer(1.0 / float(g('state_rate')), self._publish_state)
+        self.create_timer(1.0 / float(g('odom_rate')), self._integrate)
 
         if g('auto_stand'):
             self._call('standUp')
@@ -284,8 +332,21 @@ class CmdVelBridge(Node):
             connected = bool(self.robot.checkConnect())
         except Exception:
             pass
+        if connected and not self._connected:
+            self._connected_since = time.monotonic()    # integrator warms up after (re)connect
+        self._connected = connected
         self.pub_conn.publish(Bool(data=connected))
-        if not connected:
+        if connected:
+            self.last_link_ok = time.monotonic()
+        else:
+            down = time.monotonic() - self.last_link_ok
+            # The SDK client cannot recover from a dead UDP socket ("async_receive_from" error),
+            # so exit and let the launch file respawn a fresh process.
+            if self.link_timeout > 0 and down > self.link_timeout:
+                self.get_logger().error(f'SDK link down for {down:.0f}s, exiting for respawn')
+                # rclpy.shutdown() is not enough: the SDK's native threads keep the process alive,
+                # so the launch file would never see an exit. Leave immediately (link is dead anyway).
+                os._exit(1)
             return
         now = self.get_clock().now().to_msg()
 
@@ -307,15 +368,31 @@ class CmdVelBridge(Node):
         pos = self._get('getPosition')
         vel = self._get('getBodyVelocity')
         if quat and pos and vel:
-            o = Odometry()
-            o.header.stamp, o.header.frame_id, o.child_frame_id = now, 'odom', 'base_link'
-            o.pose.pose.position.x, o.pose.pose.position.y, o.pose.pose.position.z = pos
-            (o.pose.pose.orientation.w, o.pose.pose.orientation.x,
-             o.pose.pose.orientation.y, o.pose.pose.orientation.z) = quat
-            o.twist.twist.linear.x, o.twist.twist.linear.y, o.twist.twist.linear.z = vel
-            if gyro:
-                o.twist.twist.angular.x, o.twist.twist.angular.y, o.twist.twist.angular.z = gyro
-            self.pub_odom.publish(o)
+            use_int = self.odom_source == 'integrated' and self.int_quat is not None
+            px, py = (self.int_x, self.int_y) if use_int else (pos[0], pos[1])
+            ori = self.int_quat if use_int else tuple(quat)
+            self.pub_odom.publish(self._make_odom(now, px, py, pos[2], ori, vel, gyro))
+            self.pub_odom_sdk.publish(self._make_odom(now, pos[0], pos[1], pos[2], tuple(quat), vel, gyro))
+            if self.tf_broadcaster is not None:
+                t = TransformStamped()
+                t.header.stamp, t.header.frame_id = now, self.odom_frame
+                t.child_frame_id = self.base_frame
+                t.transform.translation.x, t.transform.translation.y, t.transform.translation.z = px, py, pos[2]
+                (t.transform.rotation.w, t.transform.rotation.x,
+                 t.transform.rotation.y, t.transform.rotation.z) = ori
+                self.tf_broadcaster.sendTransform(t)
+                if self.publish_fp_tf:
+                    # Planar frame on the floor: same x, y, yaw as base_link, z = 0, no roll/pitch. Mapping/costmaps
+                    # that classify obstacles by height above the floor use this as their base frame.
+                    _, _, yaw = _quat_to_rpy(ori[0], ori[1], ori[2], ori[3])
+                    qw, qx, qy, qz = _rpy_to_quat(0.0, 0.0, yaw)
+                    f = TransformStamped()
+                    f.header.stamp, f.header.frame_id = now, self.odom_frame
+                    f.child_frame_id = self.footprint_frame
+                    f.transform.translation.x, f.transform.translation.y, f.transform.translation.z = px, py, 0.0
+                    f.transform.rotation.w, f.transform.rotation.x = qw, qx
+                    f.transform.rotation.y, f.transform.rotation.z = qy, qz
+                    self.tf_broadcaster.sendTransform(f)
 
         batt = self._call_quiet('getBatteryPower')
         if batt is not None:
@@ -342,6 +419,53 @@ class CmdVelBridge(Node):
                 js.effort.append(float(tau[i]))
         if js.name:
             self.pub_joint.publish(js)
+
+    def _make_odom(self, stamp, x, y, z, ori, vel, gyro):
+        o = Odometry()
+        o.header.stamp, o.header.frame_id, o.child_frame_id = stamp, self.odom_frame, self.base_frame
+        o.pose.pose.position.x, o.pose.pose.position.y, o.pose.pose.position.z = x, y, z
+        (o.pose.pose.orientation.w, o.pose.pose.orientation.x,
+         o.pose.pose.orientation.y, o.pose.pose.orientation.z) = ori
+        o.twist.twist.linear.x, o.twist.twist.linear.y, o.twist.twist.linear.z = vel
+        if gyro:
+            o.twist.twist.angular.x, o.twist.twist.angular.y, o.twist.twist.angular.z = gyro
+        return o
+
+    def _integrate(self):
+        """Dead-reckon x/y from the SDK body velocity rotated by the IMU yaw.
+
+        The SDK's own getPosition jumps and stalls (see docs/mono_slam.md), so we integrate the
+        body-frame velocity ourselves. Yaw is taken relative to the first reading so odom starts at 0.
+        """
+        if not self._connected or time.monotonic() - self._connected_since < 1.0:
+            # not connected, or the first samples after (re)connect (garbage): restart from the origin
+            self.int_x = self.int_y = 0.0
+            self.int_yaw0 = None
+            self.int_last_t = None
+            return
+        vel = self._get('getBodyVelocity')
+        quat = self._get('getQuaternion')      # [w, x, y, z]
+        if not vel or not quat:
+            self.int_last_t = None
+            return
+        roll, pitch, yaw = _quat_to_rpy(*quat)
+        if self.int_yaw0 is None:
+            self.int_yaw0 = yaw
+        yaw_rel = _wrap(yaw - self.int_yaw0)
+        now = time.monotonic()
+        if self.int_last_t is not None:
+            dt = now - self.int_last_t
+            if 0.0 < dt < 0.5:
+                if abs(vel[0]) > 4.0 or abs(vel[1]) > 4.0:     # impossible for this robot: bad sample
+                    self.int_last_t = now
+                    return
+                vx = 0.0 if abs(vel[0]) < self.vel_deadband else vel[0]
+                vy = 0.0 if abs(vel[1]) < self.vel_deadband else vel[1]
+                c, s = math.cos(yaw_rel), math.sin(yaw_rel)
+                self.int_x += (c * vx - s * vy) * dt
+                self.int_y += (s * vx + c * vy) * dt
+        self.int_last_t = now
+        self.int_quat = _rpy_to_quat(roll, pitch, yaw_rel)
 
     def _call_quiet(self, name):
         try:

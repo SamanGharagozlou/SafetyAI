@@ -1,0 +1,21 @@
+# Only ros2_ws/src/human_perception and docker/ are needed in the perception image.
+.git/
+third_party/
+frontend/
+perception/
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+.venv/
+**/.venv/
+benchmark_results/
+**/__pycache__/
+**/*.pt
+**/*.onnx
+**/*.engine
+**/*_openvino_model/
+**/*.mp4
+**/*.avi
+**/*.jpg
+**/*.png
+**/*.jsonl

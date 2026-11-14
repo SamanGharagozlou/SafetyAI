@@ -1,0 +1,25 @@
+# CPU-safe detector profile (default).  No GPU assumed.
+human_detector:
+  ros__parameters:
+    model_name: yolo26n.pt       # yolo26s.pt is the more accurate, slower alternative
+    model_path: ""               # set to a local file to skip downloads (overrides model_name)
+    weights_dir: ~/.cache/human_perception/models
+    backend: pytorch             # pytorch | onnx | openvino | tensorrt
+    device: cpu
+    half: false
+    confidence_threshold: 0.45
+    iou_threshold: 0.7
+    image_size: 640              # try 480/416/320 on slow CPUs
+    max_detections: 100
+    max_inference_fps: 10.0      # 0 = as fast as possible; caps CPU load on the laptop
+    input_topic: /camera/image_raw
+    # best_effort = classic sensor-data QoS. reliable (still depth 1, newest frame only) is
+    # the safe default for raw images: with stock kernel UDP buffers best_effort delivered
+    # 0 of ~0.9-1.6 MB frames in testing. See README "QoS and large images".
+    input_reliability: reliable
+    publish_annotated_image: false
+    diagnostics_enabled: true
+    output_class_id: person
+    input_timeout_s: 2.0
+    perf_log_period_s: 10.0
+    warmup_runs: 1

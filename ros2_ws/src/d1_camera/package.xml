@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>d1_camera</name>
+  <version>0.1.0</version>
+  <description>ROS 2 camera driver for the AgiBot D1 wide-angle camera (RTSP H.264 -> sensor_msgs/Image + CameraInfo)</description>
+  <maintainer email="sahilrajpurkar1998@gmail.com">sahilrajpurkar03</maintainer>
+  <license>BSD-3-Clause</license>
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

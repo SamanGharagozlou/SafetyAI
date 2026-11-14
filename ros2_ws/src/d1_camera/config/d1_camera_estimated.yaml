@@ -1,0 +1,26 @@
+# ESTIMATED intrinsics for the D1 camera as streamed (lens-corrected by the robot's ISP/FEC), 1920x1080.
+#   - focal length ~735 px: the robot's own factory calibration (/userdata/bak/calibration/calibration.yaml:
+#     fx=734.7, fy=726.7, reprojection error 0.24 px) and the 70 deg vertical FOV spec both give ~730-770 px.
+#   - principal point assumed at the image centre; no distortion (the stream is already rectified:
+#     straight lines stay straight in a captured frame).
+# Replace with a checkerboard calibration (ros2 run camera_calibration cameracalibrator) when possible.
+image_width: 1920
+image_height: 1080
+camera_name: d1_camera
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [735.0, 0.0, 960.0, 0.0, 735.0, 540.0, 0.0, 0.0, 1.0]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [735.0, 0.0, 960.0, 0.0, 0.0, 735.0, 540.0, 0.0, 0.0, 0.0, 1.0, 0.0]

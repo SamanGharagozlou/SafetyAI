@@ -1,0 +1,10 @@
+# Named places a frontend can send as {"type":"goal","place":"reception"}. Coordinates are in the `map` frame (m, rad).
+# Pass the file with:  ros2 launch d1_gateway gateway.launch.py places_file:=/path/to/places.yaml
+reception:
+  x: 1.5
+  y: 0.0
+  yaw: 0.0
+bath_entrance:
+  x: 4.0
+  y: -1.2
+  yaw: 1.57
