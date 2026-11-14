@@ -130,3 +130,16 @@ Adopted: **linear z = a*d + b**, floor window = 3 m working range, gate = 12% me
 Replaying the same bag through the new pipeline: fit rejections 234 -> 15, RTAB-Map nodes 22 -> 34, floor area in the map 29 -> 36 m2, walls more continuous.
 Loop closure at the end of the run is still **not** accepted (17 candidates rejected, best 7 of 12 inliers): the robot did not return exactly to the start and the camera looks up, so views differ.
 
+## 10. Cluttered environment: why the boxes were not detected, and the fix (2026-11-14)
+
+**Symptom:** in a new, cluttered room (boxes, a wall 0.5 m to the side, a table) the standing robot produced no depth or obstacles at all.
+**Cause:** the depth node's floor calibration assumes the central lower image is floor. Here only **31%** of those pixels were real floor; the rest were box faces and wall.
+The old 2-parameter least-squares fit with outlier trimming locked onto the clutter (a = 0.15, b = 1.15, 93% "inliers", **21.6% error on the real floor**), failed the 12% gate, and the fail-safe stopped publishing.
+Also, the monocular scale is scene dependent (floor depth / model depth = 0.26 lying in the hall, 0.41 standing in the hall, 0.374 here), so a fixed prior (0.30) is 20% off.
+
+**Fix (depth_node.py):** the scale is the **mode of z_floor / d** over the candidate pixels (the largest consistent group), with an optional guarded 2-parameter refinement on the inliers only; smoothing 0.25; and instead of going silent after 5 bad frames it holds the last good calibration for 30 s (`max_cal_age_s`) before stopping.
+Offline checks: on the cluttered photo 1.1% floor error (was 21.6%); on the recorded hall run fit error lying 2.8% (was 5.6%), standing 2.3% (was 9.3%), moving 2.5% (was 6.3%).
+Live retest standing with the boxes moved back: depth and a 25,700-point cloud published, floor error 2.6-3.5%, obstacle cells at the box (0.90 m straight ahead), the wall (~0.5 m to the right) and the far stacks (2-2.7 m).
+
+**Remaining limits:** `a` still varies frame to frame (0.39-0.53 in the live retest), so distances carry roughly +-15%; the camera cannot see closer than ~1 m on the floor; boxes closer than ~0.9 m are only seen by their upper part. A box right in front of the camera (as in the first test) hides most of the floor and can still defeat the calibration; the hold-last-calibration fallback covers short gaps.
+

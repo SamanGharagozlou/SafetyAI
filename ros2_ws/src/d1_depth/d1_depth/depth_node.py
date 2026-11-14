@@ -68,8 +68,9 @@ class DepthNode(Node):
         p('fit_model', 'linear')       # 'linear': z = a*d + b (best across postures, see docs) | 'inverse': 1/z = a/d + b
         p('floor_col_lo', 0.2)         # central image band used for the fit (fraction of width)
         p('floor_col_hi', 0.8)
-        p('fit_ema', 0.4)              # smoothing of (a, b) over frames
-        p('min_floor_pts', 8000)       # floor pixels needed for a trustworthy fit (slumped pose had only 6.7k)
+        p('fit_ema', 0.25)             # smoothing of (a, b) over frames
+        p('max_cal_age_s', 30.0)       # keep publishing with the last good calibration this long when fits fail, then stop
+        p('min_floor_pts', 3000)       # consistent floor pixels needed for a trustworthy fit
         p('max_fit_error', 0.12)       # median relative floor error above which a fit is rejected (linear model: lying 6%, moving 6%, standing 9%)
         p('max_bad_frames', 5)         # stop publishing after this many consecutive rejected fits (fail-safe)
         p('default_a', 0.29)           # fallback calibration (linear model; measured global scale ~0.29)
@@ -89,12 +90,14 @@ class DepthNode(Node):
         self.max_fit_error = float(g('max_fit_error'))
         self.max_bad = int(g('max_bad_frames'))
         self.bad_frames = 0
+        self.max_cal_age = float(g('max_cal_age_s'))
+        self.last_good_t = 0.0
         self.pub_depth_on, self.pub_cloud_on = bool(g('publish_depth')), bool(g('publish_cloud'))
         self.ab = None
         self.default_ab = (float(g('default_a')), float(g('default_b')))
         self.fit_model = str(g('fit_model'))
-        if self.fit_model not in ('linear', 'inverse'):
-            raise ValueError("fit_model must be 'linear' or 'inverse'")
+        if self.fit_model not in ('linear', 'linear_ols', 'inverse'):
+            raise ValueError("fit_model must be 'linear', 'linear_ols' or 'inverse'")
         self.K = None
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -157,6 +160,14 @@ class DepthNode(Node):
         return zf
 
     def _fit(self, d, zf):
+        """Calibrate the model depth against the analytic floor depth. Returns (a, b, n_inliers, rel_error) or None.
+
+        'linear' (default, robust to clutter): the scale a0 is the MODE of z_floor/d over the candidate pixels, i.e. the
+        scale that the largest consistent group of pixels agrees on. This survives scenes where most of the candidate
+        "floor" pixels are really boxes or walls (measured: 31% true floor -> mode scale error 1.8% on the real floor,
+        the old OLS + trimming fit locked onto the clutter and was 21% off). An optional 2-parameter refinement
+        z = a*d + b is run on the inliers only.
+        """
         h, w = d.shape
         c0, c1 = int(w * self.c_lo), int(w * self.c_hi)
         zs = zf[:, c0:c1][::2, ::2]
@@ -164,17 +175,34 @@ class DepthNode(Node):
         k = np.isfinite(zs) & (zs >= self.f_min) & (zs <= self.f_max) & (ds > 0.05)
         if k.sum() < self.min_pts:
             return None
-        lin = self.fit_model == 'linear'
+        if self.fit_model == 'linear':
+            x, y = ds[k], zs[k]
+            ratio = y / x
+            hist, edges = np.histogram(ratio, bins=np.arange(0.05, 1.2, 0.01))
+            sm = np.convolve(hist, np.ones(3) / 3.0, mode='same')          # light smoothing of the histogram
+            i = int(np.argmax(sm))
+            a0 = 0.5 * (edges[i] + edges[i + 1])
+            inl = np.abs(ratio - a0) < 0.06 * a0 + 0.01
+            if inl.sum() < self.min_pts or inl.mean() < 0.12:
+                return None
+            a, b = a0, 0.0
+            A = np.c_[x[inl], np.ones(inl.sum())]
+            co = np.linalg.lstsq(A, y[inl], rcond=None)[0]
+            if 0.05 < co[0] < 1.2 and abs(co[1]) < 0.25:                    # keep the refinement only if sane
+                a, b = float(co[0]), float(co[1])
+            rel = float(np.median(np.abs(a * x[inl] + b - y[inl]) / y[inl]))
+            return float(a), float(b), int(inl.sum()), rel
+        lin = self.fit_model == 'linear_ols'
         x, y = (ds[k], zs[k]) if lin else (1.0 / ds[k], 1.0 / zs[k])     # z = a*d + b   or   1/z = a/d + b
         keep = np.ones(x.shape, bool)
         a = b = 0.0
-        floor_sig = 0.05 if lin else 0.01                                  # residual-spread floor (m or 1/m): stops collapse
+        floor_sig = 0.05 if lin else 0.01
         for _ in range(3):
             A = np.c_[x[keep], np.ones(keep.sum())]
             a, b = np.linalg.lstsq(A, y[keep], rcond=None)[0]
             res = y - (a * x + b)
             sig = max(1.4826 * np.median(np.abs(res[keep] - np.median(res[keep]))), floor_sig)
-            new_keep = np.abs(res) < 2.5 * sig                             # trim objects standing on the floor
+            new_keep = np.abs(res) < 2.5 * sig
             if new_keep.sum() >= self.min_pts:
                 keep = new_keep
         pred = a * x[keep] + b
@@ -182,9 +210,7 @@ class DepthNode(Node):
         ztrue = y[keep] if lin else 1.0 / y[keep]
         rel = float(np.median(np.abs(zfit - ztrue) / ztrue))
         ok = (0.02 < a < 3.0 and -2.0 < b < 2.0) if lin else (0.05 < a < 20.0 and -1.0 < b < 2.0)
-        if not ok:
-            return None
-        return float(a), float(b), int(keep.sum()), rel
+        return (float(a), float(b), int(keep.sum()), rel) if ok else None
 
     def _on_image(self, msg):
         now = time.monotonic()
@@ -213,29 +239,31 @@ class DepthNode(Node):
 
         zf = self._floor_depth(fx, fy, cx, cy, h, w, R, t)
         fit = self._fit(d, zf)
+        tnow = time.monotonic()
         if fit is not None and fit[3] <= self.max_fit_error:
             a, b, n, rel = fit
             self.ab = (a, b) if self.ab is None else ((1 - self.ema) * self.ab[0] + self.ema * a,
                                                       (1 - self.ema) * self.ab[1] + self.ema * b)
             self.last_fit = (a, b, n, rel, True)
             self.bad_frames = 0
+            self.last_good_t = tnow
         else:
-            # Poor/failed fit (e.g. almost no floor in view): do not trust this frame's calibration.
+            # No trustworthy floor in view (or an inconsistent fit): hold the last good calibration for a while, because
+            # the monocular scale changes slowly; stop publishing only when that calibration has become too old.
             self.bad_frames += 1
             if fit is not None:
                 self.last_fit = (fit[0], fit[1], fit[2], fit[3], False)
             elif self.ab is not None:
                 self.last_fit = (self.ab[0], self.ab[1], 0, float('nan'), False)
-            if self.ab is None or self.bad_frames > self.max_bad:
-                # Fail-safe: publish nothing rather than a cloud with a wrong scale. Consumers see stale data.
+            if self.ab is None or tnow - self.last_good_t > self.max_cal_age:
                 self.get_logger().warn(
-                    f'floor fit rejected {self.bad_frames}x in a row (error limit {100 * self.max_fit_error:.0f}%): '
+                    f'no usable floor calibration for {tnow - self.last_good_t:.0f}s ({self.bad_frames} frames): '
                     f'not publishing', throttle_duration_sec=5.0)
                 return
         a, b = self.ab
 
         with np.errstate(divide='ignore', invalid='ignore'):
-            if self.fit_model == 'linear':
+            if self.fit_model in ('linear', 'linear_ols'):
                 z = (a * d + b).astype(np.float32)
             else:
                 inv = a / np.maximum(d, 1e-3) + b
