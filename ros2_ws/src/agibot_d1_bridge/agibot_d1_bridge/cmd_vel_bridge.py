@@ -108,6 +108,8 @@ class CmdVelBridge(Node):
         p('odom_source', 'integrated')  # 'integrated' (body velocity x IMU yaw) | 'sdk' (SDK getPosition)
         p('odom_rate', 50.0)        # Hz integration rate
         p('vel_deadband', 0.02)     # m/s: body-velocity noise below this is treated as 0
+        p('publish_footprint_tf', True)  # also broadcast odom -> base_footprint (x, y, yaw only, z = 0 = floor)
+        p('footprint_frame', 'base_footprint')
         p('publish_tf', True)       # broadcast odom -> base_link TF from the SDK odometry
         p('odom_frame', 'odom')
         p('base_frame', 'base_link')
@@ -170,6 +172,8 @@ class CmdVelBridge(Node):
         self.last_link_ok = time.monotonic()
         self.publish_tf = bool(g('publish_tf'))
         self.odom_frame, self.base_frame = g('odom_frame'), g('base_frame')
+        self.publish_fp_tf = bool(g('publish_footprint_tf'))
+        self.footprint_frame = g('footprint_frame')
         self.tf_broadcaster = TransformBroadcaster(self) if self.publish_tf else None
         self.pub_batt = self.create_publisher(BatteryState, 'battery', 10)
         self.pub_joint = self.create_publisher(JointState, 'joint_states', 10)
@@ -377,6 +381,18 @@ class CmdVelBridge(Node):
                 (t.transform.rotation.w, t.transform.rotation.x,
                  t.transform.rotation.y, t.transform.rotation.z) = ori
                 self.tf_broadcaster.sendTransform(t)
+                if self.publish_fp_tf:
+                    # Planar frame on the floor: same x, y, yaw as base_link, z = 0, no roll/pitch. Mapping/costmaps
+                    # that classify obstacles by height above the floor use this as their base frame.
+                    _, _, yaw = _quat_to_rpy(ori[0], ori[1], ori[2], ori[3])
+                    qw, qx, qy, qz = _rpy_to_quat(0.0, 0.0, yaw)
+                    f = TransformStamped()
+                    f.header.stamp, f.header.frame_id = now, self.odom_frame
+                    f.child_frame_id = self.footprint_frame
+                    f.transform.translation.x, f.transform.translation.y, f.transform.translation.z = px, py, 0.0
+                    f.transform.rotation.w, f.transform.rotation.x = qw, qx
+                    f.transform.rotation.y, f.transform.rotation.z = qy, qz
+                    self.tf_broadcaster.sendTransform(f)
 
         batt = self._call_quiet('getBatteryPower')
         if batt is not None:

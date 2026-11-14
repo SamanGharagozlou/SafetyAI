@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>d1_nav</name>
+  <version>0.1.0</version>
+  <description>Nav2 configuration for the AgiBot D1: local costmap fed by the monocular depth cloud (more to come)</description>
+  <maintainer email="sahilrajpurkar1998@gmail.com">sahilrajpurkar03</maintainer>
+  <license>BSD-3-Clause</license>
+  <exec_depend>nav2_costmap_2d</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>d1_depth</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

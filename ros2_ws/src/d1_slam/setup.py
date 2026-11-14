@@ -9,8 +9,8 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', ['launch/mono_rtabmap.launch.py']),
-        ('share/' + package_name + '/rviz', ['rviz/mono_slam.rviz']),
+        ('share/' + package_name + '/launch', ['launch/mono_rtabmap.launch.py', 'launch/rgbd_rtabmap.launch.py']),
+        ('share/' + package_name + '/rviz', ['rviz/mono_slam.rviz', 'rviz/mapping.rviz']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

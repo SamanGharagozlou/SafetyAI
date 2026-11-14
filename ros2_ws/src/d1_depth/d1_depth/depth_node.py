@@ -64,13 +64,16 @@ class DepthNode(Node):
         p('downsample', 4)             # point cloud pixel stride
         p('fp16', True)
         p('floor_min', 0.4)            # analytic floor depth window used for the fit (m)
-        p('floor_max', 5.0)
+        p('floor_max', 3.0)            # = the working range; far floor is where the model saturates
+        p('fit_model', 'linear')       # 'linear': z = a*d + b (best across postures, see docs) | 'inverse': 1/z = a/d + b
         p('floor_col_lo', 0.2)         # central image band used for the fit (fraction of width)
         p('floor_col_hi', 0.8)
         p('fit_ema', 0.4)              # smoothing of (a, b) over frames
-        p('min_floor_pts', 300)
-        p('default_a', 3.1)            # fallback calibration (measured, camera lying)
-        p('default_b', 0.13)
+        p('min_floor_pts', 8000)       # floor pixels needed for a trustworthy fit (slumped pose had only 6.7k)
+        p('max_fit_error', 0.12)       # median relative floor error above which a fit is rejected (linear model: lying 6%, moving 6%, standing 9%)
+        p('max_bad_frames', 5)         # stop publishing after this many consecutive rejected fits (fail-safe)
+        p('default_a', 0.29)           # fallback calibration (linear model; measured global scale ~0.29)
+        p('default_b', 0.0)
         p('publish_depth', True)
         p('publish_cloud', True)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
@@ -83,9 +86,15 @@ class DepthNode(Node):
         self.c_lo, self.c_hi = float(g('floor_col_lo')), float(g('floor_col_hi'))
         self.ema = float(g('fit_ema'))
         self.min_pts = int(g('min_floor_pts'))
+        self.max_fit_error = float(g('max_fit_error'))
+        self.max_bad = int(g('max_bad_frames'))
+        self.bad_frames = 0
         self.pub_depth_on, self.pub_cloud_on = bool(g('publish_depth')), bool(g('publish_cloud'))
         self.ab = None
         self.default_ab = (float(g('default_a')), float(g('default_b')))
+        self.fit_model = str(g('fit_model'))
+        if self.fit_model not in ('linear', 'inverse'):
+            raise ValueError("fit_model must be 'linear' or 'inverse'")
         self.K = None
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -155,20 +164,25 @@ class DepthNode(Node):
         k = np.isfinite(zs) & (zs >= self.f_min) & (zs <= self.f_max) & (ds > 0.05)
         if k.sum() < self.min_pts:
             return None
-        x, y = 1.0 / ds[k], 1.0 / zs[k]                      # fit 1/z_floor = a * (1/d) + b
+        lin = self.fit_model == 'linear'
+        x, y = (ds[k], zs[k]) if lin else (1.0 / ds[k], 1.0 / zs[k])     # z = a*d + b   or   1/z = a/d + b
         keep = np.ones(x.shape, bool)
         a = b = 0.0
+        floor_sig = 0.05 if lin else 0.01                                  # residual-spread floor (m or 1/m): stops collapse
         for _ in range(3):
             A = np.c_[x[keep], np.ones(keep.sum())]
             a, b = np.linalg.lstsq(A, y[keep], rcond=None)[0]
             res = y - (a * x + b)
-            sig = max(1.4826 * np.median(np.abs(res[keep] - np.median(res[keep]))), 0.01)   # 1/m; floor stops collapse
-            new_keep = np.abs(res) < 2.5 * sig              # trim objects standing on the floor
+            sig = max(1.4826 * np.median(np.abs(res[keep] - np.median(res[keep]))), floor_sig)
+            new_keep = np.abs(res) < 2.5 * sig                             # trim objects standing on the floor
             if new_keep.sum() >= self.min_pts:
                 keep = new_keep
-        zfit = 1.0 / np.maximum(a * x[keep] + b, 1e-3)
-        rel = float(np.median(np.abs(zfit - 1.0 / y[keep]) / (1.0 / y[keep])))
-        if not (0.05 < a < 20.0 and -1.0 < b < 2.0):
+        pred = a * x[keep] + b
+        zfit = pred if lin else 1.0 / np.maximum(pred, 1e-3)
+        ztrue = y[keep] if lin else 1.0 / y[keep]
+        rel = float(np.median(np.abs(zfit - ztrue) / ztrue))
+        ok = (0.02 < a < 3.0 and -2.0 < b < 2.0) if lin else (0.05 < a < 20.0 and -1.0 < b < 2.0)
+        if not ok:
             return None
         return float(a), float(b), int(keep.sum()), rel
 
@@ -199,20 +213,33 @@ class DepthNode(Node):
 
         zf = self._floor_depth(fx, fy, cx, cy, h, w, R, t)
         fit = self._fit(d, zf)
-        if fit is not None:
+        if fit is not None and fit[3] <= self.max_fit_error:
             a, b, n, rel = fit
             self.ab = (a, b) if self.ab is None else ((1 - self.ema) * self.ab[0] + self.ema * a,
                                                       (1 - self.ema) * self.ab[1] + self.ema * b)
             self.last_fit = (a, b, n, rel, True)
+            self.bad_frames = 0
         else:
-            if self.ab is None:
-                self.ab = self.default_ab
-            self.last_fit = (self.ab[0], self.ab[1], 0, float('nan'), False)
+            # Poor/failed fit (e.g. almost no floor in view): do not trust this frame's calibration.
+            self.bad_frames += 1
+            if fit is not None:
+                self.last_fit = (fit[0], fit[1], fit[2], fit[3], False)
+            elif self.ab is not None:
+                self.last_fit = (self.ab[0], self.ab[1], 0, float('nan'), False)
+            if self.ab is None or self.bad_frames > self.max_bad:
+                # Fail-safe: publish nothing rather than a cloud with a wrong scale. Consumers see stale data.
+                self.get_logger().warn(
+                    f'floor fit rejected {self.bad_frames}x in a row (error limit {100 * self.max_fit_error:.0f}%): '
+                    f'not publishing', throttle_duration_sec=5.0)
+                return
         a, b = self.ab
 
         with np.errstate(divide='ignore', invalid='ignore'):
-            inv = a / np.maximum(d, 1e-3) + b
-            z = np.where(inv > 1.0 / 30.0, 1.0 / inv, np.nan).astype(np.float32)
+            if self.fit_model == 'linear':
+                z = (a * d + b).astype(np.float32)
+            else:
+                inv = a / np.maximum(d, 1e-3) + b
+                z = np.where(inv > 1.0 / 30.0, 1.0 / inv, np.nan).astype(np.float32)
         z[(z < self.min_range)] = np.nan
         # The indoor model saturates at 20 m; the floor-fitted map would turn that cap into a fake surface ~3.5 m away.
         z[d >= self.raw_max_valid] = np.nan
@@ -263,7 +290,7 @@ class DepthNode(Node):
         a, b, n, rel, ok = self.last_fit
         self.get_logger().info(
             f'in {cb_rate:.1f} Hz -> done {rate:.1f} Hz | callback {self.cb_ms:.0f} ms (model {self.last_infer_ms:.0f}) | floor fit a={a:.2f} b={b:.3f} '
-            f'on {n} pts, median error {100 * rel:.1f}% {"" if ok else "(FIT FAILED, using previous/default)"}')
+            f'on {n} pts, median error {100 * rel:.1f}% {"" if ok else "(FIT REJECTED, holding last good calibration or not publishing)"}')
 
 
 def main():
