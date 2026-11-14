@@ -17,7 +17,7 @@ cd ros2_ws && source /opt/ros/humble/setup.bash && source install/setup.bash
 # 1. robot link (keep running; respawns if the SDK link dies)
 ros2 launch agibot_d1_bridge bridge.launch.py local_ip:=<pc-ip> robot_ip:=<robot-ip>
 # 2. camera + RTAB-Map
-ros2 launch d1_slam mono_rtabmap.launch.py rtabmap_viz:=true
+ros2 launch d1_slam mono_rtabmap.launch.py rviz:=true      # add rtabmap_viz:=true for RTAB-Map's own GUI
 #    useful args: url:=<rtsp or video file>  fps:=10  scale:=0.5  camera_info_file:=<calib.yaml>
 #                 cam_x/cam_y/cam_z/cam_roll/cam_pitch/cam_yaw:=<camera mount>  delete_db:=false  localization:=...
 ```
@@ -33,9 +33,15 @@ Drive with `ros2 run agibot_d1_bridge keyboard_teleop` (robot standing, clear sp
 
 ## Known issues / TODO
 
-1. **Stream bandwidth.** The robot streams 1080p60 at ~20 Mbit/s, all keyframes. Over our Wi-Fi it arrives corrupted (H.264 decode errors). Fix on the robot: lower `FPS`/`BPS_*` in `/opt/app_launch/stream_4cams_rtsp.sh` (e.g. 15 fps, ~5 Mbit/s). **Not applied yet.**
-2. **Camera calibration.** Intrinsics are a placeholder (ideal pinhole, 122 deg HFOV). The image is already lens-corrected by the robot's FEC, but a real calibration (`camera_calibration`, checkerboard) is needed.
-3. **Camera mount.** The `cam_*` transform is a placeholder. The camera is low and looks upward; measure position and tilt.
+1. **Stream bandwidth - fixed on the robot.** The robot streamed 1080p60 at ~20 Mbit/s (all keyframes), which arrived corrupted over our Wi-Fi.
+   `/opt/app_launch/stream_4cams_rtsp.sh` now defaults to `FPS=15`, `BPS_TARGET/MIN/MAX=5000000/3000000/6000000` (resolution, FEC lens correction and all-keyframe GOP unchanged; backup `stream_4cams_rtsp.sh.bak_pre_ros`).
+   Result: clean decode (0 failed reads, ~9 decode-error lines in 10 s vs a flood), but Wi-Fi jitter still limits us to ~6-17 fps decoded, ~3-5 Hz published. Enough for RTAB-Map at 2 Hz. Applies only until the firmware/launch config is reset by an update.
+   The video shares the Wi-Fi with the SDK link: if the SDK link drops while the robot is standing, it damps after ~3 s.
+2. **Camera calibration (estimated).** `d1_camera/config/d1_camera_estimated.yaml`: f = 735 px, centre principal point, no distortion. Basis: the robot's own factory calibration
+   (`/userdata/bak/calibration/calibration.yaml`: fx 734.7, fy 726.7, raw-lens distortion k1 -0.34) and the 70 deg VFOV spec; the streamed image is already lens-corrected (straight lines stay straight).
+   Still an estimate (about +-10% in f): do a checkerboard calibration to confirm.
+3. **Camera mount (estimated).** `base_link -> camera`: x = 0.28 m (front face of the vendor body mesh, which spans x -0.273..+0.282, y +-0.111, z -0.047..+0.090), z = 0.02 m,
+   pitch = -0.28 rad (camera looks up ~16 deg: horizon appears 210 px below the image centre, f = 735 px). The vendor URDF has no camera link.
 4. **Timestamps.** Image stamps are PC receive time (no hardware stamp); use `stamp_offset_s` once latency is measured.
 5. **SDK `getPosition` is unusable** (measured). At rest it drifts ~0.5 mm/s; when motion starts it jumps ~0.65-1.1 m instantly, then its x value freezes while y moves.
    The bridge therefore publishes its **own odometry**: SDK body velocity integrated at 50 Hz and rotated by the IMU yaw (`/odom`, TF `odom->base_link`), starting at (0,0,yaw 0) after a 1 s warm-up on each (re)connect. The raw SDK pose stays on `/odom_sdk` for comparison; `odom_source:=sdk` restores the old behaviour.

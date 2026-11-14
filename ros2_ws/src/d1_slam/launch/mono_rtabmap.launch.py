@@ -26,12 +26,13 @@ ARGS = [
     ('url', 'rtsp://172.24.1.41:8554/test', 'camera source (RTSP URL or video file)'),
     ('fps', '10.0', 'camera publish rate'),
     ('scale', '0.5', 'image scale vs 1920x1080'),
-    ('camera_info_file', '', 'ROS camera calibration YAML (else placeholder intrinsics)'),
-    ('cam_x', '0.30', 'camera position in base_link (m) - PLACEHOLDER, measure it'),
+    ('camera_info_file', PathJoinSubstitution([FindPackageShare('d1_camera'), 'config', 'd1_camera_estimated.yaml']),
+     'ROS camera calibration YAML (default: estimate from the robot factory calibration)'),
+    ('cam_x', '0.28', 'camera position in base_link (m): front face of the body mesh (x=+0.282); y,z are estimates'),
     ('cam_y', '0.0', ''),
-    ('cam_z', '0.05', ''),
+    ('cam_z', '0.02', ''),
     ('cam_roll', '0.0', 'camera orientation in base_link (rad); +pitch = nose down'),
-    ('cam_pitch', '0.0', 'camera looks UP on this robot: expect a negative value, measure it'),
+    ('cam_pitch', '-0.28', 'camera looks UP ~16 deg (horizon 210 px below image centre, f~735 px); +pitch = nose down'),
     ('cam_yaw', '0.0', ''),
     ('odom_topic', '/odom', ''),
     ('database_path', os.path.expanduser('~/.ros/d1_mono_rtabmap.db'), 'RTAB-Map database'),
@@ -40,6 +41,7 @@ ARGS = [
     ('linear_update', '0.1', 'add a node after this much translation (m)'),
     ('angular_update', '0.1', 'add a node after this much rotation (rad)'),
     ('rtabmap_viz', 'false', 'open the RTAB-Map GUI'),
+    ('rviz', 'false', 'open RViz with the mapping layout'),
 ]
 
 
@@ -112,5 +114,10 @@ def generate_launch_description():
                      'subscribe_odom_info': False, 'approx_sync': True}],
         remappings=remaps, condition=IfCondition(c('rtabmap_viz')))
 
+    rviz = Node(
+        package='rviz2', executable='rviz2', name='rviz2', output='log',
+        arguments=['-d', PathJoinSubstitution([FindPackageShare('d1_slam'), 'rviz', 'mono_slam.rviz'])],
+        condition=IfCondition(c('rviz')))
+
     return LaunchDescription(la + [SetEnvironmentVariable('PYTHONNOUSERSITE', '1'),
-                                   camera, tf_mount, tf_optical, rtabmap_new, rtabmap_keep, viz])
+                                   camera, tf_mount, tf_optical, rtabmap_new, rtabmap_keep, viz, rviz])

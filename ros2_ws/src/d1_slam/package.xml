@@ -10,6 +10,8 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>rtabmap_slam</exec_depend>
   <exec_depend>rtabmap_viz</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>rtabmap_rviz_plugins</exec_depend>
   <exec_depend>d1_camera</exec_depend>
   <exec_depend>agibot_d1_bridge</exec_depend>
   <export>

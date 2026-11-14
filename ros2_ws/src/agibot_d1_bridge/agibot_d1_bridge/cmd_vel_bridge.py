@@ -340,7 +340,9 @@ class CmdVelBridge(Node):
             # so exit and let the launch file respawn a fresh process.
             if self.link_timeout > 0 and down > self.link_timeout:
                 self.get_logger().error(f'SDK link down for {down:.0f}s, exiting for respawn')
-                rclpy.shutdown()
+                # rclpy.shutdown() is not enough: the SDK's native threads keep the process alive,
+                # so the launch file would never see an exit. Leave immediately (link is dead anyway).
+                os._exit(1)
             return
         now = self.get_clock().now().to_msg()
 
