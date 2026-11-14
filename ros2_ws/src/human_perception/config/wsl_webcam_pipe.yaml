@@ -1,0 +1,7 @@
+# WSL2 dev helper: laptop webcam streamed from Windows ffmpeg.exe through a named pipe
+# (WSL2 has no /dev/video*). Used by scripts/wsl_webcam_demo.sh; not needed on Linux.
+video_source:
+  ros__parameters:
+    fps: 1000.0          # disable file pacing: read frames as soon as the pipe delivers them
+    loop_file: false
+    frame_id: laptop_webcam_optical_frame

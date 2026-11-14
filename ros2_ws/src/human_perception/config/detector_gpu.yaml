@@ -1,0 +1,13 @@
+# Optional NVIDIA GPU profile.  Requires a CUDA-enabled PyTorch build
+# (torch.cuda.is_available() == True).  Pass AFTER detector_cpu.yaml or alone.
+human_detector:
+  ros__parameters:
+    model_name: yolo26s.pt
+    backend: pytorch             # for TensorRT: backend: tensorrt + model_path: <exported .engine>
+    device: cuda:0
+    half: true                   # FP16
+    confidence_threshold: 0.45
+    image_size: 640
+    max_inference_fps: 0.0       # uncapped
+    input_reliability: reliable
+    publish_annotated_image: false

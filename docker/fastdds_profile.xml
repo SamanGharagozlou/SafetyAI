@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Same transports as the Fast DDS defaults (SHM + UDPv4) but UDP datagrams capped below the
+     1500-byte MTU: larger ones are IP-fragmented and get lost between this container and
+     host ROS processes on WSL2 (observed: messages >~1.5 KB, e.g. Detection2DArray with
+     4+ boxes, never arrived). DDS then fragments them itself. -->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>shm</transport_id>
+      <type>SHM</type>
+    </transport_descriptor>
+    <transport_descriptor>
+      <transport_id>udp</transport_id>
+      <type>UDPv4</type>
+      <maxMessageSize>1400</maxMessageSize>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="mtu_safe_udp" is_default_profile="true">
+    <rtps>
+      <useBuiltinTransports>false</useBuiltinTransports>
+      <userTransports>
+        <transport_id>shm</transport_id>
+        <transport_id>udp</transport_id>
+      </userTransports>
+    </rtps>
+  </participant>
+</profiles>

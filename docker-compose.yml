@@ -1,0 +1,37 @@
+# Normally driven by the Makefile (make up / make down); values come from its variables.
+name: human_perception
+
+services:
+  perception:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+        PRELOAD_MODELS: ${PRELOAD_MODELS:-yolo26n.pt}
+    image: human_perception:humble
+    container_name: human_perception
+    network_mode: host        # ROS 2 DDS discovery with the host / robot network
+    ipc: host                 # shared memory transport with host-side ROS tools
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      DISPLAY: ${DISPLAY:-:0}
+      LIBGL_ALWAYS_SOFTWARE: "1"   # rviz2 renders on CPU: works with any X server
+      QT_X11_NO_MITSHM: "1"
+      # Stack selection (read by docker/entrypoint.sh; empty = launch-file default)
+      SOURCE_TYPE: ${SOURCE_TYPE:-webcam}
+      WEBCAM_DEVICE: ${WEBCAM_DEVICE:-0}
+      RTSP_URL: ${RTSP_URL:-}
+      FILE_PATH: ${FILE_PATH:-}
+      SOURCE_PARAMS: ${SOURCE_PARAMS:-}
+      DETECTOR_PARAMS: ${DETECTOR_PARAMS:-detector_cpu.yaml}
+      MODEL_NAME: ${MODEL_NAME:-}
+      DEVICE: ${DEVICE:-}
+      RVIZ: ${RVIZ:-false}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw            # local X server (rviz)
+      - /dev:/dev                                    # webcams (hot-plug friendly)
+      - ${FILE_DIR:-/tmp/human_perception_media}:${FILE_DIR:-/tmp/human_perception_media}:ro
+    device_cgroup_rules:
+      - "c 81:* rmw"     # V4L2 video devices (/dev/video*)
+      - "c 189:* rmw"    # USB devices
