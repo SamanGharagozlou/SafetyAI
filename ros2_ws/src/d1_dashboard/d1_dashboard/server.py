@@ -121,6 +121,7 @@ class Dashboard(Node):
         self.pose, self.pose_frame, self.localized = None, None, False
         self.grids = {}                                     # name -> dict(version, w, h, res, ox, oy, data)
         self.plan = []
+        self.trail, self.trail_frame = [], None          # robot path (x, y) in the pose frame, for the start marker + trail
         self.nav = {'status': 'idle', 'goal': None, 'distance_remaining': None, 'goal_handle': None}
         self.teleop = (0.0, 0.0, 0.0, 0.0)                   # vx, vy, wz, t
         self._teleop_active = False
@@ -240,6 +241,12 @@ class Dashboard(Node):
         yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
         with self.lock:
             self.pose, self.pose_frame, self.localized = (t.x, t.y, yaw), frame, ok
+            if frame != self.trail_frame:                # frame switched (odom -> map): restart the trail in the new frame
+                self.trail, self.trail_frame = [], frame
+            if not self.trail or math.hypot(t.x - self.trail[-1][0], t.y - self.trail[-1][1]) > 0.08:
+                self.trail.append((round(t.x, 3), round(t.y, 3)))
+                if len(self.trail) > 3000:
+                    self.trail = self.trail[::2]
 
     # ------------------------------------------------------------------ teleop and robot commands
     def set_teleop(self, vx, vy, wz):
@@ -390,6 +397,7 @@ class Dashboard(Node):
                 self.grids.pop(g, None)
             self.plan = []
             self.current_map, self.ui_mode = name, 'mapping'
+            self.trail = []
         self.start('mapping', db=os.path.join(self.maps_dir, name + '.db'))
         bag = None
         if record:
@@ -472,6 +480,7 @@ class Dashboard(Node):
                 self.grids.pop(g, None)
             self.plan = []
             self.current_map, self.ui_mode = name, 'navigation'
+            self.trail = []
         self.start('localization', db=db)
         threading.Timer(4.0, lambda: self.start('nav2')).start()
         return {'ok': True, 'name': name}
@@ -492,6 +501,7 @@ class Dashboard(Node):
             self.plan = []
             self.nav.update(status='idle', goal=None, distance_remaining=None, goal_handle=None)
             self.ui_mode, self.current_map = 'idle', None
+            self.trail = []
             self.job = {'name': None, 'status': 'idle', 'message': ''}
         msg = 'all stopped'
         if kept_robot:
@@ -514,7 +524,7 @@ class Dashboard(Node):
                           'battery': None if self.battery is None else round(self.battery * 100),
                           'standing': self.mode in STANDING_MODES},
                 'pose': self.pose, 'pose_frame': self.pose_frame, 'localized': self.localized,
-                'nav': nav, 'plan': self.plan,
+                'nav': nav, 'plan': self.plan, 'trail': self.trail[-600:] if len(self.trail) <= 600 else self.trail[::max(1, len(self.trail) // 600)],
                 'procs': {n: p.info() for n, p in self.procs.items()},
                 'job': self.job,
                 'grids': {n: g['version'] for n, g in self.grids.items()},

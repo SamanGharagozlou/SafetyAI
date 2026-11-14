@@ -53,6 +53,8 @@
   .slider { display:flex; gap:8px; align-items:center; font-size:12px; color:var(--dim); }
   .slider input { flex:1; }
   #goalinfo { position:absolute; left:12px; bottom:14px; background:rgba(29,34,41,.92); border:1px solid var(--line); border-radius:10px; padding:8px 12px; max-width:420px; }
+  .legend { font-size:11px; color:var(--dim); display:flex; flex-direction:column; gap:3px; border-top:1px solid var(--line); padding-top:6px; }
+  .legend i { display:inline-block; width:12px; height:10px; border-radius:2px; vertical-align:-1px; margin-right:4px; }
   .collapse { background:none; border:0; color:var(--dim); padding:0 4px; font-size:16px; line-height:1; cursor:pointer; }
   .collapsed .body { display:none !important; }
   @media (max-height: 820px) {
@@ -108,14 +110,23 @@
     <div class="tools" id="tools">
       <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:12px;color:var(--dim);letter-spacing:.8px">LAYERS</b><button class="collapse" id="toolsToggle" title="collapse / expand">&#x25BE;</button></div>
       <div class="body" style="display:flex;flex-direction:column;gap:8px">
-      <label><input type="checkbox" id="lMap" checked> Map (RTAB-Map)</label>
-      <label><input type="checkbox" id="lLive" checked> <b>Live obstacles</b> (camera)</label>
+      <label><input type="checkbox" id="lMap" checked> Map <span class="dim">(remembered)</span></label>
+      <label><input type="checkbox" id="lClean" checked> Hide stray dots</label>
+      <label><input type="checkbox" id="lTrail" checked> Robot trail</label>
+      <label><input type="checkbox" id="lLive" checked> Camera view <span class="dim">(now)</span></label>
+      <label><input type="checkbox" id="lHalo"> Safety margin (halo)</label>
       <label><input type="checkbox" id="lGlobal"> Global costmap</label>
-      <label><input type="checkbox" id="lLocal" checked> Local costmap</label>
+      <label><input type="checkbox" id="lLocal"> Local costmap</label>
       <label><input type="checkbox" id="lPlan" checked> Plan</label>
       <hr style="border:0;border-top:1px solid var(--line);width:100%">
       <label><input type="checkbox" id="navMode"> <b>Nav mode</b> (click = goal)</label>
       <label><input type="checkbox" id="follow" checked> Follow robot</label>
+      <div class="legend">
+        <div><i style="background:#ff5a3c"></i> <b>obstacle</b> &mdash; avoid (box, wall, person)</div>
+        <div><i style="background:#24303f;border:1px solid #556"></i> free floor</div>
+        <div><i style="background:transparent;border:1px dashed #556"></i> empty = not seen yet</div>
+        <div><i style="background:#59b8ff"></i> trail &nbsp;<i style="background:#3ecf8e"></i> plan &nbsp;<i style="background:#ffd24c"></i> goal</div>
+      </div>
       <div class="row"><button id="zin">+</button><button id="zout">&minus;</button><button id="fit">Fit</button><button id="center">Center</button></div>
       </div>
     </div>
@@ -169,25 +180,42 @@ function connect() {
   es.addEventListener('gridclear', e => { delete grids[JSON.parse(e.data).name]; });
 }
 function addGrid(g) {
-  const bin = atob(g.data), n = bin.length, cv = document.createElement('canvas');
-  cv.width = g.w; cv.height = g.h;
-  const ctx = cv.getContext('2d'), img = ctx.createImageData(g.w, g.h), d = img.data;
-  const isMap = g.name === 'map', isLive = g.name === 'live';
-  for (let j = 0; j < g.h; j++) {
-    for (let i = 0; i < g.w; i++) {
-      let v = bin.charCodeAt(j * g.w + i); if (v > 127) v -= 256;          // int8
-      const o = ((g.h - 1 - j) * g.w + i) * 4;                               // flip: row 0 = south
-      let r, gg, b, a;
-      if (isLive) { if (v >= 99) { r = 255; gg = 55; b = 70; a = 235; } else if (v > 0) { r = 245; gg = 175; b = 70; a = 120; } else { r = gg = b = 0; a = 0; } }
-      else if (isMap) { if (v < 0) { r = gg = b = 62; a = 255; } else if (v < 50) { r = gg = b = 232; a = 255; } else { r = gg = b = 18; a = 255; } }
-      else if (v <= 0) { a = 0; r = gg = b = 0; }
+  const bin = atob(g.data), n = bin.length, raw = new Int8Array(n);
+  for (let k = 0; k < n; k++) { let v = bin.charCodeAt(k); raw[k] = v > 127 ? v - 256 : v; }       // int8
+  grids[g.name] = {w:g.w, h:g.h, res:g.res, ox:g.ox, oy:g.oy, raw:raw, canvas:(grids[g.name] && grids[g.name].canvas) || document.createElement('canvas'), version:g.version};
+  renderGrid(g.name);
+}
+// Map look: walls = bright, free = dark slate, unknown = empty (no grey box). Costmaps: blue->orange gradient, lethal = red.
+function renderGrid(name) {
+  const g = grids[name]; if (!g) return;
+  const w = g.w, h = g.h, raw = g.raw, cv = g.canvas; cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(w, h), d = img.data;
+  const isMap = name === 'map', isLive = name === 'live';
+  let keep = null;
+  if (isMap && $('lClean') && $('lClean').checked) {            // display-only despeckle: an occupied cell needs >= 2 occupied neighbours
+    keep = new Uint8Array(w * h);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      if (raw[j * w + i] < 50) continue; let c = 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const jj = j + dj, ii = i + di; if (jj >= 0 && jj < h && ii >= 0 && ii < w && raw[jj * w + ii] >= 50) c++; }
+      keep[j * w + i] = c >= 2 ? 1 : 0; }
+  }
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      const v = raw[j * w + i], o = ((h - 1 - j) * w + i) * 4;      // flip: row 0 = south
+      let r = 0, gg = 0, b = 0, a = 0;
+      if (isLive) { if (v >= 99) { r = 255; gg = 90; b = 60; a = 255; } else if (v > 0 && $('lHalo').checked) { r = 255; gg = 90; b = 60; a = 70; } }
+      else if (isMap) {
+        if (v < 0) { a = 0; }                                                        // unknown: transparent
+        else if (v >= 50 && (!keep || keep[j * w + i])) { r = 255; gg = 90; b = 60; a = 255; }        // obstacle (same colour as live)
+        else { r = 36; gg = 47; b = 63; a = 255; }                                   // free (also despeckled cells)
+      }
+      else if (v <= 0) { a = 0; }
       else if (v >= 99) { r = 255; gg = 40; b = 90; a = 200; }
       else { const t = v / 98; r = Math.round(40 + 215 * t); gg = Math.round(120 + 100 * t); b = Math.round(255 - 215 * t); a = 70 + Math.round(110 * t); }
-      d[o] = r; d[o+1] = gg; d[o+2] = b; d[o+3] = a;
+      d[o] = r; d[o + 1] = gg; d[o + 2] = b; d[o + 3] = a;
     }
   }
   ctx.putImageData(img, 0, 0);
-  grids[g.name] = {w:g.w, h:g.h, res:g.res, ox:g.ox, oy:g.oy, canvas:cv, version:g.version};
 }
 
 // ---------------------------------------------------------------- state -> UI
@@ -251,6 +279,8 @@ $('estop').onclick = () => post('/api/estop');
 $('pStand').onclick = () => post('/api/robot', {cmd:'stand_up'});
 $('pLie').onclick = () => post('/api/robot', {cmd:'lie_down'});
 $('pDamp').onclick = () => { if (confirm('DAMP: the robot goes limp and drops. Continue?')) post('/api/robot', {cmd:'damp'}); };
+$('lClean').onchange = () => renderGrid('map');
+$('lHalo').onchange = () => renderGrid('live');
 $('mapSel').onchange = () => { $('bLoad').disabled = !$('mapSel').value; };
 
 // ---------------------------------------------------------------- teleop (deadman: the server stops 0.5 s after the last message)
@@ -290,12 +320,15 @@ function draw() {
   if ($('lLive').checked && grids.live) drawGrid(grids.live, 1);
   if (S) {
     if ($('lPlan').checked && S.plan && S.plan.length > 1) { ctx.beginPath(); S.plan.forEach((p, i) => { const [sx, sy] = W2S(p[0], p[1]); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); ctx.strokeStyle = '#3ecf8e'; ctx.lineWidth = 3; ctx.stroke(); }
+    if ($('lTrail').checked && S.trail && S.trail.length > 1) { ctx.beginPath(); S.trail.forEach((p, i) => { const [sx, sy] = W2S(p[0], p[1]); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); ctx.strokeStyle = 'rgba(89,184,255,.85)'; ctx.lineWidth = 2; ctx.stroke();
+      const [x0, y0] = W2S(S.trail[0][0], S.trail[0][1]); ctx.beginPath(); ctx.arc(x0, y0, 6, 0, 7); ctx.fillStyle = '#3ecf8e'; ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui'; ctx.fillText('START', x0 + 9, y0 + 4); }
     if (S.nav.goal) arrow(S.nav.goal[0], S.nav.goal[1], S.nav.goal[2], 16, '#ffd24c', 'rgba(255,210,76,.35)');
     if (S.pose) {   // robot footprint 0.63 x 0.36 m + heading arrow
       const [sx, sy] = W2S(S.pose[0], S.pose[1]); ctx.save(); ctx.translate(sx, sy); ctx.rotate(-S.pose[2]);
       ctx.fillStyle = 'rgba(76,154,255,.25)'; ctx.strokeStyle = '#4c9aff'; ctx.lineWidth = 2; const L = .63 * view.scale, Wd = .36 * view.scale; ctx.fillRect(-L / 2, -Wd / 2, L, Wd); ctx.strokeRect(-L / 2, -Wd / 2, L, Wd);
       ctx.beginPath(); ctx.moveTo(L / 2, 0); ctx.lineTo(L / 2 - 10, 6); ctx.lineTo(L / 2 - 10, -6); ctx.closePath(); ctx.fillStyle = '#4c9aff'; ctx.fill(); ctx.restore(); }
   }
+  { const m = 1 * view.scale, bx = 20, by = r.height - 74; ctx.strokeStyle = '#cfd6e0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + m, by); ctx.stroke(); ctx.fillStyle = '#cfd6e0'; ctx.font = '12px system-ui'; ctx.fillText('1 m', bx, by - 7); }
   if (nav.down) { arrow(nav.x0, nav.y0, Math.atan2(nav.y1 - nav.y0, nav.x1 - nav.x0), 16, '#ffd24c', 'rgba(255,210,76,.5)'); }
   requestAnimationFrame(draw);
 }
