@@ -28,6 +28,7 @@ import time  # noqa: E402
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # noqa: E402
 from urllib.parse import parse_qs, urlparse  # noqa: E402
 
+import numpy as np  # noqa: E402
 import rclpy  # noqa: E402
 import tf2_ros  # noqa: E402
 from action_msgs.msg import GoalStatus  # noqa: E402
@@ -39,7 +40,7 @@ from rclpy.executors import MultiThreadedExecutor  # noqa: E402
 from rclpy.node import Node  # noqa: E402
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy  # noqa: E402
 from rclpy.time import Time  # noqa: E402
-from sensor_msgs.msg import BatteryState  # noqa: E402
+from sensor_msgs.msg import BatteryState, PointCloud2  # noqa: E402
 from std_msgs.msg import Bool, Int32, String  # noqa: E402
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
@@ -133,6 +134,10 @@ class Dashboard(Node):
         for name, topic in (('map', '/map'), ('global', '/global_costmap/costmap'), ('local', '/local_costmap/costmap')):
             self.create_subscription(OccupancyGrid, topic, lambda m, n=name: self._grid(n, m), qos_latched)
         self.create_subscription(Path, '/plan', self._on_plan, 10)
+        # live obstacles straight from the depth cloud (works in every mode, independent of RTAB-Map / Nav2)
+        self.create_subscription(PointCloud2, '/camera/points', self._on_cloud,
+                                 QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
+        self._live_t = 0.0
 
         self.pub_vel = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_cmd = self.create_publisher(String, '/robot_cmd', 10)
@@ -167,6 +172,54 @@ class Dashboard(Node):
         step = max(1, len(pts) // 120)
         with self.lock:
             self.plan = pts[::step] + ([pts[-1]] if pts and (len(pts) - 1) % step else [])
+
+    LIVE_MIN_H, LIVE_MAX_H = 0.10, 0.50        # obstacle band above the floor (same as the costmap config)
+    LIVE_RES, LIVE_HALF, LIVE_INFL = 0.05, 4.0, 4   # 5 cm cells, 8 x 8 m window around the robot, 0.2 m halo
+
+    def _on_cloud(self, m):
+        """Rasterise the obstacle band of the live camera cloud around the robot -> grid 'live' (100 = obstacle, 45 = halo)."""
+        now = time.monotonic()
+        if now - self._live_t < 0.3 or self.pose is None:
+            return
+        self._live_t = now
+        target = 'map' if self.localized else 'odom'
+        try:
+            tf = self.tf_buffer.lookup_transform(target, m.header.frame_id, Time())
+        except Exception:  # noqa: BLE001
+            return
+        q, t = tf.transform.rotation, tf.transform.translation
+        x, y, z, w = q.x, q.y, q.z, q.w
+        R = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                      [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                      [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+        P = np.frombuffer(bytes(m.data), np.float32).reshape(-1, 3).astype(np.float64)
+        if len(P) == 0:
+            return
+        W = P @ R.T + np.array([t.x, t.y, t.z])
+        sel = (W[:, 2] > self.LIVE_MIN_H) & (W[:, 2] < self.LIVE_MAX_H)
+        res, half = self.LIVE_RES, self.LIVE_HALF
+        cx, cy = self.pose[0], self.pose[1]
+        ox, oy = math.floor((cx - half) / res) * res, math.floor((cy - half) / res) * res
+        n = int(2 * half / res)
+        ix, iy = ((W[sel, 0] - ox) / res).astype(int), ((W[sel, 1] - oy) / res).astype(int)
+        ok = (ix >= 0) & (ix < n) & (iy >= 0) & (iy < n)
+        counts = np.zeros((n, n), np.int32)
+        np.add.at(counts, (iy[ok], ix[ok]), 1)
+        obst = counts >= 3
+        k = self.LIVE_INFL
+        pad = np.pad(obst, k)
+        infl = np.zeros_like(obst)
+        for dy in range(-k, k + 1):
+            for dx in range(-k, k + 1):
+                if dx * dx + dy * dy <= k * k:
+                    infl |= pad[k + dy:k + dy + n, k + dx:k + dx + n]
+        data = np.zeros((n, n), np.int8)
+        data[infl] = 45
+        data[obst] = 100
+        with self.lock:
+            old = self.grids.get('live', {'version': 0})
+            self.grids['live'] = {'version': old['version'] + 1, 'w': n, 'h': n, 'res': res, 'ox': ox, 'oy': oy,
+                                  'data': data.tobytes()}
 
     def _tick_pose(self):
         try:
