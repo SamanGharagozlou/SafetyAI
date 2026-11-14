@@ -25,7 +25,7 @@ describe('visitor onboarding', () => {
     expect(screen.getByRole('heading', { name: 'Nice to meet you, Nova!' })).toHaveFocus()
     expect(window.location.pathname).toBe('/session')
     expect(screen.getByText(/ROBOT STATUS · DEMO MODE/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Voice interaction coming next' })).toBeDisabled()
+    expect(screen.getByText('Transcription not connected')).toBeInTheDocument()
     expect(window.location.href).not.toContain('Nova')
     expect(window.history.state).toBeNull()
   })

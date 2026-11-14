@@ -4,6 +4,7 @@ import { Robot, Shield } from './Artwork'
 import { demoSessionService, sessionDuration } from './services/demoSession'
 import type { DemoSession } from './services/demoSession'
 import { useRoute } from './useRoute'
+import { VoiceInteraction } from './voice/VoiceInteraction'
 
 type Notice = 'ended' | 'expired' | 'unavailable' | null
 const notices = {
@@ -111,18 +112,15 @@ export function App() {
           <button type="submit" className="primary-button">Let's Get Started <span aria-hidden="true">→</span></button>
           <button type="button" className="guest-button" onClick={() => startSession(true)}>Continue as Guest</button>
         </form>
-        <div className="privacy-note"><Shield/><p><strong>Your curiosity. Your privacy.</strong><br/>No real name, email, or account needed. Your microphone stays off.</p></div>
+        <div className="privacy-note"><Shield/><p><strong>Your curiosity. Your privacy.</strong><br/>No real name, email, or account needed. Microphone access is your choice after joining.</p></div>
       </section>}
 
-      {route === '/session' && session && <section className="welcome-card secondary-card page-enter" aria-labelledby="session-heading">
+      {route === '/session' && session && <section className="welcome-card secondary-card session-card page-enter" aria-labelledby="session-heading">
         <span className="eyebrow"><span className="status-dot"/> ROBOT STATUS · DEMO MODE</span>
         <Robot small/>
         <h1 ref={heading} tabIndex={-1} id="session-heading">Nice to meet you, {session.nickname}!</h1>
         <p className="intro">Your temporary demo session is ready.<br/>This is a frontend simulation, with no robot connected.</p>
-        <div className="coming-soon"><span className="feature-label">A PREVIEW OF WHAT’S NEXT</span><h2>A conversation with ClawMetry</h2><p>In a future phase, you’ll speak to the robot and see its responses here.</p>
-          <button type="button" className="voice-button" disabled aria-describedby="voice-help"><svg width="20" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" strokeWidth="1.7"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg><span>Voice interaction coming next</span></button>
-          <p id="voice-help" className="field-help">Microphone disabled. No audio is recorded.</p>
-        </div>
+        <VoiceInteraction key={session.id}/>
         <p className="field-help mb-6">This demo expires at <time dateTime={new Date(session.expiresAt).toISOString()}>{new Date(session.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time>.<br/>It does not authenticate or authorize robot access.</p>
         <button type="button" className="secondary-button" onClick={endSession}>End Session</button>
       </section>}
@@ -131,11 +129,14 @@ export function App() {
         <span className="privacy-emblem"><Shield/></span>
         <span className="eyebrow">A CLEARER PICTURE</span>
         <h1 ref={heading} tabIndex={-1} id="privacy-heading">Privacy, in plain words.</h1>
-        <p className="intro">Here’s how this Phase 2 prototype works.</p>
+        <p className="intro">Here’s how this Phase 3 prototype works.</p>
         <dl className="privacy-details">
           <div><dt>A nickname is optional.</dt><dd>You can continue as Guest. No real name, email, or account is required.</dd></div>
           <div><dt>A temporary demo, in memory only.</dt><dd>Your nickname, simulated session ID, and expiry time stay in this page’s React memory. This app does not save them to cookies or browser storage, put them in the URL, or send them to a server. Ending the session, expiry, refreshing, or closing the page clears them. Navigating back to welcome also ends the session.</dd></div>
-          <div><dt>No listening. No tracking.</dt><dd>This frontend does not access your microphone, record audio, connect to a robot, or include analytics or third-party trackers. Fonts and artwork are local.</dd></div>
+          <div><dt>Your microphone, on your terms.</dt><dd>Only Start Recording or Retry recording requests microphone access. Recording is limited to 20 seconds and requires HTTPS or localhost. Stopping, canceling, hiding the tab, leaving the session view, or ending the session stops microphone tracks. If permission arrives after cancellation, those tracks are stopped immediately.</dd></div>
+          <div><dt>Review before sending.</dt><dd>Audio is held in page memory for review, without browser storage or persistent audio files. Typed requests also stay in page memory. Retry, Discard, leaving the session view, or ending the session clears the recording and its playback URL. Typed requests are a local preview and do not dispatch robot actions. They are cleared when leaving the session view.</dd></div>
+          <div><dt>Transcription is optional and separate.</dt><dd>By default, transcription is not connected and Continue does not upload audio. If the event team configures a same-site transcription endpoint, only the button labeled “Continue — send for transcription” sends your recording and its format/duration metadata. A returned transcript can be edited before continuing. Canceling a request cannot guarantee that the server has not received it. Server retention and deletion behavior have not been verified.</dd></div>
+          <div><dt>No tracking.</dt><dd>This frontend includes no analytics, third-party trackers, or third-party audio services. Fonts and artwork are local. No audio or transcripts are logged by application code. The robot remains disconnected.</dd></div>
           <div><dt>Your QR code is just a link.</dt><dd>The event team generates it locally. No third-party QR-processing service is used. Scanning opens the site’s join page, without a nickname or session ID in the link.</dd></div>
           <div><dt>This is an early prototype.</dt><dd>Sessions are simulated, not backend authentication or robot authorization. The server hosting this page may keep standard request logs, such as IP addresses. Hosting practices have not been verified. These notes describe the frontend, not a claim of certified GDPR compliance or backend data deletion.</dd></div>
         </dl>

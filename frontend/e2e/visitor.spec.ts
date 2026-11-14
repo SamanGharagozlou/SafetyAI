@@ -22,7 +22,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 375, height: 667 }
     await page.getByLabel('What should I call you?').fill('A'.repeat(40))
     await page.getByRole('button', { name: "Let's Get Started" }).click()
     await expect(page.getByRole('heading', { level: 1 })).toContainText(`Nice to meet you, ${'A'.repeat(40)}!`)
-    await expect(page.getByRole('button', { name: 'Voice interaction coming next' })).toBeDisabled()
+    await expect(page.getByText('Transcription not connected', { exact: true })).toBeVisible()
     await assertNoOverflow()
     await page.screenshot({ path: testInfo.outputPath('session.png'), fullPage: true })
     await page.getByRole('link', { name: 'Privacy information' }).click()
