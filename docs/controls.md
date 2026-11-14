@@ -4,31 +4,80 @@ Verified on the real robot: **stand up** and **lie down** both work via the SDK.
 
 ## Setup (this robot)
 
+The SDK runs over a **direct Ethernet cable between the robot and the onboard Jetson**.
+The Jetson is the SDK host. Wi-Fi is still used for SSH, the camera stream and everything else.
+
 | Item | Value |
 |---|---|
-| Robot IP (Wi-Fi `Event_MyLAG`) | `172.24.1.41` (SSH: `firefly` / `firefly`) |
-| This PC | `172.24.1.20`, UDP port `43988` |
+| Robot, Wi-Fi `Event_MyLAG` | `172.24.1.41` (SSH: `firefly` / `firefly`) |
+| Robot, Ethernet `eth0` (cable to Jetson) | `192.168.168.168/24` |
+| Jetson, Wi-Fi | `172.24.0.239` (SSH: `sepa`) |
+| Jetson, Ethernet `enP8p1s0` (cable to robot) | `192.168.168.10/24`, SDK UDP port `43988` |
 | Robot model | `zsl-1w` (`ROBOT_TYPE=XGW`) |
-| SDK | submodule `third_party/agibot_D1_Edu-Ultra` |
+| SDK | submodule `third_party/agibot_D1_Edu-Ultra` (Jetson: `lib/zsl-1w/aarch64`) |
 
-Robot-side config (already done, backups are `*.bak_pre_ros`):
-- `/opt/export/config/sdk_config.yaml`: `target_ip: "172.24.1.20"`
-- `/opt/app_launch/start_motion_control_xgw.sh`: `export SDK_CLIENT_IP="172.24.1.41"`
+The cable subnet has no gateway on either side, so both machines keep their Wi-Fi default route.
+Don't give the Jetson `192.168.168.100` or `.120`: robot boot scripts (`start_app_node.sh`,
+`start_gpsd_chrony.sh`, `start_lcm.sh` in `/opt/app_launch`) wait for those addresses and
+act when they appear.
 
-> **After every robot reboot** the motion program may fail to bind the SDK port
-> (`connect time out`, nothing listening on UDP 43997). Temporary fix:
-> `sudo systemctl restart robot-launch` on the robot. Permanent fix (not applied):
-> add `Environment="ROBOT_NET_INTERFACES=wlan0"` to
-> `/etc/systemd/system/robot-launch.service` and reboot.
+### Robot-side config (done 2026-11-15)
+
+| File | Setting | Previous value (in `*.bak`) |
+|---|---|---|
+| `/etc/netplan/01-netcfg.yaml` | `eth0`: `dhcp4: false`, `addresses: [192.168.168.168/24]` | `eth0`: `dhcp4: true` |
+| `/opt/app_launch/start_motion_control_xgw.sh` | `export SDK_CLIENT_IP="192.168.168.168"` | `"172.24.1.41"` |
+| `/opt/export/config/sdk_config.yaml` | `target_ip: "192.168.168.10"` | `"172.24.1.20"` |
+
+The `*.bak_pre_ros` files are the factory originals from before any of this.
+
+The Jetson's cable address comes from a NetworkManager profile, `robot-link`:
+```bash
+sudo nmcli con add type ethernet con-name robot-link ifname enP8p1s0 \
+  ipv4.method manual ipv4.addresses 192.168.168.10/24 ipv4.never-default yes \
+  ipv6.method disabled connection.autoconnect yes connection.autoconnect-priority 10
+sudo nmcli con up robot-link
+```
+
+To apply netplan changes on the robot, reload only `eth0`; `netplan apply` would also touch Wi-Fi:
+`sudo netplan generate && sudo networkctl reload && sudo networkctl reconfigure eth0`.
+
+### Applying SDK IP changes: restart only the motion program
+
+`SDK_CLIENT_IP` and `target_ip` are read only when `mc_ctrl` starts.
+
+> **Do not reboot the robot**, and don't restart the whole `robot-launch` service.
+> Restarting `mc_ctrl` cuts motor control, so **lie the robot down first**.
+
+Kill `mc_ctrl` and its start script. `robot-launch` starts them again within about 1 s:
+```bash
+MC=$(pgrep -x mc_ctrl); SH=$(ps -o ppid= -p $MC | tr -d ' ')
+ps -o pid,cmd -p $MC,$SH            # check: ./mc_ctrl r  and  bash .../start_motion_control_xgw.sh
+sudo kill $MC $SH
+sleep 2; sudo cat /proc/$(pgrep -x mc_ctrl)/environ | tr '\0' '\n' | grep SDK_CLIENT_IP
+sudo ss -ulpn | grep mc_ctrl        # should listen on 192.168.168.168:43997 and :43900
+```
+Don't find these processes with `pgrep -f <script name>` over SSH: the pattern also matches the
+SSH shell running the command.
+
+> Earlier, on Wi-Fi, `mc_ctrl` sometimes failed to bind the SDK port after a boot
+> (`connect time out`, nothing on UDP 43997). If that happens, use the restart above.
+> The old suggestion `ROBOT_NET_INTERFACES=wlan0` would now be wrong, because the SDK is on `eth0`.
+
+### Switching the SDK back to a PC on Wi-Fi
+
+Set `SDK_CLIENT_IP="172.24.1.41"` and `target_ip: "<PC IP>"` (the `*.bak` values), then
+restart `mc_ctrl` as above. Only one SDK host gets data at a time.
 
 ## SDK commands (Python)
 
+Run on the Jetson (Python 3.10):
 ```python
-import sys; sys.path.insert(0, "third_party/agibot_D1_Edu-Ultra/lib/zsl-1w/x86_64")
+import sys; sys.path.insert(0, "third_party/agibot_D1_Edu-Ultra/lib/zsl-1w/aarch64")   # x86_64 on a PC
 import mc_sdk_zsl_1w_py as m, time
 
 a = m.HighLevel()
-a.initRobot("172.24.1.20", 43988, "172.24.1.41")   # local IP, local port, robot IP
+a.initRobot("192.168.168.10", 43988, "192.168.168.168")   # local IP, local port, robot IP (cable)
 time.sleep(3); assert a.checkConnect()
 
 a.standUp()                 # stand      -> returns 0 on success
@@ -47,7 +96,7 @@ a.passive()                 # emergency: damping, robot drops
 
 ```bash
 cd ros2_ws && source /opt/ros/humble/setup.bash && source install/setup.bash
-ros2 launch agibot_d1_bridge bridge.launch.py local_ip:=172.24.1.20 robot_ip:=172.24.1.41
+ros2 launch agibot_d1_bridge bridge.launch.py local_ip:=192.168.168.10 robot_ip:=192.168.168.168   # on the Jetson
 ```
 
 **Commands in**
