@@ -13,8 +13,8 @@ import os
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
-from launch.conditions import IfCondition, UnlessCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -23,6 +23,7 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     args = [('database_path', os.path.expanduser('~/d1_maps/d1_rgbd_map.db'), 'RTAB-Map database'),
             ('delete_db', 'true', 'start a new map'),
+            ('localization', 'false', 'localise in an existing database (no new nodes) instead of mapping'),
             ('rviz', 'true', 'open RViz'),
             ('max_depth', '3.0', 'ignore depth beyond this (m)'),
             ('linear_update', '0.1', 'add a node after this much translation (m)'),
@@ -73,11 +74,25 @@ def generate_launch_description():
     remaps = [('rgb/image', '/camera/image_raw'), ('depth/image', '/camera/depth'),
               ('rgb/camera_info', '/camera/camera_info'), ('odom', '/odom')]
 
+    import copy
+    loc_params = copy.deepcopy(params)
+    loc_params['Mem/IncrementalMemory'] = 'false'          # localization mode: do not add to the map
+    loc_params['Mem/InitWMWithAllNodes'] = 'true'          # load every saved node so relocalization can match anywhere
+
+    def is_true(name):
+        return PythonExpression(["'", c(name), "' == 'true'"])
+
+    def mapping_when(delete):
+        return IfCondition(PythonExpression(["'", c('localization'), "' != 'true' and '", c('delete_db'),
+                                             "' == '", 'true' if delete else 'false', "'"]))
+
     new_map = Node(package='rtabmap_slam', executable='rtabmap', name='rtabmap', output='screen',
-                   parameters=[params], remappings=remaps, arguments=['-d'], condition=IfCondition(c('delete_db')))
+                   parameters=[params], remappings=remaps, arguments=['-d'], condition=mapping_when(True))
     keep_map = Node(package='rtabmap_slam', executable='rtabmap', name='rtabmap', output='screen',
-                    parameters=[params], remappings=remaps, condition=UnlessCondition(c('delete_db')))
+                    parameters=[params], remappings=remaps, condition=mapping_when(False))
+    localize = Node(package='rtabmap_slam', executable='rtabmap', name='rtabmap', output='screen',
+                    parameters=[loc_params], remappings=remaps, condition=IfCondition(is_true('localization')))
     rviz = Node(package='rviz2', executable='rviz2', name='rviz2_mapping', output='log',
                 arguments=['-d', PathJoinSubstitution([FindPackageShare('d1_slam'), 'rviz', 'mapping.rviz'])],
                 condition=IfCondition(c('rviz')))
-    return LaunchDescription(la + [SetEnvironmentVariable('PYTHONNOUSERSITE', '1'), new_map, keep_map, rviz])
+    return LaunchDescription(la + [SetEnvironmentVariable('PYTHONNOUSERSITE', '1'), new_map, keep_map, localize, rviz])

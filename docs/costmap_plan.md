@@ -108,3 +108,25 @@ Masking the model's 20 m cap removed only ~3% of the points; the fix is a hard `
 Not yet validated (robot was off): standing height, motion, depth accuracy on real obstacles with measured distances (put a box at 1.5 m and 2.5 m and compare in RViz), false obstacles from far walls at standing height, latency.
 
 Next: with the robot standing, run camera + depth + RViz (PointCloud2 `/camera/points`), measure box distances, then feed the cloud to a standalone Nav2 local costmap (`VoxelLayer`, `min_obstacle_height 0.10`, `max_obstacle_height 0.5`, `obstacle_max_range 3`).
+
+## 9. Offline study of the recorded mapping run (2026-11-14): why the floor fit failed while standing
+
+Setup: a 385 s bag (1498 frames, TF, odometry) of a standing/driving run in which the depth node rejected the floor fit 234 times (errors up to 21%) and published only ~0.9 Hz.
+We re-ran the depth model on the recorded frames and tested hypotheses against the analytic floor depth (mean floor-fit error, lying / standing still / moving):
+
+- **TF delay (0-1.5 s):** no effect at all (identical error). Latency of the pose vs the image is not the problem.
+- **Camera tilt and height offsets:** no real improvement for lying frames; for standing/moving frames error kept falling toward the edge of the grid, but that is an artefact (the floor leaves the image, fewer pixels fitted).
+- **Fit window:** restricting the floor window to the working range helps (standing 20% at 5 m -> 16% at 3 m -> 12% at 2 m).
+- **Correction form (floor window 0.4-3 m, per-frame in-sample):**
+
+| form | lying | standing | moving |
+|---|---|---|---|
+| 1/z = a/d + b (old) | 7.1% | 16.4% | 9.2% |
+| power z = k d^g | 6.3% | 14.1% | 7.9% |
+| quadratic in 1/d | 7.1% | 8.0% | 7.2% |
+| **linear z = a d + b (now default)** | **5.7%** | 8.7% | **6.4%** |
+
+Adopted: **linear z = a*d + b**, floor window = 3 m working range, gate = 12% median error and >= 8000 floor pixels. `a` is stable (0.28-0.32) instead of wandering 2-4.
+Replaying the same bag through the new pipeline: fit rejections 234 -> 15, RTAB-Map nodes 22 -> 34, floor area in the map 29 -> 36 m2, walls more continuous.
+Loop closure at the end of the run is still **not** accepted (17 candidates rejected, best 7 of 12 inliers): the robot did not return exactly to the start and the camera looks up, so views differ.
+
