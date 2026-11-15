@@ -96,6 +96,31 @@
   .banner.bad { background: #3d1518; border: 1px solid #6e2b2b; color: #ffb4ab; }
   .banner.warn { background: #3a2d10; border: 1px solid #6b5420; color: #ecc48d; }
 
+  /* The command bus. Deliberately the loudest thing on the page: when a robot
+     is about to move in front of people, "what was just sent" matters more
+     than any other number here. */
+  .cmdbar {
+    margin-bottom: 14px; border-left: 4px solid var(--line);
+    transition: border-color .15s, background .15s;
+  }
+  .cmdbar.live { border-left-color: var(--accent); background: #111f2e; }
+  .cmdbar.ok   { border-left-color: var(--ok); }
+  .cmdbar.bad  { border-left-color: var(--bad); background: #2a1416; }
+  .cmd-k {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--muted); font-weight: 600;
+  }
+  .cmd-main {
+    font-size: 27px; font-weight: 700; letter-spacing: -0.02em;
+    margin: 5px 0 3px; line-height: 1.15;
+  }
+  .cmd-raw {
+    font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #8fb6dd; word-break: break-all;
+  }
+  .cmd-res { font-size: 13px; color: var(--muted); margin-top: 5px; }
+  @media (max-width: 560px) { .cmd-main { font-size: 21px; } }
+
   #transcript, #analysis {
     max-height: 300px; overflow-y: auto; font-size: 14px;
     background: #0a0d12; border: 1px solid var(--line); border-radius: 9px;
@@ -124,6 +149,7 @@
   .lat.fast { background: #10301a; color: #5fd97a; }
   .lat.mid  { background: #35290d; color: #e3b341; }
   .lat.slow { background: #3d1518; color: #ff8b82; }
+  .lat.cont { background: #1c2230; color: var(--muted); }
   #log {
     font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
     background: #0a0d12; border: 1px solid var(--line); border-radius: 9px;
@@ -145,6 +171,13 @@
 </div>
 
 <div class="banner" id="banner"></div>
+
+<div class="panel cmdbar" id="cmdbar">
+  <div class="cmd-k">Command to robot</div>
+  <div class="cmd-main" id="cmd-main">— idle —</div>
+  <div class="cmd-raw" id="cmd-raw"></div>
+  <div class="cmd-res" id="cmd-res"></div>
+</div>
 
 <div class="panel" style="margin-bottom:14px">
   <h2>Status</h2>
@@ -345,6 +378,7 @@ function syncButtons() {
 
 async function send(name, args = {}, { retry = true } = {}) {
   state.busy = true; syncButtons()
+  showCommand(name, args, 'button')
   log(`→ ${name} ${Object.keys(args).length ? JSON.stringify(args) : ''}`, 'log-send')
   try {
     const r = await fetch('/api/tool', {
@@ -354,6 +388,7 @@ async function send(name, args = {}, { retry = true } = {}) {
     const d = await r.json()
     const result = d.result ?? d.error ?? 'no response'
     const refused = /not standing/i.test(result)
+    showCommandResult(result)
     log(`   ${result}`, d.failed || refused ? 'log-err' : 'log-ok')
 
     // The exact recovery the robot's own error message asks for.
@@ -458,9 +493,78 @@ function voiceState(text, cls = '') {
   $('voice-state').style.color = cls === 'err' ? 'var(--bad)' : cls === 'ok' ? 'var(--ok)' : 'var(--accent)'
 }
 
-/** When the user last stopped speaking. Every latency below is measured from here. */
+/**
+ * When the user last stopped speaking. Latency is measured from here, but ONLY
+ * for the FIRST thing the robot does in a turn.
+ *
+ * The earlier version timed every sentence from the same mark, so a four
+ * sentence answer read "2810ms, 4332ms, 6566ms, 11266ms" and looked like the
+ * robot was getting slower and slower. It was not - those were just later
+ * sentences in one reply, and the only number that matters to a person
+ * standing there is how long the SILENCE lasted before the robot started.
+ */
 let userDoneAt = null
+let turnMeasured = false
 const since = () => userDoneAt === null ? null : Math.round(performance.now() - userDoneAt)
+/** Consume the timer: the first caller in a turn gets the number, the rest get null. */
+function sinceOnce() {
+  if (turnMeasured) return null
+  turnMeasured = true
+  return since()
+}
+
+/* ------------------- the command bus at the top ------------------- */
+
+const DEST_WORDS = {
+  reception: 'the reception desk', shop: 'the shop', restaurant: 'the restaurant',
+  pizzeria: 'the pizzeria terrace', changing: 'the changing rooms',
+  pools: 'the thermal pools', sauna: 'the sauna world', elevator: 'the lift',
+}
+
+/** Tool call -> what the robot is actually about to do, in plain words. */
+function commandLabel(name, a = {}) {
+  switch (name) {
+    case 'robot_command':
+      return { stand_up: 'STAND UP', lie_down: 'SIT DOWN', shake_hand: 'SHAKE HAND', damp: 'DAMP' }[a.command] ?? `POSTURE: ${a.command}`
+    case 'do_gesture':
+      return (a.gesture === 'greet' || a.gesture === 'welcome') ? 'GREET — bow + shake hand'
+           : a.gesture === 'shake' ? 'WAVE / SHAKE'
+           : `GESTURE — ${String(a.gesture ?? '').replace('_', ' ')}`
+    case 'guide_to':
+      return `WALK TO ${DEST_WORDS[a.destination] ?? a.destination}${a.step_free ? ' (via the lift)' : ''}`.toUpperCase()
+    case 'walk_distance':
+      return `WALK ${a.distance_cm}cm ${a.direction ?? 'forward'}`.toUpperCase()
+    case 'move_robot':
+      return `MOVE ${String(a.direction ?? '').replace('_', ' ')} for ${a.duration ?? 1.5}s`.toUpperCase()
+    case 'set_gait':      return `GAIT → ${a.gait}`.toUpperCase()
+    case 'stop_robot':    return 'STOP'
+    case 'robot_status':  return 'CHECK STATUS'
+    case 'list_offerings': return 'LOOK UP WHAT WE SELL'
+    case 'list_destinations': return 'LOOK UP WHERE IT CAN WALK'
+    case 'book_treatment': return `HOLD A BOOKING — ${a.offering_id ?? ''}`.toUpperCase()
+    case 'show_payment_qr': return 'SHOW PAYMENT CODE ON SCREEN'
+    case 'call_staff':    return `CALL STAFF (${a.urgency ?? 'routine'})`.toUpperCase()
+    default:              return name.toUpperCase()
+  }
+}
+
+/** Does this command physically move the robot? Those get the loud treatment. */
+const MOVES = new Set(['robot_command', 'do_gesture', 'guide_to', 'walk_distance', 'move_robot', 'stop_robot'])
+
+function showCommand(name, args, source) {
+  const bar = $('cmdbar')
+  bar.className = 'panel cmdbar live'
+  $('cmd-k').textContent = `Command to robot · ${source} · ${new Date().toLocaleTimeString()}`
+  $('cmd-main').textContent = commandLabel(name, args)
+  $('cmd-raw').textContent = `${name}(${JSON.stringify(args ?? {})})`
+  $('cmd-res').textContent = MOVES.has(name) ? 'sent — waiting for the robot…' : 'sent…'
+}
+
+function showCommandResult(text) {
+  const bad = /fail|sorry|refused|not standing|no live link/i.test(text)
+  $('cmdbar').className = 'panel cmdbar ' + (bad ? 'bad' : 'ok')
+  $('cmd-res').textContent = text
+}
 
 const esc = s => String(s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))
 
@@ -470,9 +574,14 @@ function scroll() { const f = $('transcript'); f.scrollTop = f.scrollHeight }
 function say(role, text) {
   const who = role === 'assistant' ? 'robot' : 'you'
   const colour = role === 'assistant' ? 'var(--accent)' : 'var(--ink)'
-  // Time the robot's FIRST words after you stop - the "is it dead?" moment.
-  const ms = role === 'assistant' ? since() : null
-  const tag = ms === null ? '' : ` <span class="lat ${ms > 2000 ? 'slow' : ms > 1000 ? 'mid' : 'fast'}">${ms}ms to speak</span>`
+  // Only the FIRST words after you stop get a latency badge - that is the
+  // "is it dead?" silence. Later sentences in the same reply are marked as
+  // continuations, because timing them from the same mark made one normal
+  // answer look like it was degrading sentence by sentence.
+  const first = role === 'assistant' ? sinceOnce() : null
+  const tag = role !== 'assistant' ? ''
+    : first === null ? ' <span class="lat cont">…same reply</span>'
+    : ` <span class="lat ${first > 2000 ? 'slow' : first > 1000 ? 'mid' : 'fast'}">${first}ms to first word</span>`
   feed().innerHTML += `<div class="ev"><b style="color:${colour}">${who}:</b> ${esc(text)}${tag}</div>`
   scroll()
 }
@@ -494,7 +603,8 @@ const clearPartial = () => document.getElementById('partial')?.remove()
 
 /** A tool call, rendered as a chip the moment it is chosen. */
 function toolEvent(name, args) {
-  const ms = since()
+  showCommand(name, args, 'voice')
+  const ms = sinceOnce()
   const tag = ms === null ? '' : `<span class="lat ${ms > 2500 ? 'slow' : ms > 1500 ? 'mid' : 'fast'}">${ms}ms to act</span>`
   const a = Object.keys(args ?? {}).length ? `<code>${esc(JSON.stringify(args))}</code>` : ''
   feed().innerHTML += `<div class="ev tool" id="tool-live">🔧 <b>${esc(name)}</b> ${a} ${tag}<div class="tool-res">…waiting for the robot</div></div>`
@@ -503,6 +613,7 @@ function toolEvent(name, args) {
 }
 
 function toolResult(text) {
+  showCommandResult(text)
   const live = document.getElementById('tool-live')
   const failed = /fail|sorry|not standing|no live link/i.test(text)
   if (live) {
@@ -636,7 +747,7 @@ async function startVoice() {
         if (m.transcriptType === 'partial') return showPartial(role, m.transcript.trim())
         if (m.transcriptType === 'final') {
           clearPartial()
-          if (role === 'user') userDoneAt = performance.now()   // start the clock
+          if (role === 'user') { userDoneAt = performance.now(); turnMeasured = false }   // start a fresh clock for this turn
           say(role, m.transcript.trim())
           return
         }
