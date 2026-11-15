@@ -244,6 +244,15 @@ Multipart `frame` and `meta: {"question"}`, returning `{"description": "..."}` (
 `GET /` (login form, then the page), `POST /login`, `GET /api/zones`, `GET /pois`, and `GET|POST /api/edge/<x>`:
 an allow-listed proxy to the edge (`state`, `observation`, `pause`, `resume`, `say`, `guide_to`, `approve`, `deny`,
 `reset`, `confirm`, `ask`, `refix`).
+- `GET /api/pipeline` (polled every 2 s): seven tiles `{level: ok|warn|bad, label, detail}` (vLLM `/health`, brain relay,
+  edge `/state` RTT, team ROS bridge connected / ctrl_mode / state age, team detector `/latest.json` age, ClawMetry
+  journal flush age, `tailscale ping` RTT to the EDGE_URL host every 5 s) and `counters` (`turns_today`,
+  `judge_calls`, `dataset_clips`). An unreachable edge makes its dependants red, never green.
+- `GET /api/events`: the edge's `/events` SSE, filtered to operator events (`fsm.transition`, `judge_verdict`,
+  `hazard`, `breach_predicted`, `person_near`, `approval`, `link_lost` / `link_restored`, `recover`, `guide`, `greet`,
+  `concierge.turn`, `command` hold_pose). `event: down` when the edge stream ends.
+- `/?watch=1`: full screen, no buttons, for the demo screen and the recording. No camera images anywhere.
+- The edge's `/state` carries `pipeline: {detector: {kind, age_s, stale_s}, journal: {on, flush_age_s}, turns_today}`.
 
 ## One judge implementation
 

@@ -132,3 +132,41 @@ def test_bind_hosts_list_never_wildcard(monkeypatch):
         monkeypatch.setenv("BIND_HOST", bad)
         with pytest.raises(ValueError):
             settings.bind_hosts()
+
+
+def test_pipeline_strip_tiles_and_counters(brain, monkeypatch):
+    """Green / amber / red come from measurements; an unreachable edge turns its dependants red, never green."""
+    c, relay, _ = brain
+    import brain.console as con
+
+    for a in ("calls", "failures", "last_latency_s"):
+        if not hasattr(relay.judge, a):
+            setattr(relay.judge, a, 0 if a != "last_latency_s" else None)
+    monkeypatch.setattr(con, "_vllm_health", lambda: {"ok": True, "ms": 3})
+    con._ts.update(rtt_ms=80.0, via="DERP(par)", error=None, at=__import__("time").time())
+    st = {
+        "_rtt_s": 0.05,
+        "robot": {},
+        "safety": {"state": "NORMAL"},
+        "transport": {"transport": "ros2", "connected": True, "fresh": True, "ctrl_mode": 1, "state_age_s": 0.1},
+        "pipeline": {
+            "detector": {"kind": "team", "age_s": 5.0, "stale_s": 1.0},
+            "journal": {"on": True, "flush_age_s": 2.0},
+            "turns_today": 7,
+        },
+    }
+    monkeypatch.setattr(con, "edge_call", lambda path, body=None, timeout=10.0: (200, st))
+    c.cookies.set("brain_key", "bk")
+    p = c.get("/api/pipeline").json()
+    lv = {k: t["level"] for k, t in p["tiles"].items()}
+    assert lv == {
+        "vllm": "ok", "brain": "ok", "edge": "ok", "bridge": "ok",
+        "detector": "bad",  # 5 s old > 3 x stale_s
+        "clawmetry": "ok", "tailscale": "ok",
+    }  # fmt: skip
+    assert p["counters"]["turns_today"] == 7
+    monkeypatch.setattr(con, "edge_call", lambda path, body=None, timeout=10.0: (502, {"detail": "edge unreachable"}))
+    p = c.get("/api/pipeline").json()
+    assert all(p["tiles"][k]["level"] == "bad" for k in ("edge", "bridge", "detector", "clawmetry"))
+    c.cookies.clear()
+    assert c.get("/api/pipeline").status_code == 401 and c.get("/api/events").status_code == 401

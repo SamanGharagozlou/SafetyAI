@@ -27,6 +27,7 @@ import asyncio
 import ipaddress
 import json
 import math
+import os
 import queue
 import threading
 import time
@@ -67,9 +68,16 @@ class EventHub:
         self.recent: deque = deque(maxlen=keep)
         self.subs: list[queue.Queue] = []
         self.lock = threading.Lock()
+        self.turns_day = time.strftime("%Y-%m-%d")
+        self.turns_today = 0  # concierge turns since local midnight (mission control counter)
 
     def _push(self, ev: dict):
         with self.lock:
+            if ev.get("kind") == "concierge.turn":
+                day = time.strftime("%Y-%m-%d")
+                if day != self.turns_day:
+                    self.turns_day, self.turns_today = day, 0
+                self.turns_today += 1
             self.recent.append(ev)
             for q in list(self.subs):
                 try:
@@ -225,6 +233,28 @@ class EdgeRuntime:
                 "run_id": getattr(getattr(_ctl(), "journal", None), "run_id", None),
                 "dashboard": settings.get("CLAWMETRY_DASHBOARD_URL", ""),
             },
+            "pipeline": self.pipeline(),
+        }
+
+    def pipeline(self) -> dict:
+        """Health inputs for mission control's pipeline strip: detector staleness, journal flush age, turn count."""
+        team = getattr(self.perception, "team", None)
+        age = team.age_s() if team is not None else None
+        det = {
+            "kind": "team" if team is not None else settings.get("FRAME_SOURCE", "none"),
+            "age_s": None if age is None else round(age, 2),
+            "stale_s": getattr(team, "stale_s", None),
+        }
+        jpath = getattr(getattr(_ctl(), "journal", None), "path", None)
+        try:
+            jage = round(time.time() - os.stat(jpath).st_mtime, 1) if jpath else None
+        except OSError:
+            jage = None
+        day = time.strftime("%Y-%m-%d")
+        return {
+            "detector": det,
+            "journal": {"on": bool(jpath), "flush_age_s": jage},
+            "turns_today": self.hub.turns_today if self.hub.turns_day == day else 0,
         }
 
 
