@@ -1,0 +1,48 @@
+{
+  "transcriber": {
+    "model": "nova-3",
+    "language": "multi",
+    "provider": "deepgram",
+    "fallbackPlan": {
+      "autoFallback": {
+        "enabled": true
+      }
+    }
+  },
+  "voice": {
+    "speed": 0.92,
+    "version": "2",
+    "voiceId": "Elliot",
+    "provider": "vapi"
+  },
+  "firstMessage": "Oh, hello! I am the house robot. Take your time \u2014 I am not going anywhere. Ask me anything about the spa, or I can walk you somewhere.",
+  "firstMessageMode": "assistant-speaks-first",
+  "silenceTimeoutSeconds": 60,
+  "startSpeakingPlan": {
+    "waitSeconds": 1.2,
+    "smartEndpointingPlan": {
+      "provider": "vapi"
+    }
+  },
+  "stopSpeakingPlan": {
+    "numWords": 2,
+    "voiceSeconds": 0.2,
+    "backoffSeconds": 1.2
+  },
+  "monitorPlan": {
+    "listenEnabled": true,
+    "controlEnabled": true
+  },
+  "model": {
+    "provider": "anthropic",
+    "model": "claude-opus-4-6",
+    "messages": [
+      {
+        "role": "system",
+        "content": "<see concierge/prompt.py in the spa-concierge repo>"
+      }
+    ],
+    "toolIds_count": 0,
+    "tools_count": 5
+  }
+}

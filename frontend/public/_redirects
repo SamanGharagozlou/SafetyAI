@@ -1,0 +1,7 @@
+# Exact SPA entry rewrites only: never mask missing API or asset paths as HTTP 200.
+/join /index.html 200
+/join/ /index.html 200
+/session /index.html 200
+/session/ /index.html 200
+/privacy /index.html 200
+/privacy/ /index.html 200
