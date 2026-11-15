@@ -221,6 +221,10 @@ function renderGrid(name) {
 // ---------------------------------------------------------------- state -> UI
 const PROCS = ['robot','perception','mapping','bag','localization','nav2'];
 function renderState() {
+  var mono = !S.features || S.features.mono_slam;
+  ['bMap', 'bSave', 'mapName', 'rec'].forEach(function (id) { var e = document.getElementById(id); var t = (e && e.tagName == 'INPUT' && e.type == 'checkbox') ? e.parentNode : e; if (t) t.style.display = mono ? '' : 'none'; });
+  var lv = document.getElementById('lLive'); if (lv) lv.parentNode.style.display = mono ? '' : 'none';
+  var bs = document.getElementById('bStart'); if (bs) bs.innerHTML = mono ? '<span>1&nbsp;&nbsp;Start process</span><span class="n">robot + camera + depth</span>' : '<span>1&nbsp;&nbsp;Start process</span><span class="n">robot link</span>';
   const r = S.robot, el = (id, html, cls) => { const e = $(id); e.innerHTML = html; if (cls !== undefined) e.className = 'chip ' + cls; };
   el('cLink', 'Robot link: <b>' + (r.connected === null ? 'no data' : r.connected ? 'connected' : 'DOWN') + '</b>', r.connected ? 'ok' : (r.connected === null ? 'dim' : 'bad'));
   el('cMode', 'Mode: <b>' + (r.mode === null ? '?' : r.mode_name) + '</b>', r.standing ? 'warn' : '');

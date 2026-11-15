@@ -41,3 +41,7 @@ Start process, Start map, Save map, Load map (relocalized at the end pose of a r
 - Localization needs the camera to see something that matches the saved map (visual relocalization); after loading, drive a little if it says "Localized: no".
 - Depth is only reliable within ~3 m (see `docs/costmap_plan.md`), so the costmap is short-range.
 - The robot needs ~2 s to start moving after standing (SDK state change).
+
+
+## Monocular SLAM is deactivated by default
+Since 2026-11-15 the dashboard starts only the robot link; *Start map*, *Save map*, the camera obstacle layer and rosbag recording are hidden and the API refuses them. Pass `mono_slam:=true` (`--mono-slam true`) to enable them again. `external_robot:=true` makes the dashboard use a bridge that is already running (the SDK allows one client).

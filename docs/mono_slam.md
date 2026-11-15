@@ -1,3 +1,7 @@
+> **DEACTIVATED (2026-11-15).** Navigation now uses the lidar maps in `maps/` (see `docs/map_localization.md`). All monocular code
+> (`d1_camera`, `d1_depth`, `d1_slam`) stays in the repo and works; the dashboard just no longer starts it. To bring the
+> camera/depth/RTAB-Map workflow back: `ros2 launch d1_dashboard dashboard.launch.py mono_slam:=true`.
+
 # Monocular camera + RTAB-Map (experiment)
 
 Branch: `mono-slam`. Status: **wiring verified with a synthetic video; not yet run on the real robot stream.**

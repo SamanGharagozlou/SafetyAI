@@ -112,6 +112,9 @@ class Dashboard(Node):
         super().__init__('d1_dashboard')
         self.args = args
         self.external_robot = str(getattr(args, 'external_robot', 'false')).lower() in ('1', 'true', 'yes')
+        # Monocular SLAM (camera -> depth -> RTAB-Map) is DEACTIVATED by default: the lidar map + static Nav2 path replaces it.
+        # The code stays; start the dashboard with mono_slam:=true to bring Start map / Save map / camera obstacle layer back.
+        self.mono = str(getattr(args, 'mono_slam', 'false')).lower() in ('1', 'true', 'yes')
         self.lock = threading.RLock()
         self.maps_dir = os.path.expanduser(args.maps_dir)
         self.log_dir = os.path.join(self.maps_dir, 'logs')
@@ -139,8 +142,9 @@ class Dashboard(Node):
             self.create_subscription(OccupancyGrid, topic, lambda m, n=name: self._grid(n, m), qos_latched)
         self.create_subscription(Path, '/plan', self._on_plan, 10)
         # live obstacles straight from the depth cloud (works in every mode, independent of RTAB-Map / Nav2)
-        self.create_subscription(PointCloud2, '/camera/points', self._on_cloud,
-                                 QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
+        if self.mono:
+            self.create_subscription(PointCloud2, '/camera/points', self._on_cloud,
+                                     QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
         self._live_t = 0.0
 
         self.pub_vel = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -382,12 +386,15 @@ class Dashboard(Node):
         started = []
         if self.start('robot'):
             started.append('robot')
-        threading.Timer(2.5, lambda: self.start('perception')).start()
-        if not self.running('perception'):
-            started.append('perception')
+        if self.mono:
+            threading.Timer(2.5, lambda: self.start('perception')).start()
+            if not self.running('perception'):
+                started.append('perception')
         return {'ok': True, 'started': started}
 
     def start_map(self, name=None, record=True):
+        if not self.mono:
+            return {'ok': False, 'error': 'monocular SLAM is deactivated (start the dashboard with mono_slam:=true)'}
         if self.running('mapping'):
             return {'ok': False, 'error': 'mapping is already running'}
         for n in ('nav2', 'localization'):
@@ -416,6 +423,8 @@ class Dashboard(Node):
             self.job = {'name': name, 'status': status, 'message': message}
 
     def save_map(self, name=None):
+        if not self.mono:
+            return {'ok': False, 'error': 'monocular SLAM is deactivated (start the dashboard with mono_slam:=true)'}
         if not self.running('mapping'):
             return {'ok': False, 'error': 'not mapping'}
         if 'map' not in self.grids:
@@ -471,6 +480,8 @@ class Dashboard(Node):
         return sorted(out, key=lambda m: m.get('created', ''), reverse=True)
 
     def load_map(self, name):
+        if not self.mono:
+            return {'ok': False, 'error': 'monocular SLAM is deactivated (start the dashboard with mono_slam:=true)'}
         db = os.path.join(self.maps_dir, name + '.db')
         if not os.path.exists(db):
             return {'ok': False, 'error': f'no database for "{name}"'}
@@ -533,6 +544,7 @@ class Dashboard(Node):
                 'procs': {n: p.info() for n, p in self.procs.items()},
                 'job': self.job,
                 'grids': {n: g['version'] for n, g in self.grids.items()},
+                'features': {'mono_slam': self.mono},
             }
 
     def grid_payload(self, name):
@@ -672,6 +684,7 @@ def main():
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--maps-dir', default='~/d1_maps')
+    ap.add_argument('--mono-slam', default='false', help='true: enable the (deactivated) monocular SLAM workflow')
     ap.add_argument('--external-robot', default='false', help='true: a bridge already runs elsewhere; never start/stop one')
     args, ros_args = ap.parse_known_args()
     rclpy.init(args=ros_args)
