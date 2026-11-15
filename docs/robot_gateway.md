@@ -51,7 +51,7 @@ answer repeats it, so you can match `goal_reached` to the goal you sent. Robot m
 | `{"type":"goal","id":"g1","place":"reception"}` | navigate to a named place |
 | `{"type":"cancel","id":"g1"}` | cancel the active goal (`id` optional) |
 | `{"type":"intent","id":"i1","name":"say_hi","args":{"text":"Hello!"}}` | do a named action: `say_hi`, `shake_hand`, `stand_up`, `lie_down`, `say` (`args.text`) |
-| `{"type":"intent","id":"i2","name":"follow_lock"}` | lock the follow node (`d1_follow`) onto the guest in front of the camera; fails with "follow node not running" if it is down |
+| `{"type":"intent","id":"i2","name":"follow_lock"}` | lock the follow node (`d1_follow`) onto the guest in front of the camera; fails with "follow node not running" if it is down. It can take a few seconds to answer: `intent_started` comes first, then `intent_done` or `intent_failed` (e.g. reason `no_person`) when the lock resolves |
 | `{"type":"intent","id":"i3","name":"follow_release"}` | make `d1_follow` forget the locked guest |
 | `{"type":"stop"}` | cancel the goal, zero velocity, keep standing |
 | `{"type":"estop"}` | stop **and damp** (the robot drops; use in emergencies only) |
