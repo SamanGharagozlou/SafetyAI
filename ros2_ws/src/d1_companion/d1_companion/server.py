@@ -77,6 +77,7 @@ class CompanionServer:
                  nlu=None, answerer=None):
         self.sm = Companion(places, config, clock=clock, nlu=nlu, answerer=answerer)
         self.places, self.robot_name, self.wall = places, robot_name, wall
+        self.places_path, self._places_mtime = None, None       # follow this file: the places of the map that is loaded on the robot
         self.nlu = nlu or NLU.parse
         self.join_token = join_token or secrets.token_urlsafe(9)
         self.admin_token, self.host, self.port, self.robot_speech, self.ttl = admin_token, host, port, robot_speech, session_ttl_s
@@ -437,9 +438,45 @@ class CompanionServer:
     async def _feed_late(self, event):
         await self._run_effects(self.sm.handle(event))
 
+    def follow_places(self, path):
+        self.places_path = path
+        try:
+            self._places_mtime = os.stat(path).st_mtime_ns
+        except OSError:
+            self._places_mtime = None
+
+    def _reload_places(self):
+        """The dashboard rewrites the places file when a map is loaded or its places are edited; pick it up without a restart.
+        Only while no guest is paired (a layout that changes under a guest's feet would be confusing)."""
+        if not self.places_path or self.sm.session:
+            return
+        try:
+            m = os.stat(self.places_path).st_mtime_ns
+        except OSError:
+            return
+        if m == self._places_mtime:
+            return
+        try:
+            new = P.load_places(self.places_path)
+        except Exception as ex:  # noqa: BLE001
+            log.warning('places file not readable (%s); keeping the current places', ex)
+            return
+        self._places_mtime = m
+        for d in (self.places, self.sm.places):
+            d.clear()
+            d.update(new)
+        home = self.sm.cfg.home
+        if self.sm.at not in self.places:
+            self.sm.at = home if home in self.places else None
+        log.info('places reloaded: %s', ', '.join(self.places) or '(none)')
+
     async def _ticker(self):
+        n = 0
         while True:
             await asyncio.sleep(0.25)
+            n += 1
+            if n % 8 == 0:
+                self._reload_places()
             if self.sm.session and self.wall() >= self.expires_at:
                 await self._feed(ev('end', reason='Your session has expired. Goodbye!'))
             effects = self.sm.tick()
@@ -487,6 +524,7 @@ def main(argv=None):
     cfg = Config(home=a.home, min_battery=a.min_battery, input_prompt_s=a.input_prompt_s, input_timeout_s=a.input_timeout_s)
     srv = CompanionServer(P.load_places(a.places), cfg, a.gateway, a.gateway_token, a.join_token or None, a.admin_token, a.host, a.port,
                           a.robot_name, str(a.robot_speech).lower() in ('1', 'true', 'yes'), a.session_ttl_s)
+    srv.follow_places(a.places)
 
     async def run():
         await srv.start()

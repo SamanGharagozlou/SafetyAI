@@ -208,6 +208,10 @@ class Companion:
         why = self.hold_reason()
         if self.state == S.HOLD or why:
             return [fx('join_rejected', reason=f'The robot is not available right now ({why or self.reason}). Please ask a staff member.')]
+        r = self.robot
+        loc = r.get('localization')
+        if r.get('nav_ready') is False or (loc is not None and not loc.get('ready')):    # QR scanned before the robot knows where it is
+            return [fx('join_rejected', reason='The robot is not available right now (it is still finding its position on the map). Please try again in a minute.')]
         if self.session is not None:
             return [fx('join_rejected', reason='The robot is already with another guest.')]
         out = []

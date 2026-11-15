@@ -11,6 +11,7 @@ The robot side is a `RobotPort` (ros_robot.RosRobot on the robot, mock_robot.Moc
     state() -> dict                  snapshot for the periodic `state` message
 """
 import asyncio
+import os
 import json
 import logging
 
@@ -147,6 +148,32 @@ class GatewayCore:
         log.info('gateway listening on ws://%s:%s (%d places, auth %s)', self.host, self.port, len(self.places),
                  'on' if self.token else 'off')
         asyncio.ensure_future(self._state_loop())
+        if self.places_path:
+            asyncio.ensure_future(self._places_loop())
+
+    places_path = None
+
+    def follow_places(self, path, loader):
+        """Keep `places` equal to this file (rewritten by the dashboard when a map is loaded / its places change)."""
+        self.places_path, self._places_loader, self._places_mtime = path, loader, None
+        try:
+            self._places_mtime = os.stat(path).st_mtime_ns
+        except OSError:
+            pass
+
+    async def _places_loop(self):
+        while True:
+            await asyncio.sleep(2.0)
+            try:
+                m = os.stat(self.places_path).st_mtime_ns
+                if m != self._places_mtime:
+                    new = self._places_loader(self.places_path)
+                    self._places_mtime = m
+                    self.places.clear()
+                    self.places.update(new)
+                    log.info('places reloaded: %s', ', '.join(sorted(self.places)) or '(none)')
+            except Exception as ex:  # noqa: BLE001
+                log.warning('places file not readable (%s); keeping the current places', ex)
 
     async def close(self):
         if self._server:

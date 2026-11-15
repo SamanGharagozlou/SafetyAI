@@ -62,6 +62,20 @@ def test_join_and_single_guest():
     assert kinds(sm.handle(ev('join', nickname='Bob'))) == ['join_rejected']          # one escort per robot
 
 
+def test_join_refused_until_the_robot_is_localized():
+    sm, clk = make()
+    bad = dict(GOOD, localization={'state': 'need_pose', 'ready': False})
+    sm.handle(ev('robot_state', state=bad))
+    out = sm.handle(ev('join', nickname='A'))
+    assert kinds(out) == ['join_rejected'] and 'not available' in out[0].data['reason'] and sm.session is None
+    sm.handle(ev('robot_state', state=dict(GOOD)))                       # localized now: the same QR works
+    out = sm.handle(ev('join', nickname='A'))
+    assert 'join_rejected' not in kinds(out) and sm.session is not None and sm.state == S.AWAITING_INPUT
+    sm2, _ = make()
+    sm2.handle(ev('robot_state', state=dict(GOOD, nav_ready=False)))     # Nav2 not running: also not ready
+    assert kinds(sm2.handle(ev('join', nickname='B'))) == ['join_rejected']
+
+
 def test_full_tour_and_return_home_on_end():
     sm, _ = make()
     sm.handle(ev('join'))

@@ -41,6 +41,8 @@ def main(argv=None):
         spin = threading.Thread(target=ex.spin, daemon=True)
         spin.start()
     core = GatewayCore(robot, places, token=a.token, host=a.host, port=a.port)
+    if a.places:
+        core.follow_places(a.places, load_places)
 
     async def run():
         await core.serve()

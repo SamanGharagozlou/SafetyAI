@@ -85,3 +85,9 @@ The gateway now reports `localization` (from the lidar localizer's status) in `s
 * No follow-check (FR-X4), no person-approach greeting trigger (FR-E1), no rotating QR (the token is static per run), no multi-language strings, no staff UI beyond `POST /api/admin/end`.
 * One robot, one guest at a time; the escort speed is whatever Nav2 is configured for (0.30 m/s forward limit). The HTTP server is a small hand-written one (one request per connection,
   limits on header/body size and rate); put a real reverse proxy (Tailscale Serve) in front.
+
+## Updates on the nav2 branch (2026-11-15)
+* **Join is refused until the robot is ready**: no Nav2 or a localizer that says "not ready" -> `join_rejected` ("not available ... finding its position"). Before, only the escort pick was refused.
+* **Places follow a file**: `d1_gateway` and `d1_companion` re-read `--places` when it changes (dashboard writes `active_places.yaml` for the loaded map). The companion applies it only while no guest is paired.
+* **Run notes (Jetson)**: containers need `--pid host` and UDP-only FastDDS (`docker/d1-jetson/fastdds_udp.xml`, now in `run.sh`): with separate PID namespaces / stale shared memory, ROS 2 processes in other containers silently received nothing from the bridge. The image's `websockets` 9.1 is broken on Python 3.10: use `pip install --target ~/d1_maps/pylibs websockets==13.1` and `PYTHONPATH=/root/d1_maps/pylibs`; start the gateway directly (not via `ros2 run`).
+* *Unverified:* the full cycle (QR -> app -> pick -> goal -> arrival) has not been run on the real robot with this stack.
