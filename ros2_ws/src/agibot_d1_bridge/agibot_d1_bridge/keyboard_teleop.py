@@ -142,8 +142,8 @@ def main():
                     help='seconds a keypress keeps the robot moving')
     ap.add_argument('--max-lin', type=float, default=1.0)
     ap.add_argument('--max-ang', type=float, default=1.5)
-    ap.add_argument('--gesture-scale', type=float, default=0.5,
-                    help='gesture rate multiplier in (0,1], default 0.5')
+    ap.add_argument('--gesture-scale', type=float, default=1.0,
+                    help='gesture size multiplier in (0,1], default 1.0')
     ap.add_argument('--no-reset', action='store_true',
                     help='skip the stand_up re-centre after each gesture')
     args, ros_args = ap.parse_known_args()

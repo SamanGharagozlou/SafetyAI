@@ -108,7 +108,7 @@ ros2 run agibot_d1_bridge keyboard_teleop            # --lin 0.2 --ang 0.4 --hol
 | `+` / `-` | speed up / down | `x` | **damp (emergency, robot drops)** |
 
 Gestures (from `d1w_gestures`, robot must be standing, i.e. `ctrl_mode` = 1; press `1` first).
-Any key cancels a running gesture. `--gesture-scale 0.5` (default) scales the rates,
+Any key cancels a running gesture. `--gesture-scale 1.0` (default) shrinks the gestures if set lower,
 `--no-reset` skips the `stand_up` re-centre after each gesture.
 
 | Key | Gesture | Key | Gesture |
