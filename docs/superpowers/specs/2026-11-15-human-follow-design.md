@@ -143,3 +143,21 @@ call). Frame-to-frame identity is the tracker's job, never the embedder's.
 ## Safety & privacy
 - Dry-run only; nothing publishes `/cmd_vel`. Caps far below `SAFE_LIMIT`; vx never negative.
 - Frames and crops stay in memory; embeddings are not persisted; annotated image is a live topic only.
+
+## Revisions
+
+**2026-11-15, after the whole-branch review** (implemented; see [docs/human_follow.md](../../human_follow.md)):
+
+- **Identity decisions split seeds from gallery.** The design let the gallery max decide everything; a single accepted
+  bystander crop then scores ~1.0 against itself forever. Decisions that *grant* identity (gallery learning, clearing
+  a suspicion, LOST re-acquisition) now use the **seed** embeddings only; only keep/reject in the periodic TRACKING
+  check still uses the gallery max, so pose change is still tolerated.
+- **Suspect check after an overlap.** While the target box overlaps another track nothing is embedded (the crop holds
+  two people) and the target is marked suspect; on the first clear view it is verified immediately against the seeds,
+  ignoring `verify_period_s`. This catches the ID switch onto an occluder, which `sim < sim_reject` alone would miss.
+- **LOST excludes known-not-target ids** (tracks seen beside the target) — this was the spec's "not known-unknown",
+  which the first implementation had dropped — and embeds at most `reacquire_max_candidates` (3) per check at
+  `reacquire_period_s` 0.5 s (was 0.3 s) to bound the CPU cost.
+- **Freshness by header stamp**, not receipt time; arrays older than `stale_s` are dropped.
+- **Image QoS is RELIABLE by default** (`image_reliability` parameter), because this repo measured a best-effort
+  subscriber receiving 0 of ~1 MB frames; `unpaired` arrays are counted, warned about and reported in the state JSON.

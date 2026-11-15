@@ -24,8 +24,11 @@ re-ID), and publishes a follow velocity.
                                             └─► /follow/annotated_image
 ```
 
-Per detection array the node: pairs it with its frame by exact header stamp (ring buffer of `image_buffer` recent
-images; unpaired arrays still run the tracker but cannot be embedded) → `IouTracker` → `TargetLock` → `FollowController`.
+Per detection array the node: drops the array if it is older than `stale_s` (age from its header stamp) → pairs it
+with its frame by exact header stamp (ring buffer of `image_buffer` recent images; unpaired arrays still run the
+tracker but cannot be embedded, and are counted as `unpaired`) → `IouTracker` → `TargetLock` → `FollowController`.
+Until the first image is paired the frame size is unknown, so the lock update is skipped entirely and the velocity
+stays zero.
 
 | Module | Role |
 |---|---|
@@ -55,23 +58,48 @@ stateDiagram-v2
 |---|---|
 | **IDLE** | No target, every person `unknown`, velocity 0. `auto_lock` starts LOCKING when the first confirmed person appears (only until the first lock; `release` disables it). |
 | **LOCKING** | Each confirmed, visible person is scored `area_frac × (1 − 2·|cx − 0.5|)` (big and centred). The top scorer is the candidate only if it beats the runner-up by `lock_margin` (1.3×); if the candidate changes the window restarts. The candidate is embedded every `lock_window_s / seed_size` s to seed the gallery. After `lock_window_s` with `seed_size` embeddings -> TRACKING. If nothing resolves within `lock_timeout_s` -> IDLE, reason `no_person` (nobody seen) or `ambiguous` (people seen but never a clear winner). |
-| **TRACKING** | Target = the track with `target_id`. Every `verify_period_s` its crop is embedded and compared with the gallery (max cosine similarity). `sim ≥ sim_accept`: counter reset, and if the box overlaps nobody else (IoU ≤ `overlap_iou`) the embedding joins the gallery. `sim < sim_reject` for `reject_checks` checks in a row -> LOST (`appearance_mismatch`). In between: counter reset, no learning. Track dropped by the tracker -> LOST (`track_lost`). A briefly missed (occluded) target keeps its state until the tracker drops it. |
-| **LOST** | Velocity 0. Every `reacquire_period_s`, all confirmed visible tracks are embedded in one call and compared with the gallery. A track is re-acquired when `sim ≥ sim_accept` for `reacquire_hits` consecutive checks **and** it beats the second-best candidate by `reacquire_margin`. -> TRACKING with the new track id. After `lost_timeout_s` -> IDLE (`lost_timeout`). |
+| **TRACKING** | Target = the track with `target_id`. **Overlap**: while the target box overlaps another track (IoU > `overlap_iou`) nothing is embedded (the crop holds two people) and the target is marked *suspect*. **Suspect check**: on the first update after they separate the target is embedded immediately (ignoring `verify_period_s`) and compared with the **seed** embeddings; `seed_sim ≥ sim_accept` clears the suspicion, otherwise a fail is counted and the check repeats every `reacquire_period_s` — `reject_checks` fails → LOST (`appearance_mismatch`). **Periodic check**: otherwise every `verify_period_s` the target crop is embedded and compared with the whole gallery; `sim ≥ sim_accept` resets the counter and, if `seed_sim ≥ sim_accept` too, the embedding joins the gallery; `sim < sim_reject` for `reject_checks` checks in a row → LOST (`appearance_mismatch`); in between: counter reset, no learning. Track dropped by the tracker → LOST (`track_lost`). A briefly missed (occluded) target keeps its state until the tracker drops it. |
+| **LOST** | Velocity 0. Every `reacquire_period_s`, the confirmed visible tracks that are not known to be someone else are embedded in one call (at most `reacquire_max_candidates`, the biggest boxes first) and compared with the **seeds**. A track is re-acquired when `seed_sim ≥ sim_accept` for `reacquire_hits` consecutive checks **and** it beats the second-best candidate by `reacquire_margin`. → TRACKING with the new track id. After `lost_timeout_s` → IDLE (`lost_timeout`). |
 
-`release` from any state -> IDLE and clears the gallery. A new `lock` while LOCKING or TRACKING restarts from scratch.
+`release` from any state -> IDLE and clears the gallery (and resolves a pending `lock` call with `released`). A new
+`lock` while LOCKING or TRACKING restarts from scratch.
+
+### Identity rules: seeds vs gallery
+
+The gallery holds the `seed_size` embeddings taken during LOCKING (never evicted) plus later accepted ones (FIFO).
+Similarity is always the **maximum** over a set of rows, so which set is used decides what can go wrong:
+
+| Decision | Compared against | Why |
+|---|---|---|
+| Keep or reject the target in the periodic TRACKING check | whole gallery | Tolerates pose, scale and lighting change; a wrong accept here only delays LOST |
+| Add an embedding to the gallery | **seeds only** | A sample that no longer resembles the person who was locked must not extend the gallery, otherwise the gallery walks away from the guest sample by sample |
+| Clear a suspicion after an overlap | **seeds only** | After an ID swap the previous frames are the occluder; only the seeds still describe the guest |
+| Re-acquire in LOST | **seeds only** | This grants the lock to a new track id |
+
+In short: **the gallery can only widen what counts as "still the guest", never what counts as "this is the guest"**.
+Every embedding in the gallery is within `sim_accept` of a seed, and nothing is learned from a crop that overlaps
+another person. The earlier claim that "the gallery cannot drift" was wrong: the seeds do not bound a *maximum* over
+the whole gallery, which is why identity-granting decisions now use the seeds alone.
+
+LOST also keeps a set of **known-not-target** track ids: every track seen beside the target (visible at the same time,
+not overlapping it) is provably a different person, so it is excluded from re-acquisition and costs no embedding. The
+set is dropped on `release`, `lock` and `lost_timeout`. After an `appearance_mismatch` it is reset to the mismatching
+id alone, because after a swap the tracker's ids say nothing about who is who.
 
 ### Why a bystander cannot become the target
 
 - **Lock needs a clear winner** (`lock_margin`), stable for the whole window; two guests side by side give `ambiguous`, not a coin flip.
-- **The first `seed_size` embeddings are never evicted** from the gallery (FIFO only removes later ones), so the gallery cannot drift onto someone else.
-- **No learning from overlapped crops**: a box overlapping another person is not added to the gallery.
+- **Identity is only ever granted by the seed embeddings** (see [Identity rules](#identity-rules-seeds-vs-gallery)), which are taken while the guest was the unambiguous winner and are never evicted.
+- **No learning from overlapped crops**: a box overlapping another person is not added to the gallery, and no identity decision is taken from it.
+- **Crossings are re-checked immediately**: after the target box overlapped someone else, the next clear view is verified against the seeds right away, so an ID swap onto the occluder is caught within `reject_checks` checks instead of waiting for `verify_period_s`.
 - **Appearance is checked continuously**: an ID swap (e.g. two people crossing) shows as low similarity and drops to LOST.
-- **Re-acquisition is strict**: several consecutive matches plus a margin over the second-best person, so a look-alike alone is not enough.
+- **Re-acquisition is strict**: several consecutive matches against the seeds plus a margin over the second-best person, and people already seen next to the guest are not candidates at all.
 - **Velocity is exactly 0 unless TRACKING with a fresh detection**; `unknown` people never produce a command.
 - Track ids are never reused, so a new person cannot inherit the target id.
 
-Residual risk: between two verify checks the tracker alone decides identity, so after a swap the robot could briefly
-steer toward the wrong person (up to about `verify_period_s × reject_checks`) before LOST. Unverified with real
+Residual risk: while the target overlaps someone else the tracker alone decides identity, so after a swap the robot can
+briefly steer toward the wrong person (until they separate, plus up to `reacquire_period_s × reject_checks`) before
+LOST. All thresholds above are untested against real OSNet similarities; see [Tuning](#tuning). Unverified with real
 crowds; one more reason this is dry-run only.
 
 ### Follow controller
@@ -85,16 +113,19 @@ crowds; one more reason this is dry-run only.
 
 | Name | Type | Direction | QoS | Notes |
 |---|---|---|---|---|
-| `/camera/image_raw` | `sensor_msgs/Image` | in | BEST_EFFORT, KEEP_LAST 5 | `image_topic` |
-| `/perception/humans/detections` | `vision_msgs/Detection2DArray` | in | RELIABLE, KEEP_LAST 10 | `detections_topic`; header must carry the source image stamp |
-| `/follow/cmd_vel` | `geometry_msgs/Twist` | out | RELIABLE, KEEP_LAST 10 | **Dry run.** At the detection rate, plus zero from a 10 Hz timer when detections are older than `stale_s` |
-| `/follow/state` | `std_msgs/String` (JSON) | out | RELIABLE, KEEP_LAST 10 | 2 Hz and on events: `{state, target_id, similarity, n_people, event, reason, embedder}` |
+| `/camera/image_raw` | `sensor_msgs/Image` | in | RELIABLE, KEEP_LAST 5 | `image_topic`; parameter `image_reliability: best_effort` switches it. Reliable by default: a best-effort subscriber was measured to receive **0** of ~1 MB frames here ([perception.md](perception.md)) |
+| `/perception/humans/detections` | `vision_msgs/Detection2DArray` | in | RELIABLE, KEEP_LAST 10 | `detections_topic`; header must carry the source image stamp. Arrays older than `stale_s` are dropped |
+| `/follow/cmd_vel` | `geometry_msgs/Twist` | out | RELIABLE, KEEP_LAST 10 | **Dry run.** At the detection rate, plus zero from a 10 Hz timer when the last processed detection stamp is older than `stale_s` |
+| `/follow/state` | `std_msgs/String` (JSON) | out | RELIABLE, KEEP_LAST 10 | 2 Hz and on events: `{state, target_id, similarity, n_people, unpaired, event, reason, embedder}` |
 | `/follow/target` | `vision_msgs/Detection2D` | out | RELIABLE, KEEP_LAST 10 | Target box only, `id` = track id; only while TRACKING |
 | `/follow/annotated_image` | `sensor_msgs/Image` | out | RELIABLE, KEEP_LAST 1 | Only produced while someone subscribes |
 | `/d1_follow/lock` | `std_srvs/Trigger` | service | default | Returns when LOCKING resolves: success `locked target #N`, or failure with reason `no_person` / `ambiguous` / `timeout: no detections` |
-| `/d1_follow/release` | `std_srvs/Trigger` | service | default | Always succeeds, `released` |
+| `/d1_follow/release` | `std_srvs/Trigger` | service | default | Always succeeds, `released`; a `lock` call still waiting is answered `released` |
 
 `event` in the state JSON is one of `locked`, `lock_failed`, `lost`, `reacquired`, `lost_timeout`, `released`, or null.
+`unpaired` counts detection arrays that found no image for their stamp (a warning naming the image topic and its QoS
+is logged at most once per 10 s). Every appearance check also logs one INFO line with the similarity value (numbers
+only, at most 1/s): `verify sim=0.812 state=TRACKING`, `suspect ...`, `reacquire ...`.
 
 ## Parameters
 
@@ -103,11 +134,12 @@ Node `d1_follow`, defaults from [config/follow.yaml](../ros2_ws/src/d1_follow/co
 | Parameter | Default | Meaning |
 |---|---|---|
 | `image_topic` | `/camera/image_raw` | Frames to embed and annotate |
+| `image_reliability` | `reliable` | `reliable` or `best_effort` QoS for the image subscription |
 | `detections_topic` | `/perception/humans/detections` | Person detections |
 | `embedder` | `osnet` | `osnet` or `histogram` (automatic fallback) |
 | `device` | `cpu` | Device for OSNet |
-| `auto_lock` | `false` | Lock onto the first confirmed person without a service call |
-| `stale_s` | `0.5` | Publish zero velocity when detections are older |
+| `auto_lock` | `false` | Lock onto the first confirmed person without a service call; retries after a `lock_failed` until the first successful lock |
+| `stale_s` | `0.5` | Detection arrays older than this (by header stamp) are dropped and the velocity is zeroed |
 | `image_buffer` | `15` | Frames kept to pair with slow detections by stamp |
 | `iou_min` | `0.3` | Minimum IoU to associate a detection with a track |
 | `min_hits` | `3` | Hits before a track counts as confirmed |
@@ -115,17 +147,18 @@ Node `d1_follow`, defaults from [config/follow.yaml](../ros2_ws/src/d1_follow/co
 | `lock_window_s` | `0.5` | Candidate must stay the clear winner this long |
 | `lock_margin` | `1.3` | Winner's score must be at least this multiple of the runner-up |
 | `lock_timeout_s` | `5.0` | Give up locking (`no_person` / `ambiguous`) |
-| `seed_size` | `3` | Embeddings taken during LOCKING; never evicted |
+| `seed_size` | `3` | Embeddings taken during LOCKING; never evicted, and the only ones that can grant identity |
 | `gallery_size` | `10` | Max gallery embeddings |
 | `verify_period_s` | `1.0` | Time between appearance checks of the target |
 | `sim_accept` | `0.70` | Cosine similarity to accept / re-acquire |
-| `sim_reject` | `0.50` | Similarity below this counts as a mismatch |
-| `reject_checks` | `2` | Consecutive mismatches before LOST |
-| `reacquire_period_s` | `0.3` | Minimum time between re-acquire embeddings in LOST |
+| `sim_reject` | `0.50` | Similarity below this counts as a mismatch in the periodic check |
+| `reject_checks` | `2` | Consecutive mismatches (periodic or suspect) before LOST |
+| `reacquire_period_s` | `0.5` | Minimum time between re-acquire embeddings in LOST, and between repeated suspect checks |
+| `reacquire_max_candidates` | `3` | People embedded per re-acquire check (biggest boxes first) |
 | `reacquire_hits` | `3` | Consecutive matching checks to re-acquire |
 | `reacquire_margin` | `0.10` | Required similarity lead over the second-best candidate |
 | `lost_timeout_s` | `30.0` | LOST -> IDLE |
-| `overlap_iou` | `0.1` | Crops overlapping another person above this are not learned |
+| `overlap_iou` | `0.1` | Above this IoU with another person the crop is not used (no learning, no check) and the target becomes *suspect* |
 | `target_height_frac` | `0.6` | Desired bbox height / image height (follow distance) |
 | `k_yaw` | `1.0` | Yaw gain |
 | `k_x` | `1.2` | Forward gain |
@@ -184,7 +217,20 @@ does not. `release` -> IDLE, `lock` locks again. (Not yet run end to end.)
 
 ## Tuning
 
-- **`sim_accept` / `sim_reject` depend on the embedder.** The defaults (0.70 / 0.50) are for OSNet. The `histogram` fallback is a weaker identity cue (clothing colour only; similar clothing scores high): check `embedder` in `/follow/state`, and expect more false accepts and rejects. Tune on live `similarity` values, not by guesswork.
+- **`sim_accept` / `sim_reject` must be set from the first live session.** The defaults (0.70 / 0.50) are guesses for
+  OSNet x0_25, taken from the literature and never measured here; different people in similar clothing are commonly
+  reported around 0.5–0.7, which overlaps the "same person" range, and webcam upper-body crops are far from the
+  full-body pedestrians the model was trained on. Procedure: run the session, watch the throttled
+  `verify/suspect/reacquire sim=...` INFO lines and `similarity` in `/follow/state` while (a) the guest changes pose
+  and comes back after an occlusion and (b) teammates stand in front of the camera; set `sim_accept` below the
+  observed same-person range and `sim_reject` above the observed different-person range. **Log the numbers only**
+  — never a crop, a frame or an embedding (see [Privacy](#privacy)).
+- The `histogram` fallback is a much weaker identity cue (clothing colour only; similar clothing scores high), so its
+  thresholds are not the OSNet ones: check `embedder` in `/follow/state` and expect both false accepts and false
+  rejects until they are retuned separately.
+- `auto_lock` keeps retrying after a `lock_failed`: with two people side by side it logs `lock_failed (ambiguous)`
+  about every `lock_timeout_s` until somebody is the clear winner. That is intended; use the `lock` service instead if
+  the noise is unwanted.
 - `target_height_frac` sets the follow distance: larger = closer. Webcam framing differs from the robot camera, so retune on the robot.
 - Gains and deadbands only matter once the output is wired to the robot; keep `max_vx` / `max_wz` at or below the caps.
 - `image_buffer` costs memory (full frames; at 1080p about 6 MB each). It must cover the detector latency in frames, otherwise detections are unpaired and cannot be embedded.
@@ -200,6 +246,8 @@ topic produced only while subscribed, never recorded. Do not record it or `/came
 - Dry run: `/follow/cmd_vel` -> `/cmd_vel` needs the `/cmd_vel` arbitration from [system_architecture.md](system_architecture.md#safety-architecture) first; there is no arbiter yet.
 - Not yet integrated with the spa state machine (greet / chat / escort / refuse), and not driven by the frontend beyond the two intents.
 - `source=d1-camera` + `follow=true` is not supported by `make up` yet (the entrypoint starts without `d1_follow`).
-- OSNet takes about 300 ms per call on CPU (measured in WSL Docker, 3 crops), hence the 1 Hz verify and `reacquire_period_s` budget; unverified on the Orin.
+- OSNet takes about 300 ms per call on CPU (measured in WSL Docker, 3 crops), hence the 1 Hz verify and, in LOST, one
+  call of at most `reacquire_max_candidates` crops every `reacquire_period_s` (worst case ~60% of one core for up to
+  `lost_timeout_s`); unverified on the Orin.
 - Monocular distance proxy only; no obstacle awareness. Following a person through a spa needs Nav2/costmap input before it moves the robot.
 - Not tested with a real robot, wet floors, crowds or similar clothing.
