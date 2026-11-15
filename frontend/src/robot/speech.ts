@@ -108,3 +108,20 @@ export function yesNo(text: string): 'yes' | 'no' | null {
   const t = text.trim().replace(/[.!?,]+$/g, '')
   return YES.test(t) ? 'yes' : NO.test(t) ? 'no' : null
 }
+
+/** Direct test from a tap: no waiting, no options, the phone's default voice. Reports what happened in plain words. */
+export function testVoice(): Promise<string> {
+  if (!speechOutputSupported()) return Promise.resolve('This browser has no speech output.')
+  return new Promise(resolve => {
+    const synth = window.speechSynthesis
+    const u = new SpeechSynthesisUtterance('Hello, can you hear me?')
+    alive.add(u)
+    let started = false
+    const end = (m: string) => { alive.delete(u); resolve(`${m} (${synth.getVoices().length} voices)`) }
+    u.onstart = () => { started = true }
+    u.onend = () => end('Finished speaking. If you heard nothing, raise the media volume.')
+    u.onerror = e => end(`Error: ${(e as SpeechSynthesisErrorEvent).error}`)
+    setTimeout(() => { if (!started) { try { synth.cancel() } catch { /* ignore */ } end('The phone never started speaking') } }, 4000)
+    synth.speak(u)
+  })
+}

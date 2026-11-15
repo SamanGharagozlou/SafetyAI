@@ -10,6 +10,7 @@ import { stopRobot } from './robotApi'
 import type { RobotSessionInfo } from './robotApi'
 import { createRobotTaskClient, MAX_ROBOT_TEXT } from './robotTasks'
 import type { RobotAction } from './robotTasks'
+import { testVoice } from './speech'
 import { useConversation } from './useConversation'
 import { useRobotView } from './useRobotView'
 
@@ -34,6 +35,7 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
   const [typing, setTyping] = useState(false)       // typing is optional: the conversation is by voice or taps
   const [showPlaces, setShowPlaces] = useState(false)
   const [yes, setYes] = useState(0)
+  const [voiceTest, setVoiceTest] = useState('')
   const [stopping, setStopping] = useState(false)
   const [stopFailed, setStopFailed] = useState(false)
   const counter = useRef(0)
@@ -90,9 +92,11 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
       {talk_.state === 'unsupported' && <p className="stage-note" role="status">Voice needs a secure (HTTPS) page and a supported browser. You can tap a place or type.</p>}
       <div className="voice-tools">
         {talk_.state === 'ready' && <button type="button" className="quick-chip" onClick={() => talk_.setMuted(!talk_.muted)} aria-pressed={talk_.muted}><VolumeIcon muted={talk_.muted}/>{talk_.muted ? 'Voice off' : 'Voice on'}</button>}
+        {info.consent.voice && <button type="button" className="quick-chip" onClick={() => { setVoiceTest('Testing…'); void testVoice().then(setVoiceTest) }}><VolumeIcon/>Test voice</button>}
         <button type="button" className="quick-chip" onClick={() => setTyping(t => !t)} aria-expanded={typing}><KeyboardIcon/>Type instead</button>
         <button type="button" className="quick-chip" onClick={() => setShowPlaces(v => !v)} aria-expanded={showPlaces}>{showPlaces ? 'Hide places' : 'Show places'}</button>
       </div>
+      {voiceTest && <p className="stage-note" role="status">{voiceTest}</p>}
       {typing && <form className="voice-type" onSubmit={send}>
         <label htmlFor="robot-text" className="sr-only">Type a message</label>
         <input id="robot-text" value={draft} onChange={event => setDraft(event.target.value)} maxLength={MAX_ROBOT_TEXT} placeholder="Say where you want to go…" autoComplete="off"/>
