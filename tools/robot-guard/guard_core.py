@@ -212,21 +212,46 @@ class State(IntEnum):
     FREEZE = 3    # stand still, nothing at all
 
 
-# Gestures that lift a limb or shift the body hard enough to knock over a
-# toddler. `shakeHand` raises a paw to roughly the head height of a
-# two-year-old, which is exactly the scenario this exists for.
-LIMB_GESTURES = frozenset({
-    "shake", "shake_hand", "shakehand", "wave", "hello", "high_five",
-    "jump", "jump_forward", "jump_back", "backflip", "flip",
-    "stand_two_legs", "two_legs", "dance", "stretch",
+# WHICH GESTURES ARE SAFE WITH SOMEONE CLOSE
+#
+# Taken from the real library, agibot_d1_bridge/d1w_gestures.py - not guessed.
+# The distinction that matters is NOT how big the gesture looks, it is whether
+# a foot leaves the ground.
+#
+# All eight GESTURES are attitudeControl rate profiles: validated net-zero,
+# every peak inside SAFE_LIMIT, and the FEET NEVER MOVE. Even `bow` (20 deg
+# pitch, body down 6 cm) and `squat` (down 10 cm) are slow body attitude
+# changes on four planted feet.
+#
+# Note `shake` is a 14 deg YAW - the head shaking "no". It is not a handshake,
+# and an earlier version of this file had it banned on that misreading, which
+# cost the greeter a harmless gesture.
+FEET_DOWN_GESTURES = frozenset({
+    'nod',           # pitch +/-14 deg
+    'shake',         # yaw +/-14 deg - "no", NOT a handshake
+    'tilt',          # roll 17 deg
+    'bow',           # pitch 20 deg + body down 6 cm
+    'squat',         # body down 10 cm
+    'wiggle',        # roll +/-9 deg
+    'look_around',   # yaw +/-23 deg
+    'sway_circle',   # roll/pitch loop, 14 deg
+    # posture changes: whole-body and slow, but nothing lifts
+    'stand_up', 'stand', 'lie_down', 'lie', 'sit', 'sit_down',
 })
 
-# Gestures that keep all four feet planted. Safe to run with someone close -
-# and worth keeping available, because a robot that goes completely inert when
-# a child approaches is a worse greeter than one that nods at them.
-SOFT_GESTURES = frozenset({
-    "nod", "nod_head", "head_nod", "tilt", "tilt_head", "look",
-    "sit", "sit_down", "stand", "stand_up", "lie", "lie_down", "wiggle",
+# SEQUENCES that call the SDK's shakeHand(), which RAISES A PAW to roughly the
+# head height of a two-year-old. In d1w_gestures.py:
+#     "greet":   [("gesture", "bow"), ("sdk", "shakeHand", 4.0)]
+#     "welcome": same as greet
+# So the two friendliest-sounding gestures in the set are the two that must not
+# run near a small child. That is exactly the trap this list exists to catch.
+LIMB_GESTURES = frozenset({
+    'greet', 'welcome',
+    'shake_hand', 'shakehand', 'shakehand_sdk',
+    # not in the current library, but reachable over plain REST and listed here
+    # so that adding them back cannot silently bypass the gate
+    'wave', 'hello', 'high_five', 'jump', 'jump_forward', 'jump_back',
+    'backflip', 'flip', 'stand_two_legs', 'two_legs', 'dance', 'stretch',
 })
 
 
@@ -284,10 +309,14 @@ class Verdict:
             return True
         if self.state is State.FREEZE:
             return False
-        # HOLD: four feet stay down
-        if g in LIMB_GESTURES:
-            return False
-        return g in SOFT_GESTURES or g not in LIMB_GESTURES
+        # HOLD: only gestures known to keep four feet on the ground.
+        #
+        # FAILS CLOSED. An earlier version allowed anything not on the banned
+        # list, which let `greet` and `welcome` through - and both end in
+        # shakeHand(), a raised paw. A gate whose default is "allow" is not a
+        # gate; a gesture nobody has classified is a gesture nobody has
+        # checked, and the cost of refusing it is one missed wag.
+        return g in FEET_DOWN_GESTURES
 
     def as_dict(self) -> dict:
         return {

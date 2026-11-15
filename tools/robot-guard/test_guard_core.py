@@ -80,6 +80,7 @@ class TestZones(unittest.TestCase):
         self.assertIs(v.state, State.GO)
         self.assertTrue(v.allows_walk())
         self.assertTrue(v.allows_gesture("shake"))
+        self.assertTrue(v.allows_gesture("greet"))
 
     def test_distant_person_slows_but_does_not_stop(self):
         v = self.g.update([box_at(CAM, 3.2, 1.75)], 100.0)
@@ -93,7 +94,8 @@ class TestZones(unittest.TestCase):
         self.assertFalse(v.allows_walk())
         # but it can still nod at them - inert is a bad greeter
         self.assertTrue(v.allows_gesture("nod"))
-        self.assertFalse(v.allows_gesture("shake"))
+        # greet ends in shakeHand(), a raised paw
+        self.assertFalse(v.allows_gesture("greet"))
 
     def test_person_at_contact_range_freezes_everything(self):
         v = self.g.update([box_at(CAM, 0.7, 1.75)], 100.0)
@@ -119,14 +121,64 @@ class TestChild(unittest.TestCase):
         v = g.update([box_at(CAM, 1.8, 0.85)], 100.0)
         self.assertIs(v.state, State.FREEZE)
         self.assertTrue(v.child_near)
-        self.assertFalse(v.allows_gesture("shake"))
-        self.assertFalse(v.allows_gesture("wave"))
+        self.assertFalse(v.allows_gesture("greet"))
+        self.assertFalse(v.allows_gesture("nod"))     # frozen means frozen
 
     def test_toddler_freezes_where_an_adult_would_only_hold(self):
         a = Guard(CAM, Policy()).update([box_at(CAM, 1.8, 1.75)], 100.0)
         c = Guard(CAM, Policy()).update([box_at(CAM, 1.8, 0.85)], 100.0)
         self.assertIs(a.state, State.HOLD)
         self.assertIs(c.state, State.FREEZE)
+
+
+class TestGestureClassification(unittest.TestCase):
+    """Checked against the real library, agibot_d1_bridge/d1w_gestures.py."""
+
+    def hold(self):
+        return Guard(CAM, Policy()).update([box_at(CAM, 1.4, 1.75)], 100.0)
+
+    def test_every_attitude_gesture_keeps_its_feet_down(self):
+        # all eight GESTURES are net-zero attitudeControl profiles: the feet
+        # never move, so all eight are safe with someone standing close
+        v = self.hold()
+        for g in ('nod', 'shake', 'tilt', 'bow', 'squat', 'wiggle',
+                  'look_around', 'sway_circle'):
+            self.assertTrue(v.allows_gesture(g),
+                            "%s keeps four feet down and should be allowed" % g)
+
+    def test_greet_and_welcome_are_blocked_because_they_shake_hands(self):
+        v = self.hold()
+        for g in ('greet', 'welcome', 'shake_hand'):
+            self.assertFalse(v.allows_gesture(g),
+                             "%s calls shakeHand() and raises a paw" % g)
+
+    def test_shake_is_a_head_shake_not_a_handshake(self):
+        # yaw +/-14 deg. Banning it was a misreading that cost a harmless gesture.
+        self.assertTrue(self.hold().allows_gesture('shake'))
+
+    def test_an_unclassified_gesture_fails_closed(self):
+        v = self.hold()
+        self.assertFalse(v.allows_gesture('moonwalk'),
+                         "unknown gesture was allowed - the gate defaults to yes")
+        self.assertFalse(v.allows_gesture(''))
+        self.assertFalse(v.allows_gesture(None))
+
+    def test_naming_is_forgiving(self):
+        v = self.hold()
+        self.assertTrue(v.allows_gesture('LOOK-AROUND'))
+        self.assertTrue(v.allows_gesture('  nod  '))
+        self.assertFalse(v.allows_gesture('Shake-Hand'))
+
+    def test_nothing_is_allowed_while_frozen(self):
+        v = Guard(CAM, Policy()).update([box_at(CAM, 0.7, 1.75)], 100.0)
+        self.assertIs(v.state, State.FREEZE)
+        for g in ('nod', 'bow', 'greet', 'anything'):
+            self.assertFalse(v.allows_gesture(g))
+
+    def test_everything_is_allowed_with_a_clear_path(self):
+        v = Guard(CAM, Policy()).update([], 100.0)
+        for g in ('nod', 'greet', 'welcome', 'sway_circle', 'moonwalk'):
+            self.assertTrue(v.allows_gesture(g))
 
 
 class TestBlindSpotLatch(unittest.TestCase):
@@ -175,7 +227,7 @@ class TestBlindSpotLatch(unittest.TestCase):
         # now under the camera, invisible - this is where it must NOT relax
         t += 0.3
         v = g.update([], t)
-        self.assertFalse(v.allows_gesture("shake"))
+        self.assertFalse(v.allows_gesture("greet"))
         self.assertFalse(v.allows_walk())
 
 

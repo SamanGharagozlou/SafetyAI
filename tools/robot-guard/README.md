@@ -127,9 +127,32 @@ Triggers, taking the worst person ahead (±45°):
 `HOLD` keeps soft gestures deliberately. A robot that goes completely inert the
 moment someone approaches is a worse greeter than one that nods at them.
 
-Banned near a child are the gestures that lift a limb or shift the body —
-`shake_hand` raises a paw to roughly the head height of a two-year-old, which
-is the scenario this exists for.
+What gets banned is decided by one thing only: **does a foot leave the
+ground.** Checked against the real library in
+`agibot_d1_bridge/d1w_gestures.py`, not guessed.
+
+All eight `GESTURES` are net-zero `attitudeControl` profiles with the **feet
+planted** — `nod`, `shake`, `tilt`, `bow`, `squat`, `wiggle`, `look_around`,
+`sway_circle`. Even `bow` (20° pitch, body down 6 cm) and `squat` (down 10 cm)
+are slow attitude changes on four feet, so all eight stay available while
+someone is standing close. Note `shake` is a 14° **yaw** — the head shaking
+"no", not a handshake. An earlier version of this file banned it on that
+misreading and cost the greeter a harmless gesture.
+
+The two that are banned are the two that sound friendliest:
+
+```python
+"greet":   [("gesture", "bow"), ("sdk", "shakeHand", 4.0)]
+"welcome": same as greet
+```
+
+`shakeHand()` **raises a paw to roughly the head height of a two-year-old** —
+precisely the scenario this exists for. An earlier version of the gate allowed
+anything not on its banned list, which let both of these straight through.
+
+So the gate **fails closed**: in `HOLD`, only names known to keep four feet
+down are allowed. A gesture nobody has classified is a gesture nobody has
+checked, and the cost of refusing it is one missed wag.
 
 ## Two layers, and why the second is the real one
 
