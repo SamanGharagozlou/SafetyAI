@@ -28,6 +28,9 @@ services:
       MODEL_NAME: ${MODEL_NAME:-}
       DEVICE: ${DEVICE:-}
       RVIZ: ${RVIZ:-false}
+      FOLLOW: ${FOLLOW:-false}          # true = launch d1_follow (lock-on + follow dry run)
+      AUTO_LOCK: ${AUTO_LOCK:-false}
+      EMBEDDER: ${EMBEDDER:-osnet}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw            # local X server (rviz)
       - /dev:/dev                                    # webcams (hot-plug friendly)

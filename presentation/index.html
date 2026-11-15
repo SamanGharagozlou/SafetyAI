@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClawMetry &mdash; a spa companion robot, built to be deployed</title>
+
+<!-- Fonts are bundled in assets/fonts so the deck works offline (Fraunces, Bricolage Grotesque, JetBrains Mono) -->
+<link rel="stylesheet" href="assets/fonts/fonts.css">
+
+<style>
+/* ===========================================
+   THEME  ("Thermal": basalt night, steam teal, copper heat)
+   Change these variables to re-skin the whole deck.
+   =========================================== */
+:root {
+    --bg: #0a1214;
+    --bg-2: #0f1d20;
+    --ink: #eef3ee;
+    --mute: #8da7a4;
+    --steam: #7fe8d6;
+    --copper: #ff8a3d;
+    --ember: #ff5a36;
+    --ok: #62e29a;
+    --line: rgba(238, 243, 238, 0.16);
+    --card: rgba(255, 255, 255, 0.035);
+
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --stage-bg: #050a0b;
+    --slide-bg: transparent;
+}
+
+/* ===========================================
+   MANDATORY FIXED 16:9 STAGE (from frontend-slides viewport-base.css)
+   Slides are authored at 1920x1080 and scaled as a whole.
+   =========================================== */
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--stage-bg, #000); }
+.deck-viewport { position: fixed; inset: 0; overflow: hidden; background: var(--stage-bg, #000); }
+.deck-stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; transform-origin: 0 0; background: var(--bg); }
+.slide { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden; display: block; visibility: hidden; opacity: 0; pointer-events: none; background: var(--slide-bg, #fff); }
+.slide.active, .slide.visible { visibility: visible; opacity: 1; pointer-events: auto; z-index: 1; }
+img, video, canvas, svg { max-width: 100%; max-height: 100%; }
+@media print {
+    html, body { width: 1920px; height: auto; overflow: visible; background: #fff; }
+    .deck-viewport { position: static; overflow: visible; background: #fff; }
+    .deck-stage { position: static; width: auto; height: auto; transform: none !important; background: none; }
+    .slide { position: relative; display: block !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; width: 1920px; height: 1080px; break-after: page; page-break-after: always; background: var(--bg); }
+    .slide:last-child { break-after: auto; page-break-after: auto; }
+    .chrome, .hud, .notes-panel { display: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.2s !important; }
+}
+
+* { box-sizing: border-box; }
+body { font-family: var(--font-body); color: var(--ink); -webkit-font-smoothing: antialiased; }
+
+/* ===========================================
+   ATMOSPHERE: drifting steam + fine grid (one layer behind every slide)
+   =========================================== */
+.atmo { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.atmo .blob { position: absolute; border-radius: 50%; filter: blur(110px); opacity: 0.5; }
+.atmo .b1 { width: 900px; height: 700px; left: -200px; top: 380px; background: radial-gradient(circle, rgba(127,232,214,.34), transparent 70%); animation: drift1 26s ease-in-out infinite alternate; }
+.atmo .b2 { width: 800px; height: 800px; right: -240px; top: -260px; background: radial-gradient(circle, rgba(255,138,61,.26), transparent 70%); animation: drift2 32s ease-in-out infinite alternate; }
+.atmo .b3 { width: 700px; height: 500px; left: 700px; bottom: -280px; background: radial-gradient(circle, rgba(127,232,214,.2), transparent 70%); animation: drift1 38s ease-in-out infinite alternate-reverse; }
+.atmo .grid { position: absolute; inset: 0; background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 120px 120px; opacity: 0.22; mask-image: radial-gradient(ellipse at 50% 40%, #000 20%, transparent 78%); -webkit-mask-image: radial-gradient(ellipse at 50% 40%, #000 20%, transparent 78%); }
+.atmo .vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.55) 100%); }
+@keyframes drift1 { from { transform: translate(0,0) scale(1); } to { transform: translate(180px,-90px) scale(1.18); } }
+@keyframes drift2 { from { transform: translate(0,0) scale(1); } to { transform: translate(-200px,140px) scale(1.12); } }
+
+/* ===========================================
+   CHROME: STAR rail, page counter, progress (inside the stage so it scales)
+   =========================================== */
+.chrome { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.rail { position: absolute; top: 70px; right: 140px; display: flex; gap: 10px; font-family: var(--font-mono); font-size: 20px; letter-spacing: .12em; transition: opacity .5s; }
+.rail span { width: 52px; height: 52px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--mute); transition: all .5s var(--ease); }
+.rail span.done { color: var(--ink); border-color: rgba(238,243,238,.4); }
+.rail span.on { background: var(--copper); border-color: var(--copper); color: #1a0d03; font-weight: 600; transform: scale(1.15); box-shadow: 0 0 40px rgba(255,138,61,.55); }
+.chrome.no-rail .rail { opacity: 0; }
+.foot { position: absolute; left: 140px; right: 140px; bottom: 46px; display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 18px; letter-spacing: .2em; color: var(--mute); text-transform: uppercase; }
+.progress { position: absolute; left: 0; bottom: 0; height: 6px; width: 0; background: linear-gradient(90deg, var(--steam), var(--copper)); transition: width .6s var(--ease); }
+
+/* ===========================================
+   TYPOGRAPHY + SHARED LAYOUT (all sizes authored at 1920x1080)
+   =========================================== */
+.sc { position: absolute; inset: 0; padding: 190px 140px 120px; display: flex; flex-direction: column; }
+.phase { position: absolute; left: 140px; top: 84px; font-family: var(--font-mono); font-size: 22px; letter-spacing: .26em; text-transform: uppercase; color: var(--steam); display: flex; align-items: center; gap: 22px; }
+.phase::before { content: ""; width: 64px; height: 2px; background: var(--copper); }
+.phase b { color: var(--copper); font-weight: 600; }
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 500; margin: 0; letter-spacing: -0.015em; font-variation-settings: "opsz" 144; }
+h2.title { font-size: 92px; line-height: 1.03; max-width: 1500px; }
+em { font-style: italic; color: var(--copper); font-weight: 500; }
+.mono { font-family: var(--font-mono); letter-spacing: .18em; text-transform: uppercase; }
+.lead { font-size: 38px; line-height: 1.35; color: #cfdcd9; max-width: 1100px; }
+.dim { color: var(--mute); }
+.tag { display: inline-block; font-family: var(--font-mono); font-size: 18px; letter-spacing: .16em; text-transform: uppercase; padding: 8px 16px; border: 1px solid var(--line); border-radius: 100px; color: var(--mute); }
+.tag.ok { color: var(--ok); border-color: rgba(98,226,154,.45); }
+.tag.warn { color: var(--copper); border-color: rgba(255,138,61,.5); }
+.tag.steam { color: var(--steam); border-color: rgba(127,232,214,.45); }
+
+/* ===========================================
+   REVEAL ANIMATION: staggered via --d (delay), fires each time a slide becomes visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity .9s var(--ease), transform .9s var(--ease); transition-delay: var(--d, 0s); }
+.slide.visible .reveal { opacity: 1; transform: none; }
+
+.notes { display: none; }
+
+/* ===========================================
+   SLIDE 1: TITLE
+   =========================================== */
+.s-title .sc { justify-content: center; padding-top: 120px; }
+.s-title h1 { font-size: 214px; line-height: .93; letter-spacing: -0.035em; margin: 34px 0 52px; }
+.s-title .eyebrow { font-family: var(--font-mono); font-size: 24px; letter-spacing: .3em; color: var(--steam); }
+.s-title .lead { max-width: 980px; }
+.route { position: absolute; right: 80px; top: 170px; width: 780px; height: 760px; }
+.route .path { stroke-dasharray: 10 14; stroke-dashoffset: 0; animation: dash 3s linear infinite; }
+@keyframes dash { to { stroke-dashoffset: -96; } }
+.route .ring { transform-origin: 700px 130px; animation: ring 2.8s ease-out infinite; }
+.route .ring.r2 { animation-delay: 1.4s; }
+@keyframes ring { from { transform: scale(.3); opacity: .9; } to { transform: scale(2.6); opacity: 0; } }
+
+/* ===========================================
+   SLIDE 2: SITUATION
+   =========================================== */
+.split { display: grid; grid-template-columns: 1fr 760px; gap: 90px; align-items: center; flex: 1; }
+.beats { display: grid; gap: 34px; margin-top: 56px; }
+.beat { display: grid; grid-template-columns: 90px 1fr; align-items: baseline; border-top: 1px solid var(--line); padding-top: 26px; }
+.beat .n { font-family: var(--font-mono); font-size: 22px; color: var(--copper); letter-spacing: .1em; }
+.beat .t { font-size: 42px; line-height: 1.2; }
+.beat .t span { color: var(--mute); }
+.rooms { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
+.room { height: 124px; border: 1.5px solid var(--line); border-radius: 14px; background: var(--card); position: relative; overflow: hidden; }
+.room::after { content: ""; position: absolute; left: 18px; right: 18px; top: 22px; height: 8px; border-radius: 4px; background: rgba(238,243,238,.12); }
+.room::before { content: ""; position: absolute; left: 18px; width: 46%; top: 46px; height: 8px; border-radius: 4px; background: rgba(238,243,238,.07); }
+.slide.visible .room { animation: shimmer 4s ease-in-out infinite; animation-delay: calc(var(--i) * .28s); }
+@keyframes shimmer { 0%, 100% { border-color: var(--line); } 50% { border-color: rgba(127,232,214,.55); } }
+.room.q { border-color: var(--copper); background: rgba(255,138,61,.12); display: grid; place-items: center; animation: none !important; box-shadow: 0 0 60px rgba(255,138,61,.35); }
+.room.q::before, .room.q::after { display: none; }
+.room.q span { font-family: var(--font-display); font-style: italic; font-size: 84px; color: var(--copper); }
+.rooms-cap { margin-top: 30px; font-family: var(--font-mono); font-size: 20px; letter-spacing: .16em; text-transform: uppercase; color: var(--mute); }
+
+/* ===========================================
+   SLIDE 3: TASK
+   =========================================== */
+.cards5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 24px; margin-top: 64px; }
+.card { background: var(--card); border: 1px solid var(--line); border-top: 4px solid var(--copper); border-radius: 6px 6px 18px 18px; padding: 34px 30px 38px; min-height: 420px; }
+.card .k { font-family: var(--font-mono); font-size: 18px; letter-spacing: .16em; color: var(--steam); }
+.card h3 { font-size: 60px; margin: 34px 0 24px; line-height: 1; }
+.card p { margin: 0; font-size: 28px; line-height: 1.35; color: #c4d3d0; }
+
+/* ===========================================
+   SLIDE 4: GUEST JOURNEY
+   =========================================== */
+.flow { position: relative; display: grid; grid-template-columns: repeat(5, 1fr); gap: 30px; margin-top: 140px; }
+.flow::before { content: ""; position: absolute; left: 48px; right: 48px; top: 47px; height: 2px; background: var(--line); }
+.flow::after { content: ""; position: absolute; left: 48px; top: 46px; height: 4px; width: 0; background: linear-gradient(90deg, var(--steam), var(--copper)); box-shadow: 0 0 24px var(--copper); }
+.slide.visible .flow::after { animation: grow 3.2s .5s var(--ease) forwards; }
+@keyframes grow { to { width: calc(100% - 96px); } }
+.step { position: relative; }
+.step .dot { width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center; background: var(--bg); border: 2px solid var(--steam); font-family: var(--font-display); font-size: 46px; position: relative; z-index: 1; }
+.step:last-child .dot { border-color: var(--copper); color: var(--copper); }
+.step h3 { font-size: 58px; margin: 40px 0 16px; }
+.step p { margin: 0; font-size: 31px; line-height: 1.35; color: #c4d3d0; max-width: 300px; }
+.journey-note { margin-top: auto; font-family: var(--font-mono); font-size: 22px; letter-spacing: .12em; color: var(--mute); text-transform: uppercase; display: flex; gap: 20px; align-items: center; }
+
+/* ===========================================
+   SLIDE 5: ARCHITECTURE
+   =========================================== */
+.arch { display: flex; align-items: stretch; gap: 0; margin-top: 90px; }
+.node { width: 232px; padding: 28px 24px 30px; border: 1.5px solid var(--line); border-radius: 16px; background: rgba(15,29,32,.9); position: relative; }
+.node .where { font-family: var(--font-mono); font-size: 16px; letter-spacing: .18em; color: var(--steam); text-transform: uppercase; }
+.node h3 { font-size: 38px; margin: 18px 0 12px; line-height: 1.05; }
+.node p { margin: 0; font-size: 24px; line-height: 1.3; color: #b6c8c5; }
+.node.hot { border-color: var(--copper); box-shadow: 0 0 60px rgba(255,138,61,.22); }
+.node.hot .where { color: var(--copper); }
+.link { width: 48px; align-self: center; height: 2px; background: repeating-linear-gradient(90deg, var(--steam) 0 8px, transparent 8px 14px); position: relative; animation: flowx 1s linear infinite; background-size: 14px 2px; }
+.link::after { content: ""; position: absolute; right: -2px; top: -6px; border-left: 12px solid var(--steam); border-top: 7px solid transparent; border-bottom: 7px solid transparent; }
+@keyframes flowx { to { background-position: 14px 0; } }
+.orin { display: flex; align-items: stretch; border: 2px dashed rgba(255,138,61,.6); border-radius: 26px; padding: 62px 26px 26px; position: relative; margin: 0 6px; }
+.orin > .lab { position: absolute; top: 18px; left: 28px; font-family: var(--font-mono); font-size: 18px; letter-spacing: .2em; color: var(--copper); text-transform: uppercase; }
+.pills { display: flex; gap: 22px; margin-top: 64px; }
+.pill { flex: 1; border-left: 3px solid var(--copper); padding: 4px 0 4px 26px; font-size: 32px; line-height: 1.3; }
+.pill b { font-family: var(--font-display); font-weight: 600; color: var(--ink); }
+.pill span { color: var(--mute); display: block; font-size: 26px; margin-top: 6px; }
+
+/* ===========================================
+   SLIDE 6: MAP
+   =========================================== */
+.mapwrap { display: grid; grid-template-columns: 1fr 560px; gap: 100px; flex: 1; }
+.facts { display: grid; gap: 30px; margin-top: 56px; }
+.fact { display: grid; grid-template-columns: 250px 1fr; gap: 20px; align-items: baseline; border-top: 1px solid var(--line); padding-top: 26px; }
+.fact .big { font-family: var(--font-display); font-size: 90px; line-height: 1; color: var(--copper); }
+.fact .big small { font-size: 34px; color: var(--mute); margin-left: 8px; font-family: var(--font-body); }
+.fact .d { font-size: 34px; line-height: 1.3; color: #cfdcd9; }
+.mapframe { position: relative; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #0a1214; align-self: center; height: 740px; width: 440px; justify-self: end; box-shadow: 0 0 90px rgba(127,232,214,.15); }
+.mapframe img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 8%; display: block; filter: invert(.93) hue-rotate(180deg) saturate(1.5) brightness(.95); }
+.mapframe::after { content: ""; position: absolute; left: 0; right: 0; top: -12%; height: 12%; background: linear-gradient(180deg, transparent, rgba(255,138,61,.0) 20%, rgba(255,138,61,.45) 98%, rgba(255,200,150,.95)); }
+.slide.visible .mapframe::after { animation: scan 3.6s 0.6s ease-in-out infinite; }
+@keyframes scan { 0% { top: -12%; } 100% { top: 100%; } }
+.mapcap { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 20px; background: linear-gradient(transparent, rgba(5,10,11,.95)); font-family: var(--font-mono); font-size: 16px; letter-spacing: .12em; text-transform: uppercase; color: var(--steam); }
+
+/* ===========================================
+   SLIDE 7: TRUST (safety + privacy)
+   =========================================== */
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 110px; margin-top: 64px; flex: 1; }
+.col h3 { font-size: 60px; line-height: 1.05; margin: 14px 0 30px; }
+.col .mono { font-size: 20px; color: var(--steam); }
+.ladder { display: grid; gap: 0; counter-reset: l; }
+.ladder li { list-style: none; counter-increment: l; display: grid; grid-template-columns: 64px 1fr; padding: 18px 0; border-top: 1px solid var(--line); font-size: 34px; line-height: 1.2; font-weight: 600; }
+.ladder li::before { content: counter(l, decimal-leading-zero); font-family: var(--font-mono); font-size: 20px; color: var(--copper); padding-top: 8px; font-weight: 400; }
+.ladder li span { color: var(--mute); display: block; font-size: 27px; font-weight: 400; margin-top: 4px; }
+.ladder { margin: 0; padding: 0; }
+
+/* ===========================================
+   SLIDE 8: WAR STORIES
+   =========================================== */
+.cards3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; margin-top: 44px; flex: 1; min-height: 0; }
+.story { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 32px 36px 30px; display: flex; flex-direction: column; }
+.story .num { font-family: var(--font-display); font-size: 96px; line-height: 1; color: var(--copper); letter-spacing: -0.03em; font-style: italic; }
+.story .num small { font-size: 34px; font-style: normal; font-family: var(--font-mono); color: var(--mute); letter-spacing: 0; }
+.story h3 { font-size: 42px; margin: 18px 0 14px; line-height: 1.08; }
+.story p { margin: 0; font-size: 26px; line-height: 1.36; color: #c4d3d0; }
+.story .fix { margin-top: auto; padding-top: 20px; border-top: 1px dashed var(--line); font-size: 25px; color: var(--ok); line-height: 1.3; }
+.story .fix b { font-family: var(--font-mono); letter-spacing: .12em; font-size: 17px; display: block; margin-bottom: 8px; text-transform: uppercase; }
+
+/* ===========================================
+   SLIDE 9: DAY 2 + LOCK-ON
+   =========================================== */
+.days { display: grid; gap: 30px; margin-top: 56px; }
+.day { border-left: 3px solid var(--steam); padding: 4px 0 4px 32px; }
+.day.d2 { border-color: var(--copper); }
+.day .hd { display: flex; gap: 22px; align-items: baseline; }
+.day .hd .mono { font-size: 20px; color: var(--steam); }
+.day.d2 .hd .mono { color: var(--copper); }
+.day h3 { font-size: 56px; }
+.day p { margin: 12px 0 0; font-size: 29px; line-height: 1.35; color: #c4d3d0; }
+.cam { position: relative; width: 720px; height: 560px; border: 1.5px solid var(--line); border-radius: 14px; background: linear-gradient(180deg, #0d1a1d, #07100f); overflow: hidden; align-self: center; box-shadow: 0 0 80px rgba(98,226,154,.1); }
+.cam::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 60px 60px; opacity: .35; }
+.cam .banner { position: absolute; left: 0; right: 0; top: 0; padding: 14px 20px; background: rgba(0,0,0,.55); font-family: var(--font-mono); font-size: 18px; letter-spacing: .1em; color: var(--ok); display: flex; justify-content: space-between; }
+.person { position: absolute; bottom: 36px; width: 150px; height: 340px; border-radius: 12px; border: 2.5px solid rgba(238,243,238,.35); }
+.person::before { content: ""; position: absolute; left: 50%; top: 22px; width: 62px; height: 62px; margin-left: -31px; border-radius: 50%; background: rgba(238,243,238,.16); }
+.person::after { content: ""; position: absolute; left: 22px; right: 22px; top: 100px; bottom: 0; border-radius: 40px 40px 0 0; background: rgba(238,243,238,.1); }
+.person .lbl { position: absolute; left: -2px; top: -34px; font-family: var(--font-mono); font-size: 15px; letter-spacing: .06em; color: #cfdcd9; background: rgba(0,0,0,.6); padding: 4px 8px; white-space: nowrap; }
+.person.p1 { left: 40px; height: 300px; }
+.person.p3 { right: 40px; height: 260px; }
+.person.tgt { left: 290px; border-color: var(--ok); border-width: 5px; box-shadow: 0 0 40px rgba(98,226,154,.45); width: 170px; height: 380px; }
+.person.tgt .lbl { color: #04130a; background: var(--ok); font-weight: 600; top: -36px; }
+.slide.visible .person.tgt { animation: sway 5s ease-in-out infinite; }
+.slide.visible .person.p1 { animation: sway2 7s ease-in-out infinite; }
+@keyframes sway { 0%, 100% { transform: translateX(-40px); } 50% { transform: translateX(40px); } }
+@keyframes sway2 { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(26px); } }
+.camcap { margin-top: 22px; font-family: var(--font-mono); font-size: 20px; letter-spacing: .12em; color: var(--mute); text-transform: uppercase; display: flex; gap: 16px; align-items: center; }
+
+/* ===========================================
+   SLIDE 10: RESULT NUMBERS
+   =========================================== */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 48px; border-top: 1px solid var(--line); }
+.stat { padding: 26px 30px 28px 0; border-bottom: 1px solid var(--line); }
+.stat:not(:nth-child(3n)) { border-right: 1px solid var(--line); padding-right: 30px; }
+.stat:not(:nth-child(3n+1)) { padding-left: 50px; }
+.stat .v { font-family: var(--font-display); font-size: 150px; line-height: 1; letter-spacing: -0.04em; font-weight: 500; color: var(--ink); }
+.stat .v i { font-style: italic; color: var(--copper); font-size: .5em; letter-spacing: 0; margin-left: 6px; }
+.stat .k { font-size: 31px; line-height: 1.3; color: #c4d3d0; margin-top: 8px; max-width: 460px; }
+.hero-line { margin-top: auto; font-family: var(--font-display); font-style: italic; font-size: 46px; color: var(--steam); }
+
+/* ===========================================
+   SLIDE 11: STATUS BOARD
+   =========================================== */
+.board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; margin-top: 64px; flex: 1; }
+.lane { border: 1px solid var(--line); border-radius: 18px; padding: 38px 38px 30px; background: var(--card); position: relative; }
+.lane::before { content: ""; position: absolute; left: 38px; top: -1px; width: 110px; height: 5px; background: var(--c); border-radius: 0 0 4px 4px; box-shadow: 0 0 30px var(--c); }
+.lane h3 { font-size: 50px; margin: 14px 0 6px; }
+.lane .mono { font-size: 19px; color: var(--c); }
+.lane ul { list-style: none; margin: 30px 0 0; padding: 0; display: grid; gap: 20px; }
+.lane li { font-size: 31px; line-height: 1.25; padding-left: 40px; position: relative; }
+.lane li::before { content: ""; position: absolute; left: 0; top: 13px; width: 16px; height: 16px; border-radius: 50%; background: var(--c); box-shadow: 0 0 14px var(--c); }
+.lane li span { color: var(--mute); display: block; font-size: 24px; margin-top: 2px; }
+
+/* ===========================================
+   SLIDE 12: CLOSE
+   =========================================== */
+.s-close .sc { justify-content: center; }
+.steps3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; margin-top: 70px; }
+.steps3 > div { border-top: 3px solid var(--copper); padding-top: 24px; }
+.steps3 .mono { font-size: 20px; color: var(--steam); }
+.steps3 p { margin: 14px 0 0; font-size: 34px; line-height: 1.3; }
+.steps3 p span { color: var(--mute); }
+.final { font-family: var(--font-display); font-size: 128px; line-height: .98; letter-spacing: -0.03em; margin-top: 60px; }
+
+/* ===========================================
+   PRESENTER HUD: timer (T) and notes (N); outside the stage, never printed
+   =========================================== */
+.hud { position: fixed; right: 18px; bottom: 16px; z-index: 50; font-family: var(--font-mono); font-size: 15px; letter-spacing: .1em; color: #cfdcd9; background: rgba(0,0,0,.72); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; display: none; gap: 16px; }
+.hud.show { display: flex; }
+.hud .late { color: var(--ember); }
+.hud .warn { color: var(--copper); }
+.notes-panel { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; max-height: 34vh; overflow: auto; background: rgba(5,10,11,.94); border-top: 1px solid var(--line); color: #dbe7e4; font: 17px/1.5 var(--font-body); padding: 16px 28px 16px; display: none; }
+.notes-panel.show { display: block; }
+.notes-panel b { color: var(--copper); font-family: var(--font-mono); letter-spacing: .1em; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+    <!-- === ATMOSPHERE === -->
+    <div class="atmo"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grid"></div><div class="vignette"></div></div>
+
+    <!-- =======================================================
+         SLIDE 1 &mdash; TITLE (hook)  [0:00 - 0:15]
+         ======================================================= -->
+    <section class="slide s-title active" data-phase="" data-time="0:00">
+        <div class="sc">
+            <div class="eyebrow reveal">AGIBOT D1 ULTRA-W &nbsp;&middot;&nbsp; JETSON ORIN NANO &nbsp;&middot;&nbsp; ROS 2</div>
+            <h1 class="reveal" style="--d:.15s">Where is<br>the <em>sauna</em>?</h1>
+            <p class="lead reveal" style="--d:.35s"><b style="font-weight:600;color:var(--ink)">ClawMetry</b> &mdash; a companion robot that answers, then walks you there. Built to be deployed, not demoed.</p>
+        </div>
+        <svg class="route reveal" style="--d:.5s" viewBox="0 0 780 760" fill="none" aria-hidden="true">
+            <path id="routePath" class="path" d="M60 660 C 260 660, 180 420, 380 420 S 560 200, 700 130" stroke="#7fe8d6" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="60" cy="660" r="14" fill="#0a1214" stroke="#7fe8d6" stroke-width="4"/>
+            <text x="86" y="700" fill="#8da7a4" font-family="JetBrains Mono, monospace" font-size="22" letter-spacing="3">RECEPTION</text>
+            <circle class="ring" cx="700" cy="130" r="40" stroke="#ff8a3d" stroke-width="3"/>
+            <circle class="ring r2" cx="700" cy="130" r="40" stroke="#ff8a3d" stroke-width="3"/>
+            <circle cx="700" cy="130" r="16" fill="#ff8a3d"/>
+            <text x="470" y="96" fill="#ff8a3d" font-family="JetBrains Mono, monospace" font-size="22" letter-spacing="3">FINNISH SAUNA</text>
+            <circle r="13" fill="#eef3ee"><animateMotion dur="6s" repeatCount="indefinite" rotate="auto"><mpath href="#routePath"/></animateMotion></circle>
+        </svg>
+        <aside class="notes"><b>0:00 &middot; HOOK (15 s)</b> Imagine you are a tourist in a bathrobe at a thermal spa. You want one thing: where is the sauna? We built the robot that answers, and then walks you there. And because this hackathon was about deployment-ready solutions, we built it to be deployed, not demoed.</aside>
+    </section>
+
+    <!-- =======================================================
+         SLIDE 2 &mdash; S: SITUATION  [0:15 - 0:40]
+         ======================================================= -->
+    <section class="slide" data-phase="S" data-time="0:15">
+        <div class="phase"><b>S</b> Situation</div>
+        <div class="sc">
+            <div class="split">
+                <div>
+                    <h2 class="title reveal">A spa is a maze of <em style="white-space:nowrap">look-alike</em> rooms.</h2>
+                    <div class="beats">
+                        <div class="beat reveal" style="--d:.25s"><div class="n">01</div><div class="t">Tourists. First visit. <span>No shared language.</span></div></div>
+                        <div class="beat reveal" style="--d:.4s"><div class="n">02</div><div class="t">Pools, saunas, changing rooms. <span>All signposted alike.</span></div></div>
+                        <div class="beat reveal" style="--d:.55s"><div class="n">03</div><div class="t">One receptionist. <span>One queue.</span></div></div>
+                    </div>
+                </div>
+                <div class="reveal" style="--d:.3s">
+                    <div class="rooms">
+                        <div class="room" style="--i:0"></div><div class="room" style="--i:1"></div><div class="room" style="--i:2"></div><div class="room" style="--i:3"></div>
+                        <div class="room" style="--i:4"></div><div class="room" style="--i:5"></div><div class="room q"><span>?</span></div><div class="room" style="--i:7"></div>
+                        <div class="room" style="--i:8"></div><div class="room" style="--i:9"></div><div class="room" style="--i:10"></div><div class="room" style="--i:11"></div>
+                    </div>
+                    <div class="rooms-cap">Which one is the Finnish sauna?</div>
+                </div>
+            </div>
+        </div>
+        <aside class="notes"><b>0:15 &middot; SITUATION (25 s)</b> A thermal spa is a maze of look-alike rooms. Guests are tourists on a first visit, often without a shared language, and in a bathrobe with their phone as the only tool. Reception is one person with a queue. A friendly robot that can talk and lead the way is a natural fit, but only if it can be trusted around guests.</aside>
+    </section>
+
+    <!-- =======================================================
+         SLIDE 3 &mdash; T: TASK  [0:40 - 1:05]
+         ======================================================= -->
+    <section class="slide" data-phase="T" data-time="0:40">
+        <div class="phase"><b>T</b> Task</div>
+        <div class="sc">
+            <h2 class="title reveal">Not a demo.<br>Something a spa could <em>switch on</em>.</h2>
+            <div class="cards5">
+                <div class="card reveal" style="--d:.2s"><div class="k">NFR-1 &middot; 2</div><h3>Safe</h3><p>0.5 m/s max. Dry areas only. A human stop, always.</p></div>
+                <div class="card reveal" style="--d:.3s"><div class="k">NFR-3</div><h3>Private</h3><p>GDPR by design. Raw camera frames never leave the robot.</p></div>
+                <div class="card reveal" style="--d:.4s"><div class="k">NFR-5</div><h3>Resilient</h3><p>Survives a power cycle with nobody around to fix it.</p></div>
+                <div class="card reveal" style="--d:.5s"><div class="k">NFR-6</div><h3>Edge-first</h3><p>Spa Wi-Fi is bad. Nothing critical crosses it.</p></div>
+                <div class="card reveal" style="--d:.6s"><div class="k">NFR-7</div><h3>Small</h3><p>Everything on one 8&nbsp;GB Jetson Orin Nano.</p></div>
+            </div>
+        </div>
+        <aside class="notes"><b>0:40 &middot; TASK (25 s)</b> The brief was deployment-ready, so we did not ask what is cool, we asked what a spa would actually need to switch this on. We wrote five hard requirements with IDs in our requirements doc: safe around guests, private by design, self-healing after a power cycle, tolerant of bad Wi-Fi, and small enough to run on one Jetson Orin Nano. Everything we built in two days was measured against these.</aside>
+    </section>
+
+    <!-- =======================================================
+         SLIDE 4 &mdash; A1: GUEST JOURNEY  [1:05 - 1:30]
+         ======================================================= -->
+    <section class="slide" data-phase="A" data-time="1:05">
+        <div class="phase"><b>A</b> Action &middot; the experience</div>
+        <div class="sc">
+            <h2 class="title reveal">Scan. Ask. <em>Follow.</em></h2>
+            <div class="flow">
+                <div class="step reveal" style="--d:.2s"><div class="dot">1</div><h3>Scan</h3><p>QR on the robot. No app. No account.</p></div>
+                <div class="step reveal" style="--d:.4s"><div class="dot">2</div><h3>Ask</h3><p>Voice or text, in the guest&rsquo;s language.</p></div>
+                <div class="step reveal" style="--d:.6s"><div class="dot">3</div><h3>Choose</h3><p>&ldquo;Take me to the Finnish sauna.&rdquo;</p></div>
+                <div class="step reveal" style="--d:.8s"><div class="dot">4</div><h3>Walk</h3><p>Escort at walking pace. Progress on the phone.</p></div>
+                <div class="step reveal" style="--d:1s"><div class="dot">5</div><h3>Arrive</h3><p>Farewell gesture. Session erased.</p></div>
+            </div>
+            <div class="journey-note reveal" style="--d:1.2s"><span class="tag steam">Frontend</span> Session lives in phone memory for 10 minutes, then it is gone.</div>
+        </div>
+        <aside class="notes"><b>1:05 &middot; ACTION 1 (25 s)</b> This is the guest&rsquo;s journey. Scan a QR code on the robot, no app and no account. Ask by voice or text. Say &ldquo;take me to the Finnish sauna&rdquo;. The robot escorts at walking pace while the phone shows progress. On arrival the session is erased. The visitor web app is built and tested; today it runs in demo mode, and the robot stack below is what we connect it to.</aside>
+    </section>
+
+    <!-- =======================================================
+         SLIDE 5 &mdash; A2: ARCHITECTURE  [1:30 - 2:00]
+         ======================================================= -->
+    <section class="slide" data-phase="A" data-time="1:30">
+        <div class="phase"><b>A</b> Action &middot; the system</div>
+        <div class="sc">
+            <h2 class="title reveal">One door to the <em>robot</em>.</h2>
+            <div class="arch reveal" style="--d:.25s">
+                <div class="node"><div class="where">Guest</div><h3>Phone + voice</h3><p>Browser, Vapi cloud voice</p></div>
+                <div class="link"></div>
+                <div class="orin">
+                    <div class="lab">Jetson Orin Nano &middot; one box on the robot</div>
+                    <div class="node"><div class="where">Edge</div><h3>Secure tunnel</h3><p>Tailscale Serve, bearer token</p></div>
+                    <div class="link"></div>
+                    <div class="node hot"><div class="where">Gateway</div><h3>Goals, not velocities</h3><p>JSON over WebSocket</p></div>
+                    <div class="link"></div>
+                    <div class="node"><div class="where">Nav</div><h3>Nav2 + LiDAR map</h3><p>Plans and avoids</p></div>
+                    <div class="link"></div>
+                    <div class="node"><div class="where">Bridge</div><h3>One SDK client</h3><p>systemd + watchdog</p></div>
+                </div>
+                <div class="link"></div>
+                <div class="node"><div class="where">Robot</div><h3>AgiBot D1 Ultra-W</h3><p>Wheel-footed quadruped</p></div>
+            </div>
+            <div class="pills reveal" style="--d:.5s">
+                <div class="pill"><b>The AI can ask. It can&rsquo;t drive.</b><span>No raw velocities cross the gateway.</span></div>
+                <div class="pill"><b>Critical loops stay on the robot.</b><span>The venue network is never in the control path.</span></div>
+                <div class="pill"><b>Every layer has a mock.</b><span>Test the whole path without a robot.</span></div>
+            </div>
+        </div>
+        <aside class="notes"><b>1:30 &middot; ACTION 2 (30 s)</b> The architecture follows the task. The guest&rsquo;s phone talks to a cloud voice agent, which reaches the robot through one secured edge on the Jetson. Behind it is our gateway: it accepts goals and named actions only, never raw velocities, so the AI can ask the robot to go somewhere but cannot drive it around the safety layer. Navigation and the SDK bridge run on the Orin itself, so nothing latency-critical depends on the spa Wi-Fi. And every layer has a mock mode so we can test the full path without hardware.</aside>
+    </section>
+
+    <!-- =======================================================
+         SLIDE 6 &mdash; A3: MAP  [2:00 - 2:30]
+         ======================================================= -->
+    <section class="slide" data-phase="A" data-time="2:00">
+        <div class="phase"><b>A</b> Action &middot; navigation</div>
+        <div class="sc">
+            <div class="mapwrap">
+                <div>
+                    <h2 class="title reveal" style="font-size:84px">No LiDAR on the robot? We <em>brought the map</em>.</h2>
+                    <div class="facts">
+                        <div class="fact reveal" style="--d:.2s"><div class="big">0</div><div class="d">LiDAR or depth sensors on the D1 itself.</div></div>
+                        <div class="fact reveal" style="--d:.35s"><div class="big">78<small>m</small></div><div class="d">walked once with a handheld LiDAR. 235 seconds of scan.</div></div>
+                        <div class="fact reveal" style="--d:.5s"><div class="big">3<small>bands</small></div><div class="d">of obstacle height, down to the low boxes a D1 would bump into.</div></div>
+                    </div>
+                </div>
+                <div class="mapframe reveal" style="--d:.3s">
+                    <img src="assets/hall-map.png" alt="Occupancy map of a real hall built from a LiDAR scan, obstacles colored by height">
+                    <div class="mapcap">Real scan &middot; obstacles by height</div>
+                </div>
+            </div>
+        </div>
+        <aside class="notes"><b>2:00 &middot; ACTION 3 (30 s)</b> Here is a technical constraint that shaped everything: the D1 has no LiDAR and no depth camera. So instead of faking perception, we scan the space once with a handheld LiDAR, 235 seconds and 78 metres of walking, and turn it into a Nav2 map with obstacles split by height, including the low boxes that the D1 would bump into. This image is a real scan. The robot then places itself on that map and navigates using its own integrated odometry. Honest limit: the map is static and odometry drifts, so we re-place the robot; live LiDAR localization is the next step.</aside>
+    </section>
+
+    <!-- =======================================================
+         SLIDE 7 &mdash; A4: TRUST  [2:30 - 3:00]
+         ======================================================= -->
+    <section class="slide" data-phase="A" data-time="2:30">
+        <div class="phase"><b>A</b> Action &middot; trust by design</div>
+        <div class="sc">
+            <h2 class="title reveal" style="font-size:84px">Guests are close. <em>Floors are wet.</em></h2>
+            <div class="two">
+                <div class="col reveal" style="--d:.2s">
+                    <div class="mono">Safety</div>
+                    <h3>Four layers, hardest first.</h3>
+                    <ol class="ladder">
+                        <li><div>Vendor firmware <span>balance, joint limits, battery cut-off</span></div></li>
+                        <li><div>Speed caps <span>bridge and Nav2, 0.5 m/s ceiling with guests</span></div></li>
+                        <li><div>Gateway <span>goals only; E-STOP never reachable by voice</span></div></li>
+                        <li><div>A human <span>E-STOP on the console and dashboard</span></div></li>
+                    </ol>
+                </div>
+                <div class="col reveal" style="--d:.4s">
+                    <div class="mono">Privacy</div>
+                    <h3>Raw frames stay on the robot.</h3>
+                    <ol class="ladder">
+                        <li><div>Camera on the Orin <span>detection runs right next to the lens</span></div></li>
+                        <li><div>Phone app stores nothing <span>no cookies, no local storage</span></div></li>
+                        <li><div>Session gone in 10 minutes <span>memory only, nothing persisted</span></div></li>
+                        <li><div>Faces masked first <span>fail-closed filter, specified and next</span></div></li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+        <aside class="notes"><b>2:30 &middot; ACTION 4 (30 s)</b> Trust is designed in, not bolted on. Safety is layered: vendor firmware, a velocity-capped bridge, Nav2 limits, a gateway that only accepts goals, and a human E-STOP that is deliberately not reachable by voice. Privacy is the same idea: camera frames are processed on the robot and never leave it; the phone app stores nothing, with no cookies, no local storage and a strict content security policy; sessions disappear after ten minutes. The face-masking filter is specified fail-closed and is next on our list.</aside>
+    </section>
+
+    <!-- =======================================================
+         SLIDE 8 &mdash; A5: WAR STORIES  [3:00 - 3:35]
+         ======================================================= -->
+    <section class="slide" data-phase="A" data-time="3:00">
+        <div class="phase"><b>A</b> Action &middot; real hardware</div>
+        <div class="sc">
+            <h2 class="title reveal" style="font-size:72px">Deployment-ready is the bugs you only find on <em>real hardware</em>.</h2>
+            <div class="cards3">
+                <div class="story reveal" style="--d:.2s">
+                    <div class="num">218:76</div>
+                    <h3>A healthy robot reported as broken</h3>
+                    <p>The link flag flipped <span style="font-family:var(--font-mono);font-size:.85em">false, false, true</span> at 19.98 Hz. We polled the SDK faster than its heartbeat.</p>
+                    <div class="fix"><b>Fixed at the source</b>10 s latch. 14 of 14 samples now true.</div>
+                </div>
+                <div class="story reveal" style="--d:.4s">
+                    <div class="num">3<small>strikes</small></div>
+                    <h3>The silent DDS wedge</h3>
+                    <p>Start the agent before the bridge and subscriptions match, but callbacks never fire. Restarting the agent does nothing.</p>
+                    <div class="fix"><b>Self-healing watchdog</b>Restarts the bridge after 3 failures, then waits 5 minutes. No restart loops.</div>
+                </div>
+                <div class="story reveal" style="--d:.6s">
+                    <div class="num">39.9<small>s</small></div>
+                    <h3>A microphone error that wasn&rsquo;t</h3>
+                    <p>Voice joins died and blamed the mic. Real cause: ICE gathering over Tailscale took 39.9 s versus 133 ms without.</p>
+                    <div class="fix"><b>Named the real cause</b>The console now says Tailscale, not the microphone.</div>
+                </div>
+            </div>
+        </div>
+        <aside class="notes"><b>3:00 &middot; ACTION 5 (35 s) &mdash; your wow moment</b> This is what deployment-ready actually means. Three real bugs from the hardware. One: our robot was reported as disconnected while perfectly healthy. The link flag flipped at nearly 20 hertz, 218 false against 76 true in ten seconds, because we polled faster than the heartbeat. We fixed it at the source with a latch. Two: a DDS ordering bug where the agent starts, subscriptions match, but callbacks never fire. We built a watchdog that restarts the right process, with strike counting and a cooldown so it can never loop. Three: voice calls failed with a misleading microphone error. It was Tailscale: 39.9 seconds versus 133 milliseconds. These fixes are why it comes back after a power cycle without a developer.</aside>
+    </section>
+
+    <!-- =======================================================
+         SLIDE 9 &mdash; A6: DAY 2 + LOCK-ON  [3:35 - 3:55]
+         ======================================================= -->
+    <section class="slide" data-phase="A" data-time="3:35">
+        <div class="phase"><b>A</b> Action &middot; day 2</div>
+        <div class="sc">
+            <h2 class="title reveal" style="font-size:84px">Day 2: it learns <em>who</em> to follow.</h2>
+            <div class="split" style="grid-template-columns: 1fr 720px; gap: 90px; margin-top: 10px">
+                <div class="days">
+                    <div class="day reveal" style="--d:.2s">
+                        <div class="hd"><h3>Eyes &amp; legs</h3><div class="mono">Day 1 &middot; 48 commits</div></div>
+                        <p>SDK bridge, camera, YOLO26 people detection, QR and voice frontend, first LiDAR map.</p>
+                    </div>
+                    <div class="day d2 reveal" style="--d:.4s">
+                        <div class="hd"><h3>A system</h3><div class="mono">Day 2 &middot; 33 commits</div></div>
+                        <p>Gateway, Nav2 on LiDAR maps, Jetson Docker, systemd and watchdog, voice to the real robot, operator console.</p>
+                    </div>
+                </div>
+                <div class="reveal" style="--d:.5s">
+                    <div class="cam">
+                        <div class="banner"><span>LOCKED &middot; TRACKING</span><span>dry-run</span></div>
+                        <div class="person p1"><div class="lbl">unknown #1</div></div>
+                        <div class="person tgt"><div class="lbl">TARGET #3 &middot; sim 0.82</div></div>
+                        <div class="person p3"><div class="lbl">unknown #2</div></div>
+                    </div>
+                    <div class="camcap"><span class="tag warn">Design preview</span> look-alikes never steer the robot</div>
+                </div>
+            </div>
+        </div>
+        <aside class="notes"><b>3:35 &middot; ACTION 6 (20 s)</b> Day one gave the robot eyes and legs: bridge, camera, person detection, the guest app and a first map. Day two turned it into a system: gateway, navigation on the LiDAR map, Docker on the Jetson, systemd and watchdog, and voice commands moving the real robot. And we designed the next capability: lock onto the guest who scanned the QR code, using person re-identification, so bystanders, even look-alikes, never steer the robot. That is a design with an approved spec and a dry-run controller plan, not shipped code yet. (Say that out loud, juries respect it.)</aside>
+    </section>
+
+    <!-- =======================================================
+         SLIDE 10 &mdash; R1: NUMBERS  [3:55 - 4:20]
+         ======================================================= -->
+    <section class="slide" data-phase="R" data-time="3:55">
+        <div class="phase"><b>R</b> Result</div>
+        <div class="sc">
+            <h2 class="title reveal" style="font-size:84px">Two days. A <em>deployable</em> stack.</h2>
+            <div class="stats">
+                <div class="stat reveal" style="--d:.15s"><div class="v"><span class="count" data-to="81">0</span></div><div class="k">commits in two days, merged through pull requests</div></div>
+                <div class="stat reveal" style="--d:.25s"><div class="v"><span class="count" data-to="9">0</span></div><div class="k">ROS 2 packages: bridge, camera, perception, nav, gateway&hellip;</div></div>
+                <div class="stat reveal" style="--d:.35s"><div class="v"><span class="count" data-to="15">0</span><i>k</i></div><div class="k">lines of code, plus 20k words of engineering docs</div></div>
+                <div class="stat reveal" style="--d:.45s"><div class="v"><span class="count" data-to="250">0</span><i>+</i></div><div class="k">test cases. The protocol runs end to end without a robot</div></div>
+                <div class="stat reveal" style="--d:.55s"><div class="v"><span class="count" data-to="7">0</span></div><div class="k">voice tools driving the real D1 over Tailscale</div></div>
+                <div class="stat reveal" style="--d:.65s"><div class="v"><span class="count" data-to="4">0</span></div><div class="k">LiDAR maps of real space. Camera: 15 fps, 0 read failures</div></div>
+            </div>
+        </div>
+        <aside class="notes"><b>3:55 &middot; RESULT 1 (25 s)</b> The result in numbers. 81 commits in two days, nine ROS 2 packages, about 15 thousand lines of code and 20 thousand words of engineering documentation, more than 250 automated test cases, so the gateway protocol is tested end to end without a robot. Seven voice tools that move the real D1 over Tailscale from any network, four LiDAR maps, and a camera pipeline at 15 frames per second over Ethernet with zero read failures.</aside>
+    </section>
+
+    <!-- =======================================================
+         SLIDE 11 &mdash; R2: STATUS BOARD  [4:20 - 4:40]
+         ======================================================= -->
+    <section class="slide" data-phase="R" data-time="4:20">
+        <div class="phase"><b>R</b> Result &middot; honest status</div>
+        <div class="sc">
+            <h2 class="title reveal" style="font-size:84px">We tell you what&rsquo;s <em>real</em>. That is deployment.</h2>
+            <div class="board">
+                <div class="lane reveal" style="--c:var(--ok);--d:.2s">
+                    <div class="mono">Ran on the robot</div>
+                    <h3>Working</h3>
+                    <ul>
+                        <li>SDK bridge, gestures, telemetry</li>
+                        <li>Camera over Ethernet<span>15 fps, 0 read failures</span></li>
+                        <li>Voice and console to the D1<span>over Tailscale</span></li>
+                        <li>systemd + watchdog<span>power-cycle recovery</span></li>
+                    </ul>
+                </div>
+                <div class="lane reveal" style="--c:var(--steam);--d:.4s">
+                    <div class="mono">Built and tested offline</div>
+                    <h3>Ready to wire</h3>
+                    <ul>
+                        <li>Gateway protocol<span>end to end with a mock robot</span></li>
+                        <li>Nav2 on LiDAR maps<span>static maps, not yet with guests</span></li>
+                        <li>Developer dashboard</li>
+                        <li>Visitor app<span>demo mode, strict CSP</span></li>
+                    </ul>
+                </div>
+                <div class="lane reveal" style="--c:var(--copper);--d:.6s">
+                    <div class="mono">Next</div>
+                    <h3>Before guests</h3>
+                    <ul>
+                        <li>Velocity arbitration<span>one writer to the robot at a time</span></li>
+                        <li>Face-masking privacy filter</li>
+                        <li>Visitor app to gateway</li>
+                        <li>Lock-on follow</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <aside class="notes"><b>4:20 &middot; RESULT 2 (20 s)</b> We also want to be precise about where we stand, because that is what deployment-ready means. Left: what ran on the real robot. Middle: what is built and tested offline and ready to wire. Right: what has to land before a guest is ever near it: velocity arbitration so only one writer drives the robot, the privacy filter, connecting the visitor app to the gateway, and lock-on follow.</aside>
+    </section>
+
+    <!-- =======================================================
+         SLIDE 12 &mdash; CLOSE  [4:40 - 5:00]
+         ======================================================= -->
+    <section class="slide s-close" data-phase="" data-time="4:40">
+        <div class="phase">Next &middot; the pilot</div>
+        <div class="sc">
+            <h2 class="title reveal" style="font-size:84px">From hackathon floor to <em>spa floor</em>.</h2>
+            <div class="steps3">
+                <div class="reveal" style="--d:.2s"><div class="mono">01 &middot; Scan</div><p>Map the real spa&rsquo;s dry zones. <span>Wet areas stay no-go.</span></p></div>
+                <div class="reveal" style="--d:.35s"><div class="mono">02 &middot; Close the loop</div><p>Arbitration, keep-out zones, privacy filter. <span>Safety before guests.</span></p></div>
+                <div class="reveal" style="--d:.5s"><div class="mono">03 &middot; Pilot</div><p>Connect QR to gateway, run a DPIA with the spa. <span>Real guests, supervised.</span></p></div>
+            </div>
+            <div class="final reveal" style="--d:.7s">Not a demo.<br><em>A robot a spa can switch on.</em></div>
+        </div>
+        <aside class="notes"><b>4:40 &middot; CLOSE (20 s)</b> Next steps are concrete: scan the real spa&rsquo;s dry zones, close the safety loop with arbitration, keep-out zones and the privacy filter, then connect the QR flow to the gateway and run a data-protection assessment with the spa for a supervised pilot. Not a demo: a robot a spa can switch on. Thank you. (If short on time, drop slide 4 or 9 and keep the war stories.)</aside>
+    </section>
+
+    <!-- === CHROME (STAR rail, footer, progress) === -->
+    <div class="chrome" id="chrome">
+        <div class="rail" id="rail"><span data-k="S">S</span><span data-k="T">T</span><span data-k="A">A</span><span data-k="R">R</span></div>
+        <div class="foot"><span>ClawMetry &times; SafetyAI</span><span id="pageNo">01 / 12</span></div>
+        <div class="progress" id="progress"></div>
+    </div>
+</main>
+</div>
+
+<!-- Presenter tools: T = timer, N = notes, F = fullscreen -->
+<div class="hud" id="hud"><span id="clock">0:00</span><span id="target">target 0:00</span><span>T timer &middot; N notes &middot; F fullscreen</span></div>
+<div class="notes-panel" id="notesPanel"></div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   Keys: arrows / space / PageUp-Down / Home / End.  Touch swipe supported.
+   T toggles the timer, N toggles speaker notes, F toggles fullscreen.
+   =========================================== */
+class SlidePresentation {
+    constructor() {
+        this.slides = [...document.querySelectorAll('.slide')];
+        this.stage = document.getElementById('deckStage');
+        this.chrome = document.getElementById('chrome');
+        this.rail = [...document.querySelectorAll('#rail span')];
+        this.pageNo = document.getElementById('pageNo');
+        this.progress = document.getElementById('progress');
+        this.hud = document.getElementById('hud');
+        this.notesPanel = document.getElementById('notesPanel');
+        this.current = 0;
+        this.startedAt = null;
+        this.setupStageScale();
+        this.setupKeys();
+        this.setupTouch();
+        this.setupTimer();
+        this.show(0);
+    }
+
+    /* Scale the 1920x1080 stage uniformly to the window (letterbox, never reflow) */
+    setupStageScale() {
+        const fit = () => {
+            const f = Math.min(innerWidth / 1920, innerHeight / 1080);
+            const x = (innerWidth - 1920 * f) / 2;
+            const y = (innerHeight - 1080 * f) / 2;
+            this.stage.style.transform = `translate(${x}px, ${y}px) scale(${f})`;
+        };
+        fit();
+        addEventListener('resize', fit);
+    }
+
+    setupKeys() {
+        addEventListener('keydown', (e) => {
+            const k = e.key;
+            if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter'].includes(k)) { e.preventDefault(); this.show(this.current + 1); }
+            else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(k)) { e.preventDefault(); this.show(this.current - 1); }
+            else if (k === 'Home') this.show(0);
+            else if (k === 'End') this.show(this.slides.length - 1);
+            else if (k === 't' || k === 'T') this.hud.classList.toggle('show');
+            else if (k === 'n' || k === 'N') this.notesPanel.classList.toggle('show');
+            else if (k === 'f' || k === 'F') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }
+        });
+    }
+
+    setupTouch() {
+        let x0 = null;
+        addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+        addEventListener('touchend', (e) => {
+            if (x0 === null) return;
+            const dx = e.changedTouches[0].clientX - x0;
+            if (Math.abs(dx) > 50) this.show(this.current + (dx < 0 ? 1 : -1));
+            x0 = null;
+        });
+        addEventListener('click', (e) => { if (e.target.closest('.hud, .notes-panel')) return; this.show(this.current + 1); });
+    }
+
+    /* Timer starts on the first slide change; shows target time for the current slide */
+    setupTimer() {
+        const clock = document.getElementById('clock');
+        setInterval(() => {
+            if (!this.startedAt) return;
+            const s = Math.floor((Date.now() - this.startedAt) / 1000);
+            clock.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+            clock.className = s > 300 ? 'late' : s > 270 ? 'warn' : '';
+        }, 250);
+    }
+
+    show(i) {
+        const n = Math.max(0, Math.min(i, this.slides.length - 1));
+        if (n > 0 && !this.startedAt) this.startedAt = Date.now();
+        this.current = n;
+        this.slides.forEach((s, idx) => {
+            s.classList.toggle('active', idx === n);
+            s.classList.toggle('visible', idx === n);
+        });
+        const slide = this.slides[n];
+        const phase = slide.dataset.phase;
+        const order = ['S', 'T', 'A', 'R'];
+        this.rail.forEach((el) => {
+            const k = el.dataset.k;
+            el.classList.toggle('on', k === phase);
+            el.classList.toggle('done', phase && order.indexOf(k) < order.indexOf(phase));
+        });
+        this.chrome.classList.toggle('no-rail', !phase);
+        this.pageNo.textContent = `${String(n + 1).padStart(2, '0')} / ${String(this.slides.length).padStart(2, '0')}`;
+        this.progress.style.width = `${((n + 1) / this.slides.length) * 100}%`;
+        document.getElementById('target').textContent = `slide ${n + 1} target ${slide.dataset.time}`;
+        this.notesPanel.innerHTML = slide.querySelector('.notes').innerHTML;
+        this.runCounters(slide);
+    }
+
+    /* Count-up numbers on the Result slide */
+    runCounters(slide) {
+        slide.querySelectorAll('.count').forEach((el) => {
+            const to = +el.dataset.to;
+            const t0 = performance.now() + 500;
+            const dur = 1500;
+            const tick = (t) => {
+                if (!slide.classList.contains('visible')) return;
+                const p = Math.min(Math.max((t - t0) / dur, 0), 1);
+                el.textContent = Math.round(to * (1 - Math.pow(1 - p, 4)));
+                if (p < 1) requestAnimationFrame(tick);
+            };
+            el.textContent = '0';
+            requestAnimationFrame(tick);
+        });
+    }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

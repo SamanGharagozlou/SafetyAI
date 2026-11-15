@@ -1,0 +1,52 @@
+[Unit]
+# The ROS bridge that owns the robot SDK connection. Until this exists as a
+# unit, it is hand-started in a terminal and dies on every power cycle - and
+# the Jetson is powered FROM THE ROBOT BATTERY, so power cycles are routine,
+# not exceptional.
+#
+# When this is down, d1-ros-agent stays up and the public endpoint keeps
+# answering 200 with nulls. A live-looking stack serving nothing.
+Description=D1 ROS bridge (owns the robot SDK link)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sepa
+Group=sepa
+
+# CONFIRM BEFORE INSTALLING: domain 0 + FastRTPS is the SafetyAI bridge graph,
+# deliberately NOT the robot's own stack (domain 24 + rmw_zenoh_cpp). Getting
+# this wrong yields a process that starts cleanly and matches nothing.
+Environment=ROS_DOMAIN_ID=0
+Environment=RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+
+# DELIBERATELY NOT SET: ROBOT_NET_INTERFACES.
+# An earlier draft of this file set it to wlan0, which was wrong twice over:
+# there is no wlan0 on this box (WiFi is wlP1p1s0), and the robot is not on
+# WiFi at all - it is on a WIRED link, enP8p1s0 192.168.168.10/24, reaching the
+# robot at 192.168.168.168 in 0.3 ms. The variable is real and documented in
+# the AgiBot SDK, so pointing the SDK at a nonexistent interface could have
+# killed the link outright - and then the watchdog below would have restarted
+# the bridge every five minutes forever.
+# The hand-started bridge has never set it and connects fine, so we do not set
+# a variable we have no evidence is needed.
+
+WorkingDirectory=/home/sepa/SafetyAI/ros2_ws
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source /home/sepa/SafetyAI/ros2_ws/install/setup.bash && exec ros2 launch agibot_d1_bridge bridge.launch.py'
+
+Restart=always
+RestartSec=5
+
+# Give the SDK time to bind before anything orders itself after us.
+TimeoutStartSec=60
+KillSignal=SIGINT
+
+# journald on this box is VOLATILE (no /var/log/journal), so there is no
+# previous boot to post-mortem. Run `sudo mkdir -p /var/log/journal &&
+# sudo systemctl restart systemd-journald` to make outage diagnosis possible.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,8 @@ if [[ $# -gt 0 ]]; then
 fi
 
 if [[ "${SOURCE_TYPE:-}" == "d1_camera" ]]; then
+  [[ "${FOLLOW:-false}" == "true" ]] \
+    && echo "follow=true is not supported with source=d1-camera yet; starting without d1_follow"
   # Teammate's d1_camera driver + detector in this container (RTSP_URL = robot stream).
   args=()
   [[ -n "${RTSP_URL:-}" ]] && args+=("url:=${RTSP_URL}")
@@ -31,4 +33,10 @@ add detector_params "${DETECTOR_PARAMS:-}"
 add model_name      "${MODEL_NAME:-}"
 add device          "${DEVICE:-}"
 add rviz            "${RVIZ:-false}"
+if [[ "${FOLLOW:-false}" == "true" ]]; then
+  # follow.launch.py starts perception itself and owns rviz (follow.rviz).
+  add auto_lock "${AUTO_LOCK:-false}"
+  add embedder  "${EMBEDDER:-}"
+  exec ros2 launch d1_follow follow.launch.py "${args[@]}"
+fi
 exec ros2 launch human_perception human_perception.launch.py "${args[@]}"

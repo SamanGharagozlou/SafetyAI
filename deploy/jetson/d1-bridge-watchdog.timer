@@ -1,0 +1,13 @@
+[Unit]
+Description=Check the D1 robot link every 20s
+
+[Timer]
+# 90s before the first check: the bridge needs time to bind the SDK and start
+# publishing after a boot. Checking sooner would restart a bridge that is
+# merely still starting up.
+OnBootSec=90
+OnUnitActiveSec=20
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
