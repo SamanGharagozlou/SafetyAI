@@ -49,6 +49,7 @@ export function useConversation(o: Options) {
   const started = useRef(false)             // the guest has used the microphone: only then may the robot speak or listen on its own
   const alive = useRef(true)
   const turn = useRef(0)
+  const silent = useRef(0)                  // consecutive silent rounds: keep listening for a couple, then wait for a tap
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; handle.current?.abort(); speaking.current?.abort(); stopSpeaking() } }, [])
 
@@ -108,8 +109,13 @@ export function useConversation(o: Options) {
     setNotice('')
     setPhase('listening')
     const mine = handle.current = listen(opts.current.lang)
-    mine.result.then(text => { if (handle.current === mine && alive.current) void understand(text) })
-      .catch(error => { if (handle.current !== mine || !alive.current) return; setPhase('idle'); setNotice(errorText(error)) })
+    mine.result.then(text => { if (handle.current === mine && alive.current) { silent.current = 0; void understand(text) } })
+      .catch(error => {
+        if (handle.current !== mine || !alive.current) return
+        if (error instanceof SpeechError && error.code === 'no-speech' && ++silent.current < 3) { begin(); return }
+        silent.current = 0
+        setPhase('idle'); setNotice(errorText(error))
+      })
   }
   const stopListening = () => { handle.current?.stop() }
   /** Typed text goes through exactly the same path as speech. */
