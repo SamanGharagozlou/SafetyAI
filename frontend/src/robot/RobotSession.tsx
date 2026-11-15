@@ -1,9 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent, ReactNode } from 'react'
-import { Robot } from '../Artwork'
 import type { TaskSession } from '../tasks/contracts'
 import { EscortBar } from './EscortBar'
-import { SendIcon, SparkIcon } from './icons'
+import { KeyboardIcon, MicIcon, SendIcon, VolumeIcon } from './icons'
 import { PlaceCards } from './PlaceCards'
 import { PlacesMap } from './PlacesMap'
 import { RobotRequestFlow } from './RobotRequestFlow'
@@ -11,6 +10,7 @@ import { stopRobot } from './robotApi'
 import type { RobotSessionInfo } from './robotApi'
 import { createRobotTaskClient, MAX_ROBOT_TEXT } from './robotTasks'
 import type { RobotAction } from './robotTasks'
+import { useConversation } from './useConversation'
 import { useRobotView } from './useRobotView'
 
 interface Pending { key: number; text: string; proposedAction: RobotAction | null; place?: string }
@@ -24,7 +24,6 @@ interface Props {
   onLeave(): void
   onPrivacy(event: MouseEvent<HTMLAnchorElement>): void
 }
-const QUICK = ['What can you do?', 'Take me home']
 
 export function RobotSession({ info, session, nickname, talk, onExpired, onLeave, onPrivacy }: Props) {
   const { view, lines, offline } = useRobotView(info.authorization, onExpired)
@@ -32,6 +31,9 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
   const [tab, setTab] = useState<'places' | 'talk'>('places')
   const [pending, setPending] = useState<Pending | null>(null)
   const [draft, setDraft] = useState('')
+  const [typing, setTyping] = useState(false)       // typing is optional: the conversation is by voice or taps
+  const [showPlaces, setShowPlaces] = useState(false)
+  const [yes, setYes] = useState(0)
   const [stopping, setStopping] = useState(false)
   const [stopFailed, setStopFailed] = useState(false)
   const counter = useRef(0)
@@ -52,14 +54,14 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
     if (blocked) return
     setPending({ key: ++counter.current, text: `Take me to ${label(name)}`, proposedAction: 'GO_TO_PLACE', place: name })
   }
-  function ask(text: string) {
-    setPending({ key: ++counter.current, text, proposedAction: null })
-  }
+  const talk_ = useConversation({ auth: info.authorization, voice: info.consent.voice, awaitingConfirm: !!pending?.place, lang: navigator.language || 'en',
+    onPropose: name => { if (!blocked) setPending({ key: ++counter.current, text: `Take me to ${label(name)}`, proposedAction: 'GO_TO_PLACE', place: name }) },
+    onYes: () => setYes(n => n + 1), onNo: () => setPending(null), onStop: () => { void stop() }, onFinish: onLeave, onExpired })
   function send(event: FormEvent) {
     event.preventDefault()
     const text = draft.trim()
     if (!text) return
-    ask(text)
+    talk_.submitText(text)
     setDraft('')
   }
   async function stop() {
@@ -69,11 +71,27 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
   }
 
   const places = <>
-    <div className="robot-hello">
-      <div className="hello-avatar"><Robot small/><span className={`hello-status${blocked ? ' is-off' : ''}`} aria-hidden="true"/></div>
-      <p className="robot-says" aria-live="polite">{last ?? `Hi ${nickname}! Where would you like to go?`}</p>
+    <div className="voice-card">
+      <button type="button" className={`voice-orb is-${talk_.phase}`} disabled={talk_.state !== 'ready'} aria-label={talk_.phase === 'listening' ? 'Listening. Tap to finish' : 'Tap to talk'}
+        onClick={() => talk_.phase === 'listening' ? talk_.stopListening() : talk_.begin()}><MicIcon/></button>
+      <p className="voice-status" role="status">{talk_.phase === 'listening' ? 'Listening…' : talk_.phase === 'thinking' ? 'One moment…' : talk_.phase === 'speaking' ? 'Speaking…' : talk_.state === 'ready' ? 'Tap the microphone and talk to me' : 'Tap a place below, or type'}</p>
+      {talk_.heard && <p className="voice-heard">“{talk_.heard}”</p>}
+      <p className="robot-says" aria-live="polite">{talk_.said || last || `Hi ${nickname}! Where would you like to go?`}</p>
+      {talk_.notice && <p className="stage-note" role="status">{talk_.notice}</p>}
+      {talk_.state === 'unsupported' && <p className="stage-note" role="status">Voice needs a secure (HTTPS) page and a supported browser. You can tap a place or type.</p>}
+      <div className="voice-tools">
+        {talk_.state === 'ready' && <button type="button" className="quick-chip" onClick={() => talk_.setMuted(!talk_.muted)} aria-pressed={talk_.muted}><VolumeIcon muted={talk_.muted}/>{talk_.muted ? 'Voice off' : 'Voice on'}</button>}
+        <button type="button" className="quick-chip" onClick={() => setTyping(t => !t)} aria-expanded={typing}><KeyboardIcon/>Type instead</button>
+        <button type="button" className="quick-chip" onClick={() => setShowPlaces(v => !v)} aria-expanded={showPlaces}>{showPlaces ? 'Hide places' : 'Show places'}</button>
+      </div>
+      {typing && <form className="voice-type" onSubmit={send}>
+        <label htmlFor="robot-text" className="sr-only">Type a message</label>
+        <input id="robot-text" value={draft} onChange={event => setDraft(event.target.value)} maxLength={MAX_ROBOT_TEXT} placeholder="Say where you want to go…" autoComplete="off"/>
+        <button type="submit" className="dock-send" aria-label="Send message" disabled={!draft.trim()}><SendIcon/></button>
+      </form>}
     </div>
 
+    {(showPlaces || talk_.state !== 'ready') && <>
     <div className="stage-card">
       <div className="stage-head">
         <div><span className="eyebrow-label">Destinations</span><h2 id="places-heading" ref={heading} tabIndex={-1}>Where to?</h2></div>
@@ -87,17 +105,11 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
 
     <PlaceCards places={info.places} view={view} disabled={blocked} selected={pending?.place ?? null} onSelect={pick}/>
 
-    <div className="quick-row" role="group" aria-label="Quick questions">
-      {QUICK.map(q => <button key={q} type="button" className="quick-chip" onClick={() => ask(q)}><SparkIcon/>{q}</button>)}
-    </div>
-
-    {lines.length > 1 && <div className="call-history robot-history" aria-label="What the robot said" aria-live="off">
-      {lines.slice(-4, -1).map(line => <div key={line.seq} className="history-assistant"><span>ClawMetry</span><p>{line.text}</p></div>)}
-    </div>}
+    </>}
 
     {pending && <RobotRequestFlow key={pending.key} text={pending.text} source="typed" proposedAction={pending.proposedAction} place={pending.place}
       placeLabel={pending.place ? label(pending.place) : undefined} meta={pending.place ? away(pending.place) : undefined} labelOf={label}
-      session={session} client={client} onExpired={onExpired} onCancel={() => setPending(null)} onDone={() => setPending(null)}/>}
+      confirmSignal={yes} session={session} client={client} onExpired={onExpired} onCancel={() => setPending(null)} onDone={() => setPending(null)}/>}
   </>
 
   return <section className="robot-screen page-enter" aria-label={`${info.robotName} companion`}>
@@ -111,10 +123,5 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
     <div id="panel-places" role="tabpanel" aria-labelledby="tab-places" className="robot-panel" hidden={tab !== 'places'}>{places}</div>
     {talk && <div id="panel-talk" role="tabpanel" aria-labelledby="tab-talk" className="robot-panel" hidden={tab !== 'talk'}>{talk}</div>}
     <div className="call-session-links"><a href="/privacy" onClick={onPrivacy}>Privacy information</a><button type="button" onClick={onLeave}>Leave session</button></div>
-    {tab === 'places' && <form className="dock" onSubmit={send}>
-      <label htmlFor="robot-text" className="sr-only">Or ask me something</label>
-      <input id="robot-text" value={draft} onChange={event => setDraft(event.target.value)} maxLength={MAX_ROBOT_TEXT} placeholder="Ask me anything, or say where to go…" autoComplete="off"/>
-      <button type="submit" className="dock-send" aria-label="Send message" disabled={!draft.trim()}><SendIcon/></button>
-    </form>}
   </section>
 }

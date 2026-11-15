@@ -8,7 +8,9 @@ import { CallScreen } from './call/CallScreen'
 import { LiveCallScreen } from './call/LiveCallScreen'
 import { resolveVapiConfig } from './voice/vapiSession'
 import { RobotSession } from './robot/RobotSession'
+import { Consent } from './robot/Consent'
 import { createRobotSession, endRobotSession, RobotApiError } from './robot/robotApi'
+import type { RobotConsent } from './robot/robotApi'
 import type { RobotSessionInfo } from './robot/robotApi'
 import { DEMO_VAPI_ASSISTANT_ID, DEMO_VAPI_PUBLIC_KEY } from './voice/vapiDefaults'
 
@@ -57,6 +59,7 @@ export function App() {
   const [robotInfo, setRobotInfo] = useState<RobotSessionInfo | null>(null)
   const [qrToken] = useState(readQrToken)
   const [starting, setStarting] = useState(false)
+  const [consenting, setConsenting] = useState<{ guest: boolean } | null>(null)
   const heading = useRef<HTMLHeadingElement>(null)
 
   // The QR token is a secret proving presence at the robot: keep it in memory only and take it out of the address bar and history.
@@ -104,12 +107,12 @@ export function App() {
     }
   }, [session, expireSession])
 
-  async function startRobotSession(asGuest: boolean) {
+  async function startRobotSession(asGuest: boolean, consent: RobotConsent) {
     if (starting) return
     setStarting(true)
     setError('')
     try {
-      const info = await createRobotSession(qrToken, asGuest ? '' : nickname)
+      const info = await createRobotSession(qrToken, asGuest ? '' : nickname, consent)
       const bytes = crypto.getRandomValues(new Uint8Array(12))
       setRobotInfo(info)
       setSession({ id: `robot-${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`, nickname: info.nickname, expiresAt: info.authorization.expiresAt })
@@ -120,11 +123,12 @@ export function App() {
       setError(qrToken ? robotErrorText(failure) : 'Please scan the QR code on the robot to start.')
     } finally {
       setStarting(false)
+      setConsenting(null)
     }
   }
 
   function startSession(asGuest = false) {
-    if (robotMode) { void startRobotSession(asGuest); return }
+    if (robotMode) { setError(''); setConsenting({ guest: asGuest }); return }
     try {
       const next = demoSessionService.create(asGuest ? '' : nickname, sessionDuration(import.meta.env.VITE_DEMO_SESSION_SECONDS))
       setSession(next)
@@ -165,7 +169,11 @@ export function App() {
     </header>
 
     <main id="main-content" className={route === '/session' && session ? 'call-main' : undefined}>
-      {route === '/join' && <section className="welcome-card page-enter" aria-labelledby="welcome-heading">
+      {route === '/join' && robotMode && consenting && <>
+        <Consent onAgree={c => { void startRobotSession(consenting.guest, c) }} onDecline={() => setConsenting(null)} onPrivacy={() => navigate('/privacy')}/>
+        {error && <p className="form-error" role="alert">{error}</p>}
+      </>}
+      {route === '/join' && !(robotMode && consenting) && <section className="welcome-card page-enter" aria-labelledby="welcome-heading">
         <div className="eyebrow"><span className="status-dot"/> A LITTLE CURIOSITY. A NEW CONNECTION.</div>
         <div className="avatar-scene"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><span className="spark spark-one">✦</span><span className="spark spark-two">+</span><Robot/><span className="hello-bubble">Hello, human <span aria-hidden="true">✧</span></span></div>
         <h1 ref={heading} tabIndex={-1} id="welcome-heading">Hey there! I'm your<br className="desktop-break"/> robot assistant.</h1>

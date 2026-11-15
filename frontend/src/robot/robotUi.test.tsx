@@ -176,7 +176,7 @@ describe('RobotRequestFlow', () => {
 })
 
 describe('RobotSession (the whole guest screen against a fake backend)', () => {
-  const info: RobotSessionInfo = { authorization: { accessToken: 'tok-123456789012345678', expiresAt: Date.now() + 600_000 }, robotName: 'D1', nickname: 'Ana', places }
+  const info: RobotSessionInfo = { authorization: { accessToken: 'tok-123456789012345678', expiresAt: Date.now() + 600_000 }, robotName: 'D1', nickname: 'Ana', places, consent: { voice: false, face: false, version: 'test' } }
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
   let calls: Array<{ path: string; method: string; body: unknown; auth: string | undefined }>
   let stateBody: Record<string, unknown>
@@ -193,6 +193,7 @@ describe('RobotSession (the whole guest screen against a fake backend)', () => {
       if (path.startsWith('/api/state')) return json(stateBody)
       if (path === '/api/requests' && method === 'POST') { taskBody = { ...taskBody, client_request_id: body.client_request_id }; return json(taskBody, 201) }
       if (path.startsWith('/api/requests/')) return json(taskBody)
+      if (path === '/api/interpret') return json({ action: null, reply: 'I can walk with you to a place.' })
       if (path === '/api/robot/stop') return json({ ok: true })
       return json({ error: 'not_found' }, 404)
     }))
@@ -234,16 +235,18 @@ describe('RobotSession (the whole guest screen against a fake backend)', () => {
     for (const chip of within(screen.getByRole('group', { name: 'Places' })).getAllByRole('button')) expect(chip).toBeDisabled()
     expect(screen.queryByText('Robot ready')).toBeNull()
   })
-  it('sends a typed question only after the guest confirms it, and lets the backend decide what it means', async () => {
+  it('typing is optional, goes through /api/interpret, and never moves the robot by itself', async () => {
     mount()
     await screen.findByText('Hello Ana! Where would you like to go?')
-    fireEvent.change(screen.getByLabelText('Or ask me something'), { target: { value: 'what can you do?' } })
+    expect(screen.queryByLabelText('Type a message')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Type instead/ }))
+    fireEvent.change(screen.getByLabelText('Type a message'), { target: { value: 'what can you do?' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
-    expect(await screen.findByRole('heading', { name: 'Your request is ready' })).toBeInTheDocument()
+    expect(await screen.findByText('I can walk with you to a place.')).toBeInTheDocument()
+    expect(calls.some(c => c.path === '/api/interpret')).toBe(true)
     expect(calls.some(c => c.path === '/api/requests')).toBe(false)
   })
 })
-
 
 describe('radar layout geometry', () => {
   const standard: RobotPlace[] = [

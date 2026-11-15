@@ -71,3 +71,10 @@ curl -s -XPOST localhost:8780/api/requests -H "Authorization: Bearer $A" -H "Ide
 curl -s localhost:8780/api/requests/<request_id> -H "Authorization: Bearer $A"
 ```
 With the frontend: `cd frontend && npm run dev:robot`, then open `http://127.0.0.1:5173/join?t=<qr-token>` (the QR code on the robot encodes this URL).
+
+## Consent and conversation (frontend robot mode)
+
+- `POST /api/session` accepts `consent: {voice, face, version}`. Only a literal `true` counts. It is kept in memory for the session and cleared when the session ends; it is never logged or written to disk.
+- `POST /api/interpret` `{text}` returns what a sentence would mean: `{action, place?, label?, ready?, notice?}` for `GO_TO_PLACE`, `{action, reply}` otherwise. It executes and stores nothing; the app speaks the answer and still asks "Shall I take you there?" before `POST /api/requests`.
+- The visitor app is voice first (tap the microphone, spoken yes/no, spoken "stop"); typing and the place layout are optional. Speech uses the browser's Web Speech API, which needs HTTPS on a phone and is processed by the browser vendor (Google/Apple); we record no audio. *Unverified on a phone.*
+- **Face**: the consent item exists, but face recognition is not implemented, and `product_requirements.md` NFR-3 says no biometric identification. Needs a decision (and spa DPIA) before it does anything.

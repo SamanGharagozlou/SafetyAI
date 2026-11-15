@@ -42,6 +42,8 @@ interface Props {
   onCancel(): void
   onDone(): void
   waitMs?: number
+  /** Incremented when the guest says "yes" aloud: same as tapping the confirm button. */
+  confirmSignal?: number
 }
 
 function CheckBadge() {
@@ -49,7 +51,7 @@ function CheckBadge() {
 }
 
 /** Confirm (a bottom sheet), follow the request (a quiet strip while the journey card shows progress), then the result (a sheet). Same logic as tasks/RequestFlow.tsx. */
-export function RobotRequestFlow({ text, source, proposedAction, place, placeLabel, meta, labelOf, session, client, onExpired, onCancel, onDone, waitMs = ROBOT_TASK_WAIT_MS }: Props) {
+export function RobotRequestFlow({ text, source, proposedAction, place, placeLabel, meta, labelOf, session, client, onExpired, onCancel, onDone, waitMs = ROBOT_TASK_WAIT_MS, confirmSignal = 0 }: Props) {
   const [stage, setStage] = useState<'confirmation' | 'task'>('confirmation')
   const [task, setTask] = useState<RobotTask | null>(null)
   const [issue, setIssue] = useState<'timeout' | 'unavailable' | 'invalid' | 'busy' | null>(null)
@@ -72,6 +74,9 @@ export function RobotRequestFlow({ text, source, proposedAction, place, placeLab
   }
   useEffect(() => () => halt(), [])
   useEffect(() => { title.current?.focus({ preventScroll: true }) }, [stage, task?.status, issue])
+
+  const spoken = useRef(confirmSignal)
+  useEffect(() => { if (confirmSignal !== spoken.current) { spoken.current = confirmSignal; if (stage === 'confirmation') confirm() } })
 
   const alive = () => { try { requireActiveSession(session); return true } catch { halt(); onExpired(); return false } }
 

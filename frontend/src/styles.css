@@ -174,3 +174,18 @@ main{width:100%;flex:1;display:flex;flex-direction:column;align-items:center;jus
 @keyframes fade{from{opacity:0}}
 @media(prefers-reduced-motion:reduce){.check-circle,.check-mark{stroke-dashoffset:0}}
 @media(max-width:360px){.journey-stop{padding:0 14px}.place-card{flex-basis:144px}.stage-head h2{font-size:23px}.sheet{padding-inline:16px}}
+/* Voice-first robot screen and consent */
+.voice-card{display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 16px;border-radius:22px;background:#0d202c;text-align:center}
+.voice-orb{width:104px;height:104px;border-radius:50%;border:0;display:grid;place-items:center;background:#71e5cf;color:#091822;box-shadow:0 0 0 10px #71e5cf22;transition:box-shadow .2s}
+.voice-orb svg{width:44px;height:44px}.voice-orb:disabled{background:#12303a;color:#6f929b;box-shadow:none}
+.voice-orb.is-listening{background:#ffc46b;animation:orb-pulse 1.2s ease-in-out infinite}.voice-orb.is-thinking{opacity:.7}.voice-orb.is-speaking{background:#9cf5e3;animation:orb-pulse 1.8s ease-in-out infinite}
+@keyframes orb-pulse{0%,100%{box-shadow:0 0 0 8px #71e5cf22}50%{box-shadow:0 0 0 20px #71e5cf11}}
+@media (prefers-reduced-motion:reduce){.voice-orb{animation:none!important}}
+.voice-status{font-size:13px;color:#9cc4cc}.voice-heard{font-size:14px;color:#b9d6dc;font-style:italic}
+.voice-tools{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px}
+.voice-type{display:flex;gap:8px;width:100%}.voice-type input{flex:1;min-height:46px;border-radius:14px;border:1px solid #1f4752;background:#091822;color:#fff;padding:0 14px}
+.consent-card{display:flex;flex-direction:column;gap:12px;padding:24px 18px;border-radius:22px;background:#0d202c}
+.consent-card h1{font-size:24px}.consent-shield{width:36px;height:36px;color:#71e5cf}
+.consent-item{display:flex;gap:10px;align-items:flex-start;padding:12px;border-radius:14px;background:#12303a}.consent-item input{width:22px;height:22px;margin-top:2px;accent-color:#71e5cf}
+.consent-item svg{width:22px;height:22px;color:#71e5cf;flex:none}.consent-item small{display:block;color:#9cc4cc;font-size:12.5px;margin-top:2px}
+.consent-delete{font-size:13.5px;color:#cfe6ea}.link-button{background:none;border:0;color:#9cf5e3;text-decoration:underline;font-size:13px;min-height:40px}

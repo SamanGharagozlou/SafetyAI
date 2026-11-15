@@ -85,6 +85,7 @@ class CompanionServer:
         self.outbox, self.seq = deque(maxlen=60), 0           # robot lines for the guest (cleared with the session)
         self.tasks, self.by_client = {}, {}                   # request_id -> Task ; client_request_id -> request_id (this session only)
         self.hits = deque()                                    # request timestamps for rate limiting
+        self.consent = None                                    # what the guest agreed to at the start (voice / face), memory only, dropped with the session
         self._server, self._tick_task = None, None
 
     # ------------------------------------------------------------------ lifecycle
@@ -208,6 +209,8 @@ class CompanionServer:
             if path == '/api/robot/stop' and method == 'POST':
                 await self._feed(ev('stop'))
                 return self._json({'ok': True, 'state': self._public_state()})
+            if path == '/api/interpret' and method == 'POST':
+                return self._interpret_text(self._body(body))
             if path == '/api/requests' and method == 'POST':
                 return await self._create_request(headers, self._body(body))
             m = re.match(r'^/api/requests/([a-zA-Z0-9_-]{1,100})$', path)
@@ -245,6 +248,8 @@ class CompanionServer:
         if rej:
             raise HttpError(409, 'robot_unavailable' if 'not available' in rej[0].data['reason'] else 'robot_busy', rej[0].data['reason'])
         self.expires_at = self.wall() + self.ttl
+        c = d.get('consent')
+        self.consent = {'voice': c.get('voice') is True, 'face': c.get('face') is True, 'version': str(c.get('version', ''))[:20]} if isinstance(c, dict) else {'voice': False, 'face': False, 'version': ''}
         self.outbox.clear()
         self.tasks.clear()
         self.by_client.clear()
@@ -306,6 +311,25 @@ class CompanionServer:
         if any(NLU._has(t, w) for w in HELP):
             return 'HELP', None
         return (proposed if proposed in FRONTEND_ACTIONS else None), None
+
+    def _interpret_text(self, d):
+        """What would this sentence mean? Nothing is executed and nothing is stored: the app uses it to talk first and ask the guest to confirm before any robot move."""
+        text = d.get('text')
+        if not isinstance(text, str) or not text.strip() or len(text.strip()) > MAX_TEXT:
+            raise HttpError(400, 'invalid_request')
+        text = text.strip()
+        action, dest = self._interpret(text, None, None)
+        out = {'action': action}
+        if action == 'GO_TO_PLACE':
+            why = self.sm.escort_refusal()
+            out.update(place=dest, label=self.sm.label(dest), ready=why is None, notice=why or '')
+        elif action == 'GREET':
+            out['reply'] = f"Hello {self.sm.session['nickname']}! I'm your robot companion. Where would you like to go?"
+        elif action == 'ROBOT_INFO':
+            out['reply'] = "I'm a four-legged robot companion. I can walk you to places in this area. Where would you like to go?"
+        elif action == 'HELP' or action is None:
+            out['reply'] = self.sm.answerer(text)
+        return self._json(out)
 
     async def _create_request(self, headers, d):
         text, source, proposed, cid, place = d.get('text'), d.get('source'), d.get('proposed_action'), d.get('client_request_id'), d.get('place')
@@ -402,6 +426,7 @@ class CompanionServer:
                 if self.robot_speech:
                     await self.gw.send({'type': 'intent', 'id': 'say-' + secrets.token_hex(3), 'name': 'say', 'args': {'text': d['text']}})
             elif e.kind == 'session_closed':                          # nothing about the guest is kept after the session
+                self.consent = None
                 self.outbox.clear()
                 self.tasks.clear()
                 self.by_client.clear()

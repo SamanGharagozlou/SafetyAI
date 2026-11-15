@@ -299,3 +299,48 @@ def test_hostile_and_malformed_input():
         assert (await http(port, 'GET', '/'))[0] == 404 and (await http(port, 'GET', '/phone.js'))[0] == 404                 # no pages: the frontend app is the UI
         assert 'access-control-allow-origin' not in hd                                                          # no CORS: same-origin proxy only
     run(with_stack(t))
+
+
+def test_interpret_explains_without_doing_anything():
+    async def t(port, comp, gw):
+        g = Guest(port)
+        await g.join('Maria')
+        before = (gw.robot.pose['x'], gw.robot.pose['y'])
+        cases = [('take me to the front', 'GO_TO_PLACE'), ('take me home', 'GO_TO_PLACE'), ('stop', 'STOP_ROBOT'), ('i am done, bye', 'END_SESSION'),
+                 ('hello', 'GREET'), ('who are you', 'ROBOT_INFO'), ('what places do you know', 'HELP'), ('how hot is the sauna', None)]
+        for text, action in cases:
+            st, r, _ = await g.call('POST', '/api/interpret', {'text': text})
+            assert st == 200 and r['action'] == action, (text, r)
+        st, r, _ = await g.call('POST', '/api/interpret', {'text': 'take me to the front'})
+        assert r['place'] == 'front_2m' and r['label'] == 'Front, 2 m ahead' and r['ready'] is True and r['notice'] == ''
+        assert 'Maria' in (await g.call('POST', '/api/interpret', {'text': 'hello'}))[1]['reply']
+        assert 'reply' in (await g.call('POST', '/api/interpret', {'text': 'how hot is the sauna'}))[1]            # an honest "I don't know", never invented
+        await asyncio.sleep(0.5)
+        assert (gw.robot.pose['x'], gw.robot.pose['y']) == before and comp.sm.state == S.AWAITING_INPUT           # nothing moved, nothing started
+        assert not comp.tasks and not comp.sm.outcomes                                                            # and nothing was stored
+        assert (await http(port, 'POST', '/api/interpret', {'text': 'hi'}))[0] == 401
+        for bad in ({}, {'text': ''}, {'text': 'x' * 2001}, {'text': 5}):
+            assert (await g.call('POST', '/api/interpret', bad))[0] == 400
+    run(with_stack(t))
+
+
+def test_interpret_says_when_the_robot_cannot():
+    async def t(port, comp, gw):
+        g = Guest(port)
+        await g.join()
+        st, r, _ = await g.call('POST', '/api/interpret', {'text': 'take me to the left'})
+        assert r['action'] == 'GO_TO_PLACE' and r['ready'] is False and 'not placed' in r['notice']
+    run(with_stack(t, robot=MockRobot(speed=4.0, localized=False)))
+
+
+def test_consent_is_kept_in_memory_for_the_session_only():
+    async def t(port, comp, gw):
+        st, j, _ = await http(port, 'POST', '/api/session', {'token': TOKEN, 'nickname': 'Ana', 'consent': {'voice': True, 'face': False, 'version': '2026-11-v1'}})
+        assert st == 201 and comp.consent == {'voice': True, 'face': False, 'version': '2026-11-v1'}
+        await http(port, 'DELETE', '/api/session', headers={'Authorization': f'Bearer {j["accessToken"]}'})
+        assert comp.consent is None                                                                           # deleted with the session
+        for junk in ('yes', {'voice': 'true', 'face': 1}, None):                                              # only a real `true` counts as consent
+            st, j, _ = await http(port, 'POST', '/api/session', {'token': TOKEN, 'consent': junk})
+            assert st == 201 and comp.consent['voice'] is False and comp.consent['face'] is False
+            await http(port, 'DELETE', '/api/session', headers={'Authorization': f'Bearer {j["accessToken"]}'})
+    run(with_stack(t))

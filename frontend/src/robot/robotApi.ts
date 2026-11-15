@@ -25,7 +25,21 @@ export interface RobotView {
   readonly notice: string
   readonly robot: { readonly x: number | null; readonly y: number | null; readonly yaw: number | null; readonly available: boolean }
 }
-export interface RobotSessionInfo { readonly authorization: RobotAuthorization; readonly robotName: string; readonly nickname: string; readonly places: readonly RobotPlace[] }
+/** What the guest agreed to at the start. Both default to false: nothing is pre-ticked. Kept by the backend in memory for the session only. */
+export interface RobotConsent { readonly voice: boolean; readonly face: boolean; readonly version: string }
+export const CONSENT_VERSION = '2026-11-v1'
+export const NO_CONSENT: RobotConsent = { voice: false, face: false, version: CONSENT_VERSION }
+
+/** What a sentence would mean. Nothing is executed: the app talks first and asks the guest to confirm before any robot move. */
+export interface Interpretation {
+  readonly action: 'GREET' | 'ROBOT_INFO' | 'HELP' | 'GO_TO_PLACE' | 'STOP_ROBOT' | 'END_SESSION' | null
+  readonly place?: string
+  readonly label?: string
+  readonly ready?: boolean
+  readonly notice?: string
+  readonly reply?: string
+}
+export interface RobotSessionInfo { readonly authorization: RobotAuthorization; readonly robotName: string; readonly nickname: string; readonly places: readonly RobotPlace[]; readonly consent: RobotConsent }
 
 export type RobotErrorCode = 'invalid_qr' | 'robot_busy' | 'robot_unavailable' | 'session_expired' | 'service_unavailable' | 'invalid_response'
 export class RobotApiError extends Error {
@@ -70,12 +84,12 @@ function decodePlace(v: unknown): RobotPlace {
   return { name: v.name, label: v.label, description: v.description, x: v.x, y: v.y, home: v.home }
 }
 
-export async function createRobotSession(qrToken: string, nickname: string, signal?: AbortSignal): Promise<RobotSessionInfo> {
+export async function createRobotSession(qrToken: string, nickname: string, consent: RobotConsent = NO_CONSENT, signal?: AbortSignal): Promise<RobotSessionInfo> {
   if (!qrToken) throw new RobotApiError('invalid_qr')
-  const body = await call(`${ROBOT_API}/session`, { method: 'POST', body: JSON.stringify({ token: qrToken, nickname: nickname.trim().slice(0, 24), lang: (navigator.language || 'en').slice(0, 2) }) }, signal)
+  const body = await call(`${ROBOT_API}/session`, { method: 'POST', body: JSON.stringify({ token: qrToken, nickname: nickname.trim().slice(0, 24), lang: (navigator.language || 'en').slice(0, 2), consent: { voice: consent.voice === true, face: consent.face === true, version: consent.version } }) }, signal)
   if (typeof body.accessToken !== 'string' || body.accessToken.length < 16 || !isNum(body.expiresAt) || body.expiresAt <= Date.now() ||
       !isRecord(body.robot) || typeof body.robot.name !== 'string' || typeof body.nickname !== 'string' || !Array.isArray(body.places) || body.places.length > 100) throw new RobotApiError('invalid_response')
-  return { authorization: { accessToken: body.accessToken, expiresAt: body.expiresAt }, robotName: body.robot.name, nickname: body.nickname, places: body.places.map(decodePlace) }
+  return { authorization: { accessToken: body.accessToken, expiresAt: body.expiresAt }, robotName: body.robot.name, nickname: body.nickname, places: body.places.map(decodePlace), consent }
 }
 
 export async function endRobotSession(auth: RobotAuthorization, signal?: AbortSignal): Promise<string> {
@@ -103,4 +117,16 @@ export async function fetchRobotView(auth: RobotAuthorization, after: number, si
     ready: typeof b.ready === 'boolean' ? b.ready : robot.available, notice: typeof b.notice === 'string' ? b.notice.slice(0, 300) : '',
     robot: { x: orNull(robot.x, isNum), y: orNull(robot.y, isNum), yaw: orNull(robot.yaw, isNum), available: robot.available },
   }
+}
+
+const ACTIONS = ['GREET', 'ROBOT_INFO', 'HELP', 'GO_TO_PLACE', 'STOP_ROBOT', 'END_SESSION']
+/** Ask what a sentence means (POST /api/interpret). No robot action, nothing stored. */
+export async function interpretText(auth: RobotAuthorization, text: string, signal?: AbortSignal): Promise<Interpretation> {
+  const b = await call(`${ROBOT_API}/interpret`, { method: 'POST', body: JSON.stringify({ text: text.trim().slice(0, 500) }) }, signal, auth)
+  const place = b.place
+  if ((b.action !== null && !ACTIONS.includes(b.action as string)) || (place !== undefined && (typeof place !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(place))) ||
+      (b.reply !== undefined && (typeof b.reply !== 'string' || b.reply.length > 2000)) || (b.label !== undefined && typeof b.label !== 'string') ||
+      (b.ready !== undefined && typeof b.ready !== 'boolean') || (b.notice !== undefined && typeof b.notice !== 'string')) throw new RobotApiError('invalid_response')
+  return { action: b.action as Interpretation['action'], place: place as string | undefined, label: b.label as string | undefined, ready: b.ready as boolean | undefined,
+    notice: b.notice as string | undefined, reply: b.reply as string | undefined }
 }
