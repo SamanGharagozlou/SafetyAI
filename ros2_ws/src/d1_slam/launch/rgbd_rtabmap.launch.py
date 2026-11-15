@@ -75,7 +75,9 @@ def generate_launch_description():
         'Grid/DepthDecimation': '4',
     }
     remaps = [('rgb/image', '/camera/image_raw'), ('depth/image', '/camera/depth'),
-              ('rgb/camera_info', '/camera/camera_info'), ('odom', '/odom')]
+              ('rgb/camera_info', '/camera/camera_info'), ('odom', '/odom'),
+              # without the imu_link TF (only published with imu_gravity) RTAB-Map waits 0.5 s per frame for it
+              ('imu', PythonExpression(["'/imu' if '", c('imu_gravity'), "' == 'true' else '/rtabmap_imu_unused'"]))]
 
     import copy
     loc_params = copy.deepcopy(params)

@@ -96,7 +96,10 @@ def generate_launch_description():
     }
     remaps = [('rgb/image', '/camera/image_raw'),
               ('rgb/camera_info', '/camera/camera_info'),
-              ('odom', c('odom_topic'))]
+              ('odom', c('odom_topic')),
+              # the bridge's /imu (frame imu_link has no TF) is not used here; without this RTAB-Map waits
+              # wait_for_transform (0.5 s) for imu_link on every frame
+              ('imu', '/rtabmap_imu_unused')]
 
     # `-d` deletes the database on start; run the other variant to keep and extend an existing map.
     rtabmap_new = Node(

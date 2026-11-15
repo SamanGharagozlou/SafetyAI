@@ -1,3 +1,5 @@
+import os
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
 from launch.substitutions import LaunchConfiguration
@@ -10,7 +12,7 @@ def generate_launch_description():
             ('max_range', '3.0', 'drop points farther than this (m); the model is unreliable beyond ~3 m on this low camera'),
             ('downsample', '4', 'point cloud pixel stride'),
             ('model', 'depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf', 'HF model id'),
-            ('venv', '~/d1_depth_venv', 'virtualenv that has torch + transformers')]
+            ('venv', os.environ.get('D1_DEPTH_VENV', '~/d1_depth_venv'), 'virtualenv that has torch + transformers')]
     la = [DeclareLaunchArgument(n, default_value=d, description=h) for n, d, h in args]
     c = LaunchConfiguration
     node = Node(
