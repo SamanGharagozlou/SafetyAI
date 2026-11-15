@@ -50,11 +50,15 @@ def generate_launch_description():
         'Reg/Strategy': '0',
         'Reg/Force3DoF': 'true',
         'Vis/EstimationType': '1',
-        'Vis/MinInliers': '12',
+        # Loop-closure settings from the offline replay of the 350 s big-map run (tools/offline_eval/lc_variant.sh): with min inliers 12 /
+        # 600 features the replay accepted 2 global closures, with 6 / 1000 / reprojection error 4 it accepted 4; they agreed on ~2 m and
+        # ~8 deg of drift at the end of the loop. RGBD/OptimizeMaxError stays at its default (3) so a wrong closure is still refused.
+        'Vis/MinInliers': '6',
+        'Vis/PnPReprojError': '4',
         'Vis/MaxDepth': s('max_depth'),
         'Kp/MaxDepth': s('max_depth'),
-        'Kp/MaxFeatures': '600',
-        'Vis/MaxFeatures': '600',
+        'Kp/MaxFeatures': '1000',
+        'Vis/MaxFeatures': '1000',
         'Rtabmap/DetectionRate': '2',
         'RGBD/NeighborLinkRefining': s('neighbor_refine'),
         'Optimizer/GravitySigma': ParameterValue(PythonExpression(["'0.3' if '", c('imu_gravity'), "' == 'true' else '0'"]), value_type=str),

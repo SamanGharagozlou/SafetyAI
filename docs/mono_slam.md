@@ -71,3 +71,9 @@ vary). Conclusion: none of the options gives a measurable gain on this run, so `
 by default. The heading-bias correction (SDK yaw drifts about -9.4 deg/min at rest) is physically real and stays on in the bridge
 (`heading_bias_comp`), but has not been verified live on the robot yet. Speed scale of the SDK velocity is still unmeasured
 (needs a tape-measure test).
+
+## Loop closure (2026-11-15)
+* The big-map run (`jetson_big_map`, 350 s) had **0 accepted loop closures** in the live database, so the map is the odometry stitched together (about 2 m / 8 deg of drift at the end of the loop).
+* Offline replay of the recorded bag (`tools/offline_eval/lc_variant.sh`, private ROS domain): current settings 2 global + 1 local closure, `Vis/MinInliers 6` + 1000 features + `Vis/PnPReprojError 4` + `RGBD/OptimizeMaxError 5` gave 4 global + 2 local; a looser variant added nothing (81 rejected candidates). All variants agree on the drift (2 m, ~8 deg), which suggests the closures are correct. Replays are not deterministic (RANSAC, load).
+* `rgbd_rtabmap.launch.py` now uses `Vis/MinInliers 6`, `Vis/PnPReprojError 4`, 1000 features and keeps `RGBD/OptimizeMaxError` at its default. *Unverified live:* the replay of exactly this combination did not finish (its database was corrupted when the container was stopped); the tested variant had `OptimizeMaxError 5`.
+* Also in the launch: the unused `/imu` input is remapped away (RTAB-Map waited 0.5 s per frame for the missing `imu_link` TF).
