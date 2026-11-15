@@ -56,7 +56,7 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
     if (blocked) return
     setPending({ key: ++counter.current, text: `Take me to ${label(name)}`, proposedAction: 'GO_TO_PLACE', place: name })
   }
-  const talk_ = useConversation({ auth: info.authorization, voice: info.consent.voice, awaitingConfirm: !!pending?.place, lang: navigator.language || 'en',
+  const talk_ = useConversation({ auth: info.authorization, voice: info.consent.voice, awaitingConfirm: !!pending?.place, moving: ['NAVIGATING', 'PREPARING', 'RETURNING_HOME'].includes(view?.state ?? ''), lang: navigator.language || 'en',
     onPropose: name => { if (!blocked) setPending({ key: ++counter.current, text: `Take me to ${label(name)}`, proposedAction: 'GO_TO_PLACE', place: name }) },
     onYes: () => setYes(n => n + 1), onNo: () => setPending(null), onStop: () => { void stop() }, onFinish: onLeave, onExpired })
   // The guest agreed to voice by tapping the consent button, so greet aloud and then listen.

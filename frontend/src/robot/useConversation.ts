@@ -13,6 +13,8 @@ interface Options {
   voice: boolean
   /** A "Shall I take you there?" question is open: a spoken yes / no answers it. */
   awaitingConfirm: boolean
+  /** The robot is walking: it does not listen on its own (nobody is expected to talk). A tap on the microphone still works, e.g. to say stop. */
+  moving: boolean
   lang: string
   onPropose(place: string): void
   onYes(): void
@@ -56,7 +58,7 @@ export function useConversation(o: Options) {
   const say = useCallback(async (text: string, listenAfter = true) => {
     setSaid(text)
     if (!started.current) { setPhase('idle'); return }
-    if (mutedRef.current) { setPhase('idle'); if (listenAfter && opts.current.voice) begin(); return }
+    if (mutedRef.current) { setPhase('idle'); if (listenAfter && opts.current.voice) begin(true); return }
     speaking.current?.abort()
     const controller = new AbortController()
     speaking.current = controller
@@ -65,7 +67,7 @@ export function useConversation(o: Options) {
     if (!alive.current || controller.signal.aborted) return
     setPhase('idle')
     if (!spoke) setNotice('I could not speak out loud on this phone (check the media volume and that a text-to-speech voice is installed; ' + speechDiagnostics() + '). You can read me here and tap the microphone to answer.')
-    if (listenAfter && started.current && opts.current.voice) begin()
+    if (listenAfter && started.current && opts.current.voice) begin(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -100,23 +102,28 @@ export function useConversation(o: Options) {
     }
   }
 
-  function begin() {
+  function begin(auto = false) {
     if (!alive.current || !opts.current.voice || !recognitionSupported()) return
+    if (auto && opts.current.moving) { setPhase('idle'); return }
     started.current = true
     speaking.current?.abort()
     stopSpeaking()
     handle.current?.abort()
     setNotice('')
+    autoRound.current = auto
     setPhase('listening')
     const mine = handle.current = listen(opts.current.lang)
     mine.result.then(text => { if (handle.current === mine && alive.current) { silent.current = 0; void understand(text) } })
       .catch(error => {
         if (handle.current !== mine || !alive.current) return
-        if (error instanceof SpeechError && error.code === 'no-speech' && ++silent.current < 3) { begin(); return }
+        if (error instanceof SpeechError && error.code === 'no-speech' && ++silent.current < 3 && !opts.current.moving) { begin(true); return }
         silent.current = 0
         setPhase('idle'); setNotice(errorText(error))
       })
   }
+  // when a walk starts, an automatic listening round ends: the guest is not expected to talk now
+  const autoRound = useRef(false)
+  useEffect(() => { if (o.moving && autoRound.current) { handle.current?.abort(); setPhase(p => p === 'listening' ? 'idle' : p) } }, [o.moving])
   const stopListening = () => { handle.current?.stop() }
   /** Typed text goes through exactly the same path as speech. */
   const submitText = (text: string) => { const t = text.trim(); if (t) { handle.current?.abort(); void understand(t) } }
