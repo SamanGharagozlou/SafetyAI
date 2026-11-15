@@ -23,6 +23,8 @@ INTENTS = {
     'stand_up': 'stand up',
     'lie_down': 'lie down',
     'say': 'speak args.text (published on /say for the TTS node)',
+    'follow_lock': 'lock onto the guest in front of the camera (d1_follow)',
+    'follow_release': 'forget the locked guest (d1_follow)',
 }
 
 KEEP_NULL = ('pose', 'battery', 'active_goal')     # present in every `state`, null when unknown
