@@ -332,20 +332,28 @@
     </div>
   </div>
 
-  <div class="note"><b>Pick both before you press Talk.</b> Device names only
-  appear once the microphone has been allowed, and a speaker you pair after
-  loading the page shows up on its own.
+  <div id="ios-audio" class="note" style="display:none;border-left:3px solid #c8a33a">
+    <b>This device cannot send a call to a Bluetooth speaker.</b> Not a fault in
+    this page, and no browser here behaves differently — Chrome, Edge and
+    Firefox on iPhone are all Safari underneath, because Apple requires WebKit.
+    Use the Mac console for the voice and keep this phone for the robot
+    controls.
+  </div>
+
+  <div class="note"><b>Pick both before you press Talk.</b> Names appear once
+  the microphone has been allowed, and a speaker paired later shows up on its
+  own.
   <br><br>
-  <b>If a Bluetooth speaker plays music but not the call:</b> that is iOS, not
-  this page. Music is output-only, so it goes over A2DP in stereo. The moment a
-  call opens the microphone, iOS switches to two-way audio, which over
-  Bluetooth needs the HFP profile — and most Bluetooth <i>speakers</i> have no
-  usable HFP, so iOS falls back to the phone's own speaker. iOS Safari will not
-  even list output devices, so the dropdown above is empty there and nothing in
-  a web page can override it. What does work: <b>run the call from the Mac</b>
-  (macOS routes input and output separately, so an A2DP speaker plus any mic is
-  fine), or use a Bluetooth <i>headset</i>, which has HFP — routed, but mono and
-  8–16&nbsp;kHz.</div>
+  <b>Bluetooth speaker plays music but not the call?</b> Music is output-only,
+  so iOS uses A2DP. Opening the microphone switches iOS to two-way audio, which
+  over Bluetooth needs HFP — most Bluetooth <i>speakers</i> have none, so iOS
+  drops to the phone's own speaker. Safari exposes no output picker and no
+  <code>setSinkId</code>, and every iPhone browser is WebKit, so there is no
+  browser-side fix and no other browser to try. Releasing the mic
+  between turns would restore A2DP but kill barge-in, which is a worse trade for
+  a greeter. <b>Run voice from the Mac</b> — macOS routes input and output
+  independently, so an A2DP speaker plus any mic works — or use a Bluetooth
+  <i>headset</i>, which has HFP, at mono 8–16&nbsp;kHz.</div>
 
   <div class="row" style="margin-bottom:12px;align-items:center">
     <div style="flex:2">
@@ -753,9 +761,11 @@ function outputSelectable() {
 async function listSpeakers() {
   const sel = $('spkpick')
   if (!outputSelectable()) {
-    sel.innerHTML = '<option value="">not selectable in this browser</option>'
+    sel.innerHTML = '<option value="">not selectable on this device</option>'
     sel.disabled = true
-    $('spk-note').textContent = '— this browser picks the output itself; see below'
+    $('spk-note').textContent = '— iOS chooses this itself'
+    // Say it where it will be read, rather than leaving it to a paragraph.
+    $('ios-audio').style.display = ''
     return []
   }
   try {
