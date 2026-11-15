@@ -183,6 +183,7 @@ class Dashboard(Node):
                        'rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|stimeout;20000000')
         self.env = env
         self.procs = {}
+        self._publish_active_places(clear=True)              # nothing loaded at start: the guest app offers no places yet
 
     # ------------------------------------------------------------------ small helpers
     def _set(self, k, v):
@@ -604,6 +605,8 @@ class Dashboard(Node):
             self.pois, self.pois_file = pois, path
 
     def _write_pois(self, path=None):
+        if path is None and self.ui_mode == 'navigation':
+            self._publish_active_places()
         path = path or self._places_path()
         if not path:
             return {'ok': False, 'error': 'no map loaded: load or start a map first'}
@@ -621,6 +624,22 @@ class Dashboard(Node):
             return {'ok': True, 'file': path, 'count': len(data)}
         except OSError as ex:
             return {'ok': False, 'error': f'could not save places: {ex}'}
+
+    def _publish_active_places(self, clear=False):
+        """active_places.yaml = the places of the map that is loaded for navigation. d1_gateway and d1_companion follow this file,
+        so the guest app offers the places of the loaded map (and none while no map is loaded / ready)."""
+        path = os.path.join(self.maps_dir, 'active_places.yaml')
+        try:
+            os.makedirs(self.maps_dir, exist_ok=True)
+            with self.lock:
+                data = {} if clear else {k: dict(v) for k, v in self.pois.items()}
+            tmp = path + '.tmp'
+            with open(tmp, 'w') as f:
+                f.write('# Places of the map loaded in the dashboard (' + ('none' if clear else str(self.current_map)) + '). Written by the dashboard; followed by d1_gateway / d1_companion.\n'
+                        + (yaml.safe_dump(data, sort_keys=False, allow_unicode=True) if data else '{}\n'))
+            os.replace(tmp, path)
+        except OSError as ex:
+            self.get_logger().warning(f'could not write active places: {ex}')
 
     def poi_edit(self, b):
         """b: {action: add|update|delete|save|clear, name, x, y, yaw, label, aliases, description}. Every change is written to the places file at once."""
@@ -774,6 +793,7 @@ class Dashboard(Node):
             self.pose_confirmed = bool(self.start_pose)       # a saved start pose counts as placed
             self.localized = False
         self._load_pois()
+        self._publish_active_places()
         self.start('static_nav', db=m['yaml'])
         return {'ok': True, 'name': m['name'], 'start_pose': self.start_pose, 'placed': self.pose_confirmed, 'places': len(self.pois)}
 
@@ -875,8 +895,10 @@ class Dashboard(Node):
                 if not self.running('perception'):
                     self.start('perception')
                 t0 = time.time()
-                while time.time() - t0 < 45 and not self._depth_alive():
-                    time.sleep(0.5)
+                # importing torch + loading the model takes 20-90 s when the Jetson is busy: wait, and only restart when the process died or stayed deaf for 3 minutes
+                while time.time() - t0 < 180 and not self._depth_alive() and self.running('perception'):
+                    self._job('load_map', 'running', f'starting camera and depth (the depth model is loading, {int(time.time() - t0)} s)...')
+                    time.sleep(1.0)
                 if self._depth_alive():
                     break
                 self._job('load_map', 'running', f'depth did not start (try {attempt}/3), restarting the camera + depth...')
@@ -889,6 +911,7 @@ class Dashboard(Node):
             self.start('localization', db=db)
             time.sleep(4.0)
             self.start('nav2')
+            self._publish_active_places()
             self._job('load_map', 'done', f'"{name}" loaded: move the robot until it localizes')
         except Exception as ex:  # noqa: BLE001
             self._job('load_map', 'error', str(ex))
@@ -914,6 +937,7 @@ class Dashboard(Node):
             self.start_pose, self.pose_confirmed = None, False
             self.trail = []
             self.job = {'name': None, 'status': 'idle', 'message': ''}
+        self._publish_active_places(clear=True)
         msg = 'all stopped'
         if kept_robot:
             msg += ' (robot link kept running' + (': the robot is standing, lie it down before stopping the link' if standing else '') + ')'
