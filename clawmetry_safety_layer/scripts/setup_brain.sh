@@ -12,7 +12,7 @@ require_core
 
 step "brain packages"
 "$PY" -m pip install -q -e ".[dev,edge,brain]"
-ok "leukerbad-g1[dev,edge,brain]"
+ok "clawmetry-safety-layer[dev,edge,brain]"
 
 step "Cosmos Reason 2 (vLLM venv)"
 CV="${COSMOS_VENV:-$HOME/cosmos-reason2/.venv}"

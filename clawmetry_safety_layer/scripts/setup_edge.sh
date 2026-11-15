@@ -35,7 +35,7 @@ step "venv $VENV"
 if [ ! -x "$PY" ]; then "$PYBIN" -m venv $SYS "$VENV" || die "venv failed (apt: python3.10-venv)"; ok created; else ok exists; fi
 "$PY" -m pip install -q --upgrade pip
 "$PY" -m pip install -q -e ".[edge,dev]"
-ok "leukerbad-g1[edge,dev]"
+ok "clawmetry-safety-layer[edge,dev]"
 if [ "${SCENE:-0}" = 1 ]; then
   "$PY" -m pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cpu && "$PY" -m pip install -q -e ".[scene]" && ok "CLIP scene classifier"
 fi

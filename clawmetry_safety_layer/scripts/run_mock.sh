@@ -12,7 +12,11 @@ export BIND_HOST=127.0.0.1 EDGE_PORT="${EDGE_PORT:-8766}" BRAIN_PORT="${BRAIN_PO
 export EDGE_URL="http://127.0.0.1:$EDGE_PORT" BRAIN_URL="http://127.0.0.1:$BRAIN_PORT"
 LOGDIR="${LOGDIR:-/tmp/leukerbad-mock}"; mkdir -p "$LOGDIR"
 PY=.venv/bin/python
-[ -f assets/venue/spa_walkthrough.mp4 ] || { echo "assets/venue/spa_walkthrough.mp4 missing"; exit 1; }
+if [ "$FRAME_SOURCE" = video ] && [ ! -f "${FRAME_VIDEO:-assets/venue/spa_walkthrough.mp4}" ]; then
+  # the walkthrough video is private (guests are recognisable, docs/PRIVACY.md) and not shipped in the SafetyAI kit
+  echo "no walkthrough video: running without camera (FRAME_SOURCE=none; set FRAME_VIDEO=<file> for your own)"
+  export FRAME_SOURCE=none
+fi
 pids=()
 cleanup() { for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done; wait 2>/dev/null || true; }
 trap cleanup EXIT INT TERM

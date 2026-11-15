@@ -2,7 +2,7 @@
 # Deploy the edge to the venue team PC over SSH (Tailscale first): rsync the repo WITHOUT .env and WITHOUT assets,
 # run scripts/setup_edge.sh there, then print the three checks.
 #
-#   bash scripts/remote/deploy_edge.sh <user@host> [remote_dir]      # remote_dir default: leukerbad-g1 (in ~)
+#   bash scripts/remote/deploy_edge.sh <user@host> [remote_dir]      # remote_dir default: $DEPLOY_DIR or SafetyAI/clawmetry_safety_layer (in ~)
 #   YOLO=1 bash scripts/remote/deploy_edge.sh <user@host>             # passed through to setup_edge.sh
 #   LIST=1 bash scripts/remote/deploy_edge.sh                         # only list what would be copied (no SSH)
 #
@@ -30,7 +30,7 @@ if [ "${LIST:-0}" = 1 ]; then
 fi
 
 TARGET="${1:?usage: deploy_edge.sh <user@host> [remote_dir]}"
-RDIR="${2:-leukerbad-g1}"
+RDIR="${2:-${DEPLOY_DIR:-SafetyAI/clawmetry_safety_layer}}"
 HOST="${TARGET#*@}"
 
 case "$HOST" in
