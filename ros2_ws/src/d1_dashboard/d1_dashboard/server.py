@@ -28,6 +28,7 @@ import time  # noqa: E402
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # noqa: E402
 from urllib.parse import parse_qs, urlparse  # noqa: E402
 
+import numpy as np  # noqa: E402
 import rclpy  # noqa: E402
 import tf2_ros  # noqa: E402
 from action_msgs.msg import GoalStatus  # noqa: E402
@@ -39,9 +40,11 @@ from rclpy.executors import MultiThreadedExecutor  # noqa: E402
 from rclpy.node import Node  # noqa: E402
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy  # noqa: E402
 from rclpy.time import Time  # noqa: E402
-from sensor_msgs.msg import BatteryState  # noqa: E402
+from sensor_msgs.msg import BatteryState, PointCloud2  # noqa: E402
 from std_msgs.msg import Bool, Int32, String  # noqa: E402
 
+BAG_TOPICS = ['/camera/image_raw', '/camera/camera_info', '/camera/depth', '/odom', '/odom_sdk', '/imu', '/tf', '/tf_static',
+              '/cmd_vel', '/ctrl_mode', '/connected', '/battery']
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
 MODE_NAMES = {0: 'damping', 1: 'standing', 3: 'moving', 18: 'moving', 51: 'lying'}
 STANDING_MODES = (1, 3, 18)
@@ -108,6 +111,7 @@ class Dashboard(Node):
     def __init__(self, args):
         super().__init__('d1_dashboard')
         self.args = args
+        self.external_robot = str(getattr(args, 'external_robot', 'false')).lower() in ('1', 'true', 'yes')
         self.lock = threading.RLock()
         self.maps_dir = os.path.expanduser(args.maps_dir)
         self.log_dir = os.path.join(self.maps_dir, 'logs')
@@ -118,6 +122,7 @@ class Dashboard(Node):
         self.pose, self.pose_frame, self.localized = None, None, False
         self.grids = {}                                     # name -> dict(version, w, h, res, ox, oy, data)
         self.plan = []
+        self.trail, self.trail_frame = [], None          # robot path (x, y) in the pose frame, for the start marker + trail
         self.nav = {'status': 'idle', 'goal': None, 'distance_remaining': None, 'goal_handle': None}
         self.teleop = (0.0, 0.0, 0.0, 0.0)                   # vx, vy, wz, t
         self._teleop_active = False
@@ -133,6 +138,10 @@ class Dashboard(Node):
         for name, topic in (('map', '/map'), ('global', '/global_costmap/costmap'), ('local', '/local_costmap/costmap')):
             self.create_subscription(OccupancyGrid, topic, lambda m, n=name: self._grid(n, m), qos_latched)
         self.create_subscription(Path, '/plan', self._on_plan, 10)
+        # live obstacles straight from the depth cloud (works in every mode, independent of RTAB-Map / Nav2)
+        self.create_subscription(PointCloud2, '/camera/points', self._on_cloud,
+                                 QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
+        self._live_t = 0.0
 
         self.pub_vel = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_cmd = self.create_publisher(String, '/robot_cmd', 10)
@@ -168,6 +177,57 @@ class Dashboard(Node):
         with self.lock:
             self.plan = pts[::step] + ([pts[-1]] if pts and (len(pts) - 1) % step else [])
 
+    LIVE_MIN_H, LIVE_MAX_H = 0.10, 0.50        # obstacle band above the floor (same as the costmap config)
+    LIVE_RES, LIVE_HALF, LIVE_INFL = 0.05, 4.0, 4   # 5 cm cells, 8 x 8 m window around the robot, 0.2 m halo
+
+    def _on_cloud(self, m):
+        """Rasterise the obstacle band of the live camera cloud around the robot -> grid 'live' (100 = obstacle, 45 = halo)."""
+        now = time.monotonic()
+        if now - self._live_t < 0.3 or self.pose is None:
+            return
+        self._live_t = now
+        target = 'map' if self.localized else 'odom'
+        try:   # the cloud is stamped with capture time (~1.4 s before it arrives): use the pose at that time
+            tf = self.tf_buffer.lookup_transform(target, m.header.frame_id, Time.from_msg(m.header.stamp))
+        except Exception:  # noqa: BLE001
+            try:
+                tf = self.tf_buffer.lookup_transform(target, m.header.frame_id, Time())
+            except Exception:  # noqa: BLE001
+                return
+        q, t = tf.transform.rotation, tf.transform.translation
+        x, y, z, w = q.x, q.y, q.z, q.w
+        R = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                      [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                      [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+        P = np.frombuffer(bytes(m.data), np.float32).reshape(-1, 3).astype(np.float64)
+        if len(P) == 0:
+            return
+        W = P @ R.T + np.array([t.x, t.y, t.z])
+        sel = (W[:, 2] > self.LIVE_MIN_H) & (W[:, 2] < self.LIVE_MAX_H)
+        res, half = self.LIVE_RES, self.LIVE_HALF
+        cx, cy = self.pose[0], self.pose[1]
+        ox, oy = math.floor((cx - half) / res) * res, math.floor((cy - half) / res) * res
+        n = int(2 * half / res)
+        ix, iy = ((W[sel, 0] - ox) / res).astype(int), ((W[sel, 1] - oy) / res).astype(int)
+        ok = (ix >= 0) & (ix < n) & (iy >= 0) & (iy < n)
+        counts = np.zeros((n, n), np.int32)
+        np.add.at(counts, (iy[ok], ix[ok]), 1)
+        obst = counts >= 3
+        k = self.LIVE_INFL
+        pad = np.pad(obst, k)
+        infl = np.zeros_like(obst)
+        for dy in range(-k, k + 1):
+            for dx in range(-k, k + 1):
+                if dx * dx + dy * dy <= k * k:
+                    infl |= pad[k + dy:k + dy + n, k + dx:k + dx + n]
+        data = np.zeros((n, n), np.int8)
+        data[infl] = 45
+        data[obst] = 100
+        with self.lock:
+            old = self.grids.get('live', {'version': 0})
+            self.grids['live'] = {'version': old['version'] + 1, 'w': n, 'h': n, 'res': res, 'ox': ox, 'oy': oy,
+                                  'data': data.tobytes()}
+
     def _tick_pose(self):
         try:
             tf = self.tf_buffer.lookup_transform('map', 'base_footprint', Time())
@@ -182,6 +242,12 @@ class Dashboard(Node):
         yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
         with self.lock:
             self.pose, self.pose_frame, self.localized = (t.x, t.y, yaw), frame, ok
+            if frame != self.trail_frame:                # frame switched (odom -> map): restart the trail in the new frame
+                self.trail, self.trail_frame = [], frame
+            if not self.trail or math.hypot(t.x - self.trail[-1][0], t.y - self.trail[-1][1]) > 0.08:
+                self.trail.append((round(t.x, 3), round(t.y, 3)))
+                if len(self.trail) > 3000:
+                    self.trail = self.trail[::2]
 
     # ------------------------------------------------------------------ teleop and robot commands
     def set_teleop(self, vx, vy, wz):
@@ -276,8 +342,10 @@ class Dashboard(Node):
             self.procs[name] = p
         return p
 
-    def proc_cmds(self, name, db=None):
+    def proc_cmds(self, name, db=None, bag=None):
         a = self.args
+        if name == 'bag':
+            return ['ros2', 'bag', 'record', '-o', bag] + BAG_TOPICS
         if name == 'robot':
             return ['ros2', 'launch', 'agibot_d1_bridge', 'bridge.launch.py', f'local_ip:={a.local_ip}', f'robot_ip:={a.robot_ip}']
         if name == 'perception':
@@ -294,14 +362,18 @@ class Dashboard(Node):
                 os.popen('ros2 pkg prefix d1_slam').read().strip(), 'share/d1_slam/rviz/mapping.rviz')]
         raise KeyError(name)
 
-    def start(self, name, db=None):
-        return self.make_proc(name, self.proc_cmds(name, db)).start()
+    def start(self, name, db=None, bag=None):
+        if name == 'robot' and self.external_robot:      # the bridge is owned by someone else (SDK allows one client)
+            return False
+        return self.make_proc(name, self.proc_cmds(name, db, bag)).start()
 
     def stop(self, name):
         p = self.procs.get(name)
         return p.stop() if p else False
 
     def running(self, name):
+        if name == 'robot' and self.external_robot:
+            return True
         p = self.procs.get(name)
         return bool(p and p.running())
 
@@ -315,7 +387,7 @@ class Dashboard(Node):
             started.append('perception')
         return {'ok': True, 'started': started}
 
-    def start_map(self, name=None):
+    def start_map(self, name=None, record=True):
         if self.running('mapping'):
             return {'ok': False, 'error': 'mapping is already running'}
         for n in ('nav2', 'localization'):
@@ -330,8 +402,14 @@ class Dashboard(Node):
                 self.grids.pop(g, None)
             self.plan = []
             self.current_map, self.ui_mode = name, 'mapping'
+            self.trail = []
         self.start('mapping', db=os.path.join(self.maps_dir, name + '.db'))
-        return {'ok': True, 'name': name}
+        bag = None
+        if record:
+            bag = os.path.join(self.maps_dir, name + '_bag')
+            self.stop('bag')
+            self.start('bag', bag=bag)
+        return {'ok': True, 'name': name, 'bag': bag}
 
     def _job(self, name, status, message=''):
         with self.lock:
@@ -361,10 +439,14 @@ class Dashboard(Node):
             self._job('save_map', 'running', 'flushing the RTAB-Map database (stopping mapping)...')
             db = os.path.join(self.maps_dir, (self.current_map or name) + '.db')
             self.stop('mapping')
+            self.stop('bag')                                   # SIGINT: rosbag2 finalises the bag
             if db != base + '.db' and os.path.exists(db):
                 os.replace(db, base + '.db')
+            bagdir = os.path.join(self.maps_dir, (self.current_map or name) + '_bag')
             meta = {'name': name, 'created': time.strftime('%F %T'), 'db': base + '.db', 'grid': base + '_grid.yaml',
                     'db_bytes': os.path.getsize(base + '.db') if os.path.exists(base + '.db') else 0}
+            if os.path.isdir(bagdir):
+                meta['bag'] = bagdir
             with open(base + '.json', 'w') as f:
                 json.dump(meta, f, indent=1)
             with self.lock:
@@ -393,7 +475,7 @@ class Dashboard(Node):
         if not os.path.exists(db):
             return {'ok': False, 'error': f'no database for "{name}"'}
         self.cancel_goal('load map')
-        for n in ('mapping', 'nav2', 'localization'):
+        for n in ('mapping', 'bag', 'nav2', 'localization'):
             self.stop(n)
         if not self.running('robot') or not self.running('perception'):
             self.start_process()
@@ -403,6 +485,7 @@ class Dashboard(Node):
                 self.grids.pop(g, None)
             self.plan = []
             self.current_map, self.ui_mode = name, 'navigation'
+            self.trail = []
         self.start('localization', db=db)
         threading.Timer(4.0, lambda: self.start('nav2')).start()
         return {'ok': True, 'name': name}
@@ -410,7 +493,7 @@ class Dashboard(Node):
     def clear_all(self, stop_robot=False):
         self.cancel_goal('clear all')
         self.teleop = (0.0, 0.0, 0.0, 0.0)
-        for n in ('nav2', 'localization', 'mapping', 'rviz', 'perception'):
+        for n in ('nav2', 'localization', 'mapping', 'bag', 'rviz', 'perception'):
             self.stop(n)
         kept_robot = False
         standing = self.mode in STANDING_MODES
@@ -423,6 +506,7 @@ class Dashboard(Node):
             self.plan = []
             self.nav.update(status='idle', goal=None, distance_remaining=None, goal_handle=None)
             self.ui_mode, self.current_map = 'idle', None
+            self.trail = []
             self.job = {'name': None, 'status': 'idle', 'message': ''}
         msg = 'all stopped'
         if kept_robot:
@@ -430,7 +514,7 @@ class Dashboard(Node):
         return {'ok': True, 'message': msg}
 
     def shutdown_all(self):
-        for n in ('nav2', 'localization', 'mapping', 'rviz', 'perception'):
+        for n in ('nav2', 'localization', 'mapping', 'bag', 'rviz', 'perception'):
             self.stop(n)
         if self.mode not in STANDING_MODES:
             self.stop('robot')
@@ -445,7 +529,7 @@ class Dashboard(Node):
                           'battery': None if self.battery is None else round(self.battery * 100),
                           'standing': self.mode in STANDING_MODES},
                 'pose': self.pose, 'pose_frame': self.pose_frame, 'localized': self.localized,
-                'nav': nav, 'plan': self.plan,
+                'nav': nav, 'plan': self.plan, 'trail': self.trail[-600:] if len(self.trail) <= 600 else self.trail[::max(1, len(self.trail) // 600)],
                 'procs': {n: p.info() for n, p in self.procs.items()},
                 'job': self.job,
                 'grids': {n: g['version'] for n, g in self.grids.items()},
@@ -547,7 +631,7 @@ def make_handler(dash):
                     if a == 'start_process':
                         return self._send(200, dash.start_process())
                     if a == 'start_map':
-                        return self._send(200, dash.start_map(b.get('name')))
+                        return self._send(200, dash.start_map(b.get('name'), bool(b.get('record', True))))
                     if a == 'save_map':
                         return self._send(200, dash.save_map(b.get('name')))
                     if a == 'load_map':
@@ -557,11 +641,12 @@ def make_handler(dash):
                     return self._send(400, {'ok': False, 'error': 'unknown action'})
                 if u == '/api/process':
                     name, act = b.get('name', ''), b.get('action', '')
-                    if name not in ('robot', 'perception', 'mapping', 'localization', 'nav2', 'rviz'):
+                    if name not in ('robot', 'perception', 'mapping', 'bag', 'localization', 'nav2', 'rviz'):
                         return self._send(400, {'ok': False, 'error': 'unknown process'})
                     if act == 'start':
                         db = os.path.join(dash.maps_dir, (dash.current_map or 'manual') + '.db')
-                        return self._send(200, {'ok': dash.start(name, db=db)})
+                        bag = os.path.join(dash.maps_dir, time.strftime('manual_%Y%m%d_%H%M%S') + '_bag')
+                        return self._send(200, {'ok': dash.start(name, db=db, bag=bag)})
                     if act == 'stop':
                         if name == 'robot' and dash.mode in STANDING_MODES:
                             return self._send(200, {'ok': False, 'error': 'robot is standing: lie it down first'})
@@ -587,6 +672,7 @@ def main():
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--maps-dir', default='~/d1_maps')
+    ap.add_argument('--external-robot', default='false', help='true: a bridge already runs elsewhere; never start/stop one')
     args, ros_args = ap.parse_known_args()
     rclpy.init(args=ros_args)
     dash = Dashboard(args)

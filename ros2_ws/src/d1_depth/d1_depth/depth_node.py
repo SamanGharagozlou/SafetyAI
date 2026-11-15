@@ -222,11 +222,14 @@ class DepthNode(Node):
             self.get_logger().error(f'unsupported encoding {msg.encoding}', throttle_duration_sec=10.0)
             return
         h, w = msg.height, msg.width
-        try:
-            tf = self.tf_buffer.lookup_transform(self.floor_frame, msg.header.frame_id, Time())
-        except Exception as e:  # noqa: BLE001
-            self.get_logger().warn(f'no TF {self.floor_frame} -> {msg.header.frame_id}: {e}', throttle_duration_sec=5.0)
-            return
+        try:   # pose at the (capture-time) stamp of the image; fall back to the latest pose
+            tf = self.tf_buffer.lookup_transform(self.floor_frame, msg.header.frame_id, Time.from_msg(msg.header.stamp))
+        except Exception:  # noqa: BLE001
+            try:
+                tf = self.tf_buffer.lookup_transform(self.floor_frame, msg.header.frame_id, Time())
+            except Exception as e:  # noqa: BLE001
+                self.get_logger().warn(f'no TF {self.floor_frame} -> {msg.header.frame_id}: {e}', throttle_duration_sec=5.0)
+                return
         tr, q = tf.transform.translation, tf.transform.rotation
         R = quat_to_matrix(q.x, q.y, q.z, q.w)
         t = np.array([tr.x, tr.y, tr.z])

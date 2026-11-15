@@ -49,3 +49,21 @@ Drive with `ros2 run agibot_d1_bridge keyboard_teleop` (robot standing, clear sp
 6. **Standing -> moving takes ~2 s.** The first `move` after `stand_up` is refused (`0x3007`) while the SDK switches state (mode 1 -> 18); the bridge keeps retrying and motion starts after ~2 s. Expect a start delay in teleop and Nav2.
 7. **SDK link** can die after Wi-Fi hiccups (`async_receive_from` error) and does not self-heal; the bridge now exits and the launch respawns it.
 8. Setup: `ros-humble-rtabmap-ros`, `ros-humble-image-proc`, `ros-humble-camera-calibration` installed. `~/.local` NumPy 2.x conflicts with ROS OpenCV; `d1_camera` strips user site-packages itself.
+
+## Does IMU gravity / odometry fusion / neighbor refinement help? (offline replay, 2026-11-14)
+
+Four replays of the same 385 s recorded run (separate ROS domains): A raw odometry, B heading-bias-corrected odometry,
+C = B + IMU gravity constraint (`imu_gravity:=true`), D = B + `RGBD/NeighborLinkRefining` (`neighbor_refine:=true`).
+
+| variant | nodes | loop closures accepted/rejected | occupied m² | stray % |
+|---|---|---|---|---|
+| A raw | 46 | 0 / 8 | 9.5 | 9.0 |
+| B bias-fix | 33 | 0 / 19 | 11.4 | 9.7 |
+| C gravity | 34 | 0 / 9 | 9.9 | 9.9 |
+| D refine | 32 | 0 / 8 | 10.8 | 9.9 |
+
+No variant closed a loop and the map metrics differ within run-to-run noise (replays are paced in real time, node counts
+vary). Conclusion: none of the options gives a measurable gain on this run, so `imu_gravity` and `neighbor_refine` stay **off**
+by default. The heading-bias correction (SDK yaw drifts about -9.4 deg/min at rest) is physically real and stays on in the bridge
+(`heading_bias_comp`), but has not been verified live on the robot yet. Speed scale of the SDK velocity is still unmeasured
+(needs a tape-measure test).
