@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { interpretText, RobotApiError } from './robotApi'
 import type { RobotAuthorization } from './robotApi'
-import { listen, recognitionSupported, speak, SpeechError, stopSpeaking, yesNo } from './speech'
+import { listen, recognitionSupported, speak, speechDiagnostics, SpeechError, stopSpeaking, yesNo } from './speech'
 import type { ListenHandle } from './speech'
 
 export type Phase = 'idle' | 'listening' | 'thinking' | 'speaking'
@@ -62,7 +62,7 @@ export function useConversation(o: Options) {
     const spoke = await speak(text, opts.current.lang, controller.signal)
     if (!alive.current || controller.signal.aborted) return
     setPhase('idle')
-    if (!spoke) setNotice('I could not speak out loud on this phone (check the media volume). You can read me here and tap the microphone to answer.')
+    if (!spoke) setNotice('I could not speak out loud on this phone (check the media volume and that a text-to-speech voice is installed; ' + speechDiagnostics() + '). You can read me here and tap the microphone to answer.')
     if (listenAfter && started.current && opts.current.voice) begin()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

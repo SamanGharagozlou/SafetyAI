@@ -58,24 +58,28 @@ const voicesReady = () => new Promise<void>(resolve => {
   setTimeout(done, 1500)
 })
 
-/** Speak a sentence; resolves true when it was spoken, false when the browser refused or speech does not exist. */
-export async function speak(text: string, lang: string, signal?: AbortSignal): Promise<boolean> {
-  if (!speechOutputSupported() || !text.trim()) return false
+/** Snapshot for the on-screen hint when speech is silent. */
+export const speechDiagnostics = () => speechOutputSupported() ? `${window.speechSynthesis.getVoices().length} voices` : 'no speech output'
+
+function utter(text: string, lang: string | null, signal?: AbortSignal): Promise<boolean> {
   const synth = window.speechSynthesis
-  await voicesReady()
-  if (signal?.aborted) return false
   return new Promise<boolean>(resolve => {
     const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = lang
-    const voice = synth.getVoices().find(v => v.lang.toLowerCase() === lang.toLowerCase()) ?? synth.getVoices().find(v => v.lang.toLowerCase().startsWith(lang.slice(0, 2).toLowerCase()))
-    if (voice) utterance.voice = voice
+    if (lang) {
+      utterance.lang = lang
+      const voice = synth.getVoices().find(v => v.lang.toLowerCase() === lang.toLowerCase()) ?? synth.getVoices().find(v => v.lang.toLowerCase().startsWith(lang.slice(0, 2).toLowerCase()))
+      if (voice) utterance.voice = voice
+    }
     let spoke = false
-    const done = (ok: boolean) => { alive.delete(utterance); signal?.removeEventListener('abort', cancel); resolve(ok) }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const done = (ok: boolean) => { clearTimeout(timer); alive.delete(utterance); signal?.removeEventListener('abort', cancel); resolve(ok) }
     const cancel = () => { try { synth.cancel() } catch { /* ignore */ } done(spoke) }
-    utterance.onstart = () => { spoke = true }
-    utterance.onend = () => done(true)
+    utterance.onstart = () => { spoke = true; clearTimeout(timer) }
+    utterance.onend = () => done(spoke)
     utterance.onerror = event => done(spoke || (event as SpeechSynthesisErrorEvent).error === 'canceled' || (event as SpeechSynthesisErrorEvent).error === 'interrupted')
     signal?.addEventListener('abort', cancel)
+    // Some Android voices accept the sentence and then never start: give up after a few seconds instead of "speaking" forever.
+    timer = setTimeout(() => { if (!spoke) { try { synth.cancel() } catch { /* ignore */ } done(false) } }, 3000)
     alive.add(utterance)
     try {
       if (synth.speaking || synth.pending) synth.cancel()   // cancelling an idle engine right before speak() drops the sentence on Android
@@ -83,6 +87,17 @@ export async function speak(text: string, lang: string, signal?: AbortSignal): P
       synth.speak(utterance)
     } catch { done(false) }
   })
+}
+
+/** Speak a sentence; resolves true when it was spoken, false when the browser refused or speech does not exist.
+ *  If the chosen voice stays silent it retries once with the phone's default voice. */
+export async function speak(text: string, lang: string, signal?: AbortSignal): Promise<boolean> {
+  if (!speechOutputSupported() || !text.trim()) return false
+  await voicesReady()
+  if (signal?.aborted) return false
+  if (await utter(text, lang, signal)) return true
+  if (signal?.aborted) return false
+  return utter(text, null, signal)
 }
 export const stopSpeaking = () => { try { if (speechOutputSupported()) window.speechSynthesis.cancel() } catch { /* ignore */ } }
 
