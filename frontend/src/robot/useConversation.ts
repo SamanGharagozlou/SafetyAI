@@ -59,9 +59,10 @@ export function useConversation(o: Options) {
     const controller = new AbortController()
     speaking.current = controller
     setPhase('speaking')
-    await speak(text, opts.current.lang, controller.signal)
+    const spoke = await speak(text, opts.current.lang, controller.signal)
     if (!alive.current || controller.signal.aborted) return
     setPhase('idle')
+    if (!spoke) setNotice('I could not speak out loud on this phone (check the media volume). You can read me here and tap the microphone to answer.')
     if (listenAfter && started.current && opts.current.voice) begin()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

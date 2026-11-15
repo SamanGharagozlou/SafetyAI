@@ -49,19 +49,39 @@ export function listen(lang: string): ListenHandle {
   return { result, stop: () => { try { rec.stop() } catch { /* already stopped */ } }, abort: () => { failure = new SpeechError('aborted'); try { rec.abort() } catch { /* already stopped */ } } }
 }
 
-/** Speak a sentence; resolves when it ends or is cancelled. Resolves at once where speech output does not exist. */
-export function speak(text: string, lang: string, signal?: AbortSignal): Promise<void> {
-  if (!speechOutputSupported() || !text.trim()) return Promise.resolve()
-  return new Promise<void>(resolve => {
-    const done = () => { signal?.removeEventListener('abort', cancel); resolve() }
+const alive = new Set<SpeechSynthesisUtterance>()   // Chrome can garbage-collect an utterance mid-speech and never fire onend
+const voicesReady = () => new Promise<void>(resolve => {
+  const synth = window.speechSynthesis
+  if (synth.getVoices().length) { resolve(); return }
+  const done = () => { synth.removeEventListener('voiceschanged', done); resolve() }
+  synth.addEventListener('voiceschanged', done)
+  setTimeout(done, 1500)
+})
+
+/** Speak a sentence; resolves true when it was spoken, false when the browser refused or speech does not exist. */
+export async function speak(text: string, lang: string, signal?: AbortSignal): Promise<boolean> {
+  if (!speechOutputSupported() || !text.trim()) return false
+  const synth = window.speechSynthesis
+  await voicesReady()
+  if (signal?.aborted) return false
+  return new Promise<boolean>(resolve => {
     const utterance = new SpeechSynthesisUtterance(text)
     utterance.lang = lang
-    utterance.onend = done
-    utterance.onerror = done
-    const cancel = () => { try { window.speechSynthesis.cancel() } catch { /* ignore */ } done() }
-    if (signal?.aborted) { done(); return }
+    const voice = synth.getVoices().find(v => v.lang.toLowerCase() === lang.toLowerCase()) ?? synth.getVoices().find(v => v.lang.toLowerCase().startsWith(lang.slice(0, 2).toLowerCase()))
+    if (voice) utterance.voice = voice
+    let spoke = false
+    const done = (ok: boolean) => { alive.delete(utterance); signal?.removeEventListener('abort', cancel); resolve(ok) }
+    const cancel = () => { try { synth.cancel() } catch { /* ignore */ } done(spoke) }
+    utterance.onstart = () => { spoke = true }
+    utterance.onend = () => done(true)
+    utterance.onerror = event => done(spoke || (event as SpeechSynthesisErrorEvent).error === 'canceled' || (event as SpeechSynthesisErrorEvent).error === 'interrupted')
     signal?.addEventListener('abort', cancel)
-    try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(utterance) } catch { done() }
+    alive.add(utterance)
+    try {
+      if (synth.speaking || synth.pending) synth.cancel()   // cancelling an idle engine right before speak() drops the sentence on Android
+      synth.resume()
+      synth.speak(utterance)
+    } catch { done(false) }
   })
 }
 export const stopSpeaking = () => { try { if (speechOutputSupported()) window.speechSynthesis.cancel() } catch { /* ignore */ } }
