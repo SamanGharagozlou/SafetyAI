@@ -316,10 +316,12 @@ function renderState() {
   if ($('follow').checked && S.pose) { view.cx = S.pose[0]; view.cy = S.pose[1]; }
   { const pop = $('locPopup'), need = S.ui_mode === 'navigation' && S.procs.localization && S.procs.localization.running && ls && ls.state !== 'localized';
     if (S.current_map !== renderState.popMap) { renderState.popMap = S.current_map; renderState.locHidden = null; renderState.wasNeed = false; clearTimeout(renderState.readyT); renderState.readyUntil = 0; }
-    if (need) { renderState.wasNeed = true; if (renderState.locHidden !== S.current_map) { pop.className = ''; pop.style.display = 'block'; $('locTitle').innerHTML = '<span class="pulse"></span>Move the robot until it localizes'; $('locBody').textContent = ls.message || ''; $('locSteps').style.display = ''; $('locPlace').style.display = ''; $('locHide').textContent = 'Hide'; } }
+    const starting = S.ui_mode === 'navigation' && S.job && S.job.name === 'load_map' && S.job.status === 'running';
+    if (starting) { renderState.wasNeed = true; pop.className = ''; pop.style.display = 'block'; $('locTitle').innerHTML = '<span class="pulse"></span>Loading the map&hellip;'; $('locBody').textContent = S.job.message; $('locSteps').style.display = 'none'; $('locPlace').style.display = 'none'; $('locHide').textContent = 'Hide'; }
+    else if (need) { renderState.wasNeed = true; if (renderState.locHidden !== S.current_map) { pop.className = ''; pop.style.display = 'block'; $('locTitle').innerHTML = '<span class="pulse"></span>Move the robot until it localizes'; $('locBody').textContent = ls.message || ''; $('locSteps').style.display = ''; $('locPlace').style.display = ''; $('locHide').textContent = 'Hide'; } }
     else if (renderState.wasNeed && ls && ls.state === 'localized') { renderState.wasNeed = false; renderState.readyUntil = Date.now() + 6000; renderState.locHidden = null; }
     if (!need && renderState.readyUntil > Date.now()) { pop.className = 'ready'; pop.style.display = 'block'; $('locTitle').innerHTML = '&#10004; Ready for navigation'; $('locBody').textContent = ls.message + '. Use Nav mode (click a goal) or a place\'s go button.'; $('locSteps').style.display = 'none'; $('locPlace').style.display = 'none'; $('locHide').textContent = 'OK'; clearTimeout(renderState.readyT); renderState.readyT = setTimeout(() => { if (renderState.readyUntil <= Date.now()) $('locPopup').style.display = 'none'; }, 6200); }
-    else if (!need) pop.style.display = 'none'; }
+    else if (!need && !starting) pop.style.display = 'none'; }
   if (typeof renderPois === 'function') renderPois();
 }
 let logOpen = null, logTimer = null;

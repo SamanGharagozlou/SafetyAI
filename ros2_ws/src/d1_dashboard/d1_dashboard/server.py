@@ -44,6 +44,10 @@ from rclpy.node import Node  # noqa: E402
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy  # noqa: E402
 from rclpy.time import Time  # noqa: E402
 from sensor_msgs.msg import BatteryState, PointCloud2  # noqa: E402
+try:
+    from rtabmap_msgs.msg import Info as RtabInfo  # noqa: E402
+except ImportError:  # pragma: no cover  (RTAB-Map not installed: monocular features are unavailable anyway)
+    RtabInfo = None
 from std_msgs.msg import Bool, Int32, String  # noqa: E402
 
 BAG_TOPICS = ['/camera/image_raw', '/camera/camera_info', '/camera/depth', '/odom', '/odom_sdk', '/imu', '/tf', '/tf_static',
@@ -154,11 +158,13 @@ class Dashboard(Node):
             self.create_subscription(PointCloud2, '/camera/points', self._on_cloud,
                                      QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
         self._live_t = 0.0
+        self.cloud_t = 0.0
 
         self.loc_status = None                              # /lidar_localization/status (JSON dict) from d1_lidar
         self.loc_t = 0.0
         self.create_subscription(String, '/lidar_localization/status', self._on_loc_status, 10)
-        self.create_subscription(PoseWithCovarianceStamped, '/localization_pose', self._on_loc_pose, 10)
+        if RtabInfo is not None:      # /info: a loop closure or proximity detection accepted = the camera really matched the saved map
+            self.create_subscription(RtabInfo, '/info', self._on_rtab_info, 10)
         self.pub_loc_status = self.create_publisher(String, '/lidar_localization/status', 10)   # same contract the gateway reads (ready / state / message)
         self.create_timer(0.5, self._pub_loc_status)
         self.pub_vel = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -202,6 +208,7 @@ class Dashboard(Node):
     def _on_cloud(self, m):
         """Rasterise the obstacle band of the live camera cloud around the robot -> grid 'live' (100 = obstacle, 45 = halo)."""
         now = time.monotonic()
+        self.cloud_t = now                                   # heartbeat: the depth node is alive and has TF
         if now - self._live_t < 0.3 or self.pose is None:
             return
         self._live_t = now
@@ -255,13 +262,13 @@ class Dashboard(Node):
         with self.lock:
             self.loc_status, self.loc_t = d, time.time()
 
-    def _on_loc_pose(self, m):
-        """RTAB-Map publishes /localization_pose only when it has matched the camera to the saved map (visual relocalization)."""
-        with self.lock:
-            if self.mono_loc['state'] == 'localizing':
-                self.mono_loc.update(state='localized', source='visual', t=time.time(), cov=round(float(m.pose.covariance[0]), 4))
-            elif self.mono_loc['state'] == 'localized' and self.mono_loc['source'] == 'visual':
-                self.mono_loc['t'] = time.time()
+    def _on_rtab_info(self, m):
+        """Visual relocalization = RTAB-Map accepted a loop closure / proximity detection against the saved map.
+        (Not /localization_pose: RTAB-Map stores its last localization pose in the database and resumes from it, which is not a match.)"""
+        if m.loop_closure_id > 0 or m.proximity_detection_id > 0:
+            with self.lock:
+                if self.mono_loc['state'] == 'localizing':
+                    self.mono_loc.update(state='localized', source='visual', t=time.time(), cov=None)
 
     def _mono_loc_active(self):
         return self.mono and self.mono_loc['state'] != 'off' and self.running('localization')
@@ -651,7 +658,7 @@ class Dashboard(Node):
         with self.lock:
             old = self.pois.get(name, {})
             self.pois[name] = {**old, 'x': round(x, 3), 'y': round(y, 3), 'yaw': round(yaw, 4), 'label': label,
-                               'aliases': al or old.get('aliases') or [name.replace('_', ' '), label.lower()],
+                               'aliases': al or old.get('aliases') or list(dict.fromkeys([name.replace('_', ' '), label.lower()])),
                                'description': str(b.get('description') if b.get('description') is not None else old.get('description', ''))}
         r = self._write_pois()
         r['name'] = name
@@ -833,12 +840,11 @@ class Dashboard(Node):
         db = os.path.join(self.maps_dir, name + '.db')
         if not os.path.exists(db):
             return {'ok': False, 'error': f'no database for "{name}"'}
+        if self.job['status'] == 'running':
+            return {'ok': False, 'error': 'busy: ' + str(self.job['name'])}
         self.cancel_goal('load map')
         for n in ('mapping', 'bag', 'nav2', 'localization'):
             self.stop(n)
-        if not self.running('robot') or not self.running('perception'):
-            self.start_process()
-            time.sleep(3.0)
         with self.lock:
             for g in ('map', 'global', 'local'):
                 self.grids.pop(g, None)
@@ -849,9 +855,43 @@ class Dashboard(Node):
             self.pose_confirmed = False
         self._load_pois()
         self._show_saved_grid(self._mono_grid_yaml(name))
-        self.start('localization', db=db)
-        threading.Timer(4.0, lambda: self.start('nav2')).start()
-        return {'ok': True, 'name': name, 'places': len(self.pois)}
+        threading.Thread(target=self._load_mono_worker, args=(name, db), daemon=True).start()
+        return {'ok': True, 'name': name, 'places': len(self.pois), 'starting': True}
+
+    def _depth_alive(self, within=3.0):
+        return self.running('perception') and time.monotonic() - self.cloud_t < within
+
+    def _load_mono_worker(self, name, db):
+        """Start camera + depth, make sure depth really produces data (a depth node that starts before it sees TF can stay deaf), then localization + Nav2."""
+        try:
+            self._job('load_map', 'running', 'starting the robot link, camera and depth...')
+            if not self.running('robot'):
+                self.start('robot')
+                time.sleep(3.0)
+            t0 = time.time()
+            while time.time() - t0 < 20 and not self.tf_buffer.can_transform('odom', 'base_link', Time()):
+                time.sleep(0.5)
+            for attempt in (1, 2, 3):
+                if not self.running('perception'):
+                    self.start('perception')
+                t0 = time.time()
+                while time.time() - t0 < 45 and not self._depth_alive():
+                    time.sleep(0.5)
+                if self._depth_alive():
+                    break
+                self._job('load_map', 'running', f'depth did not start (try {attempt}/3), restarting the camera + depth...')
+                self.stop('perception')
+                time.sleep(3.0)
+            else:
+                self._job('load_map', 'error', 'camera depth did not start: check the perception log')
+                return
+            self._job('load_map', 'running', 'depth is running; loading the map into RTAB-Map...')
+            self.start('localization', db=db)
+            time.sleep(4.0)
+            self.start('nav2')
+            self._job('load_map', 'done', f'"{name}" loaded: move the robot until it localizes')
+        except Exception as ex:  # noqa: BLE001
+            self._job('load_map', 'error', str(ex))
 
     def clear_all(self, stop_robot=False):
         self.cancel_goal('clear all')
