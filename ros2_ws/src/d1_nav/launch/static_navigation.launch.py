@@ -14,6 +14,8 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 UNKNOWN_PIXEL = 205            # what ROS map_saver writes for "not scanned"
 
@@ -50,22 +52,40 @@ def patched_map(path):
 def _setup(context):
     bringup = get_package_share_directory('nav2_bringup')
     params = os.path.join(get_package_share_directory('d1_nav'), 'params', 'nav2_params_static.yaml')
-    loc = os.path.join(get_package_share_directory('d1_localization'), 'launch', 'localize.launch.py')
     c = LaunchConfiguration
     map_yaml = patched_map(c('map').perform(context))
-    localize = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(loc),
-        launch_arguments={'map': map_yaml, 'x': c('x'), 'y': c('y'), 'yaw': c('yaw'), 'rviz': c('rviz'),
-                          'use_ekf': 'false'}.items())
+    if c('localizer').perform(context) == 'manual':
+        # hand-placed pose + odometry only (d1_localization), no lidar
+        loc = os.path.join(get_package_share_directory('d1_localization'), 'launch', 'localize.launch.py')
+        localize = [IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(loc),
+            launch_arguments={'map': map_yaml, 'x': c('x'), 'y': c('y'), 'yaw': c('yaw'), 'rviz': c('rviz'),
+                              'use_ekf': 'false'}.items())]
+    else:
+        # lidar localizer: placed pose + live MetaCam odometry -> map->odom; falls back to odometry-only when the lidar is absent
+        pf = lambda n: ParameterValue(c(n), value_type=float)  # noqa: E731
+        localize = [
+            Node(package='nav2_map_server', executable='map_server', name='map_server', parameters=[{'yaml_filename': map_yaml}]),
+            Node(package='nav2_lifecycle_manager', executable='lifecycle_manager', name='lm_map',
+                 parameters=[{'autostart': True, 'node_names': ['map_server']}]),
+            Node(package='tf2_ros', executable='static_transform_publisher', name='base_to_imu',
+                 arguments=['--frame-id', 'base_link', '--child-frame-id', 'imu_link']),
+            Node(package='d1_lidar', executable='lidar_localizer', name='lidar_localizer', output='screen',
+                 parameters=[{'x': pf('x'), 'y': pf('y'), 'yaw': pf('yaw'), 'lidar_x': pf('lidar_x'), 'lidar_y': pf('lidar_y'),
+                              'lidar_yaw': pf('lidar_yaw')}]),
+        ]
     nav = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(bringup, 'launch', 'navigation_launch.py')),
         launch_arguments={'params_file': params, 'use_sim_time': 'false', 'autostart': 'true',
                           'use_composition': 'False', 'use_respawn': 'False'}.items())
-    return [localize, nav]
+    return localize + [nav]
 
 
 def generate_launch_description():
     args = [DeclareLaunchArgument('map', description='path to the map.yaml'),
-            DeclareLaunchArgument('x', default_value='0.0'), DeclareLaunchArgument('y', default_value='0.0'),
-            DeclareLaunchArgument('yaw', default_value='0.0'), DeclareLaunchArgument('rviz', default_value='false')]
+            DeclareLaunchArgument('x', default_value='nan'), DeclareLaunchArgument('y', default_value='nan'),
+            DeclareLaunchArgument('yaw', default_value='0.0'), DeclareLaunchArgument('rviz', default_value='false'),
+            DeclareLaunchArgument('localizer', default_value='lidar', description='lidar | manual'),
+            DeclareLaunchArgument('lidar_x', default_value='0.0'), DeclareLaunchArgument('lidar_y', default_value='0.0'),
+            DeclareLaunchArgument('lidar_yaw', default_value='0.0')]
     return LaunchDescription(args + [OpaqueFunction(function=_setup)])

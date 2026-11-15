@@ -151,6 +151,9 @@ class Dashboard(Node):
                                      QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
         self._live_t = 0.0
 
+        self.loc_status = None                              # /lidar_localization/status (JSON dict) from d1_lidar
+        self.loc_t = 0.0
+        self.create_subscription(String, '/lidar_localization/status', self._on_loc_status, 10)
         self.pub_vel = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_cmd = self.create_publisher(String, '/robot_cmd', 10)
         self.pub_init = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
@@ -237,6 +240,20 @@ class Dashboard(Node):
             self.grids['live'] = {'version': old['version'] + 1, 'w': n, 'h': n, 'res': res, 'ox': ox, 'oy': oy,
                                   'data': data.tobytes()}
 
+    def _on_loc_status(self, m):
+        try:
+            d = json.loads(m.data)
+        except ValueError:
+            return
+        with self.lock:
+            self.loc_status, self.loc_t = d, time.time()
+
+    def loc(self):
+        """Localization status, or None when the localizer is not running / silent for 3 s."""
+        if self.loc_status is None or time.time() - self.loc_t > 3.0 or not self.running('static_nav'):
+            return None
+        return self.loc_status
+
     def _tick_pose(self):
         try:
             tf = self.tf_buffer.lookup_transform('map', 'base_footprint', Time())
@@ -297,8 +314,10 @@ class Dashboard(Node):
     def send_goal(self, x, y, yaw):
         if not self.nav_client.wait_for_server(timeout_sec=1.0):
             return False, 'Nav2 is not running (use Load map)'
-        if self.running('static_nav') and not self.pose_confirmed:
-            return False, 'place the robot first: use Place robot and mark where it really stands (or "robot is at map origin")'
+        if self.running('static_nav'):
+            ls = self.loc()
+            if (ls is not None and not ls.get('ready')) or (ls is None and not self.pose_confirmed):
+                return False, 'not ready: place the robot first (Place robot, or "robot is at the map origin")'
         if not self.localized:
             return False, 'robot is not localized in the map yet'
         goal = NavigateToPose.Goal()
@@ -369,9 +388,13 @@ class Dashboard(Node):
         if name == 'nav2':
             return ['ros2', 'launch', 'd1_nav', 'navigation.launch.py']
         if name == 'static_nav':          # saved lidar map + hand-placed localization + Nav2
-            sp = self.start_pose or (0.0, 0.0, 0.0)
-            return ['ros2', 'launch', 'd1_nav', 'static_navigation.launch.py', f'map:={db}',
-                    f'x:={sp[0]:.3f}', f'y:={sp[1]:.3f}', f'yaw:={sp[2]:.3f}']
+            cmd = ['ros2', 'launch', 'd1_nav', 'static_navigation.launch.py', f'map:={db}',
+                   f'lidar_x:={self.args.lidar_x}', f'lidar_y:={self.args.lidar_y}', f'lidar_yaw:={self.args.lidar_yaw}']
+            if self.start_pose:                      # a saved start pose; otherwise wait for the operator (Place robot)
+                cmd += [f'x:={self.start_pose[0]:.3f}', f'y:={self.start_pose[1]:.3f}', f'yaw:={self.start_pose[2]:.3f}']
+            return cmd
+        if name == 'lidar_relay':          # MetaCam Lite -> /metacam/odom (read-only)
+            return ['ros2', 'run', 'd1_lidar', 'metacam_relay', '--url', self.args.lidar_url]
         if name == 'rviz':
             return ['ros2', 'run', 'rviz2', 'rviz2', '-d', os.path.join(
                 os.popen('ros2 pkg prefix d1_slam').read().strip(), 'share/d1_slam/rviz/mapping.rviz')]
@@ -397,6 +420,8 @@ class Dashboard(Node):
         started = []
         if self.start('robot'):
             started.append('robot')
+        if self.args.lidar_url and self.start('lidar_relay'):
+            started.append('lidar_relay')
         if self.mono:
             threading.Timer(2.5, lambda: self.start('perception')).start()
             if not self.running('perception'):
@@ -619,7 +644,7 @@ class Dashboard(Node):
     def clear_all(self, stop_robot=False):
         self.cancel_goal('clear all')
         self.teleop = (0.0, 0.0, 0.0, 0.0)
-        for n in ('nav2', 'localization', 'static_nav', 'mapping', 'bag', 'rviz', 'perception'):
+        for n in ('nav2', 'localization', 'static_nav', 'lidar_relay', 'mapping', 'bag', 'rviz', 'perception'):
             self.stop(n)
         kept_robot = False
         standing = self.mode in STANDING_MODES
@@ -641,7 +666,7 @@ class Dashboard(Node):
         return {'ok': True, 'message': msg}
 
     def shutdown_all(self):
-        for n in ('nav2', 'localization', 'static_nav', 'mapping', 'bag', 'rviz', 'perception'):
+        for n in ('nav2', 'localization', 'static_nav', 'lidar_relay', 'mapping', 'bag', 'rviz', 'perception'):
             self.stop(n)
         if self.mode not in STANDING_MODES:
             self.stop('robot')
@@ -660,7 +685,7 @@ class Dashboard(Node):
                 'procs': {n: p.info() for n, p in self.procs.items()},
                 'job': self.job,
                 'grids': {n: g['version'] for n, g in self.grids.items()},
-                'features': {'mono_slam': self.mono, 'lidar_nav': True}, 'start_pose': self.start_pose, 'pose_confirmed': self.pose_confirmed,
+                'features': {'mono_slam': self.mono, 'lidar_nav': True}, 'localization': self.loc(), 'start_pose': self.start_pose, 'pose_confirmed': self.pose_confirmed,
             }
 
     def grid_payload(self, name):
@@ -769,7 +794,7 @@ def make_handler(dash):
                     return self._send(400, {'ok': False, 'error': 'unknown action'})
                 if u == '/api/process':
                     name, act = b.get('name', ''), b.get('action', '')
-                    if name not in ('robot', 'perception', 'mapping', 'bag', 'localization', 'nav2', 'static_nav', 'rviz'):
+                    if name not in ('robot', 'perception', 'mapping', 'bag', 'localization', 'nav2', 'static_nav', 'lidar_relay', 'rviz'):
                         return self._send(400, {'ok': False, 'error': 'unknown process'})
                     if act == 'start':
                         db = os.path.join(dash.maps_dir, (dash.current_map or 'manual') + '.db')
@@ -802,6 +827,10 @@ def main():
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--maps-dir', default='~/d1_maps')
+    ap.add_argument('--lidar-url', default='', help='ws://10.42.1.1:9089 to let the dashboard run the MetaCam relay; empty = relay is started elsewhere')
+    ap.add_argument('--lidar-x', default='0.0', help='MetaCam position on the robot in base_link: forward (m)')
+    ap.add_argument('--lidar-y', default='0.0', help='... left (m)')
+    ap.add_argument('--lidar-yaw', default='0.0', help='... heading relative to the robot (rad)')
     ap.add_argument('--mono-slam', default='false', help='true: enable the (deactivated) monocular SLAM workflow')
     ap.add_argument('--external-robot', default='false', help='true: a bridge already runs elsewhere; never start/stop one')
     args, ros_args = ap.parse_known_args()

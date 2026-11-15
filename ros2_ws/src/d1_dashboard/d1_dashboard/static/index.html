@@ -235,7 +235,7 @@ function renderGrid(name) {
 }
 
 // ---------------------------------------------------------------- state -> UI
-const PROCS = ['robot','static_nav','perception','mapping','bag','localization','nav2'];
+const PROCS = ['robot','lidar_relay','static_nav','perception','mapping','bag','localization','nav2'];
 const MONO_PROCS = ['perception','mapping','bag','localization','nav2'];
 function renderState() {
   var mono = !S.features || S.features.mono_slam;
@@ -250,7 +250,12 @@ function renderState() {
   el('cBatt', 'Battery: <b>' + (r.battery === null ? '?' : r.battery + '%') + '</b>', r.battery !== null && r.battery < 25 ? 'bad' : (r.battery !== null && r.battery < 40 ? 'warn' : ''));
   $('cRec').style.display = (S.procs.bag && S.procs.bag.running) ? '' : 'none';
   el('cUi', 'Workflow: <b>' + S.ui_mode + (S.current_map ? ' · ' + S.current_map : '') + '</b>', '');
-  const nm = S.procs.static_nav && S.procs.static_nav.running; el('cLoc', (nm ? 'Placed: <b>' + (S.pose_confirmed ? 'yes' : 'NO') + '</b>' : 'Localized: <b>' + (S.localized ? 'yes' : 'no') + '</b>'), nm ? (S.pose_confirmed ? 'ok' : 'bad') : (S.localized ? 'ok' : 'dim'));
+  const nm = S.procs.static_nav && S.procs.static_nav.running, ls = S.localization;
+  if (nm) { let txt, cls; if (!ls) { txt = 'Localizer: <b>starting&hellip;</b>'; cls = 'dim'; } else if (ls.state === 'localized') { txt = '<b>Ready for navigation</b> · lidar'; cls = 'ok'; }
+    else if (ls.state === 'odometry_only') { txt = '<b>Ready</b> · odometry only (drifts)'; cls = 'warn'; } else if (ls.state === 'lidar_lost') { txt = '<b>Ready</b> · lidar lost, odometry'; cls = 'warn'; }
+    else { txt = '<b>Not ready</b> · place the robot'; cls = 'bad'; }
+    el('cLoc', txt, cls); $('cLoc').title = ls ? ls.message : ''; }
+  else el('cLoc', 'Localized: <b>' + (S.localized ? 'yes' : 'no') + '</b>', S.localized ? 'ok' : 'dim');
   const ns = S.nav.status + (S.nav.distance_remaining != null && S.nav.status === 'navigating' ? ' · ' + S.nav.distance_remaining + ' m' : '');
   el('cNav', 'Nav: <b>' + ns + '</b>', S.nav.status === 'navigating' ? 'warn' : (S.nav.status === 'succeeded' ? 'ok' : ''));
   // processes
@@ -259,7 +264,7 @@ function renderState() {
     d.innerHTML = '<span class="dot"></span><span class="name">' + n + '</span><span class="up"></span><button data-a="toggle">start</button><button data-a="log">log</button>';
     d.querySelector('[data-a=toggle]').onclick = () => procToggle(n); d.querySelector('[data-a=log]').onclick = () => toggleLog(n);
     box.appendChild(d); }); }
-  PROCS.forEach(n => { const p = S.procs[n] || {running:false}, d = $('p_' + n); d.style.display = (MONO_PROCS.includes(n) && !mono && !p.running) ? 'none' : '';
+  PROCS.forEach(n => { const p = S.procs[n] || {running:false}, d = $('p_' + n); d.style.display = ((MONO_PROCS.includes(n) && !mono && !p.running) || (n === 'lidar_relay' && !p.running)) ? 'none' : '';
     d.querySelector('.dot').className = 'dot ' + (p.running ? 'on' : (p.exit ? 'err' : ''));
     d.querySelector('.up').textContent = p.running ? Math.round(p.uptime) + 's' : '';
     d.querySelector('[data-a=toggle]').textContent = p.running ? 'stop' : 'start'; });
@@ -281,7 +286,7 @@ function renderState() {
   const gi = $('goalinfo');
   if (S.nav.goal) { gi.style.display = 'block'; gi.innerHTML = '🎯 goal (' + S.nav.goal[0].toFixed(2) + ', ' + S.nav.goal[1].toFixed(2) + ') — <b>' + ns + '</b> ' + (S.nav.status === 'navigating' || S.nav.status === 'sending' ? '<button id="cancelNav" class="danger" style="padding:3px 10px;margin-left:8px">Cancel</button>' : ''); const c = $('cancelNav'); if (c) c.onclick = () => post('/api/cancel'); }
   else gi.style.display = 'none';
-  $('hint').textContent = $('placeMode').checked ? 'Place robot: press where the robot really stands, drag toward the way it faces, release' : (staticOn && !S.pose_confirmed) ? 'Set the robot pose first: Place robot (or: robot is at the map origin), then Nav mode' : $('navMode').checked ? (S.localized ? 'Nav mode: click a spot on the map (drag to set heading)' : 'Nav mode: robot not localized in the map yet') : '';
+  $('hint').textContent = $('placeMode').checked ? 'Place robot: press where the robot really stands, drag toward the way it faces, release' : (staticOn && S.localization && S.localization.state === 'need_pose') ? (S.localization.message + ' (Place robot, or: robot is at the map origin), then Nav mode') : (staticOn && !S.localization && !S.pose_confirmed) ? 'Set the robot pose first: Place robot (or: robot is at the map origin), then Nav mode' : $('navMode').checked ? (S.localized ? 'Nav mode: click a spot on the map (drag to set heading)' : 'Nav mode: robot not localized in the map yet') : '';
   if ($('follow').checked && S.pose) { view.cx = S.pose[0]; view.cy = S.pose[1]; }
 }
 let logOpen = null, logTimer = null;
