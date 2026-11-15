@@ -1,4 +1,4 @@
-# Live lidar localization (branch `lidar-live`)
+# Live lidar localization (branch `nav2`)
 
 The MetaCam Lite's live odometry corrects the robot's pose in the saved lidar map, so the pose no longer drifts. The dashboard shows
 **Ready for navigation** once the robot is localized. Package: `ros2_ws/src/d1_lidar`. Hardware link: see `docs/metacam_connection.md` (on the Orin).

@@ -58,6 +58,6 @@ The lidar maps mark "not scanned" as pixel 205 with `free_thresh: 0.25`. map_ser
 * Not yet tested on the real robot (the 2026-11-15 session was blocked by its battery).
 
 ## Next steps
-Live lidar localization is implemented on branch `lidar-live` (`docs/lidar_live.md`).
+Live lidar localization is implemented in this branch (`docs/lidar_live.md`).
 
 Lidar localization on the robot (AMCL needs a scan; or MetaCam live odometry via `tools/metacam_live_relay.py`), live obstacle layer, `twist_mux`, dashboard map import by upload.
