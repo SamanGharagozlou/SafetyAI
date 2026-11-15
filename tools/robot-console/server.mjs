@@ -94,6 +94,18 @@ const TOKEN = process.env.D1_ROBOT_TOKEN
 const VAPI_PUBLIC_KEY = process.env.VAPI_PUBLIC_KEY ?? '2cdfae81-9e4a-4215-a17b-7ec2b7bf6aa4'
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID ?? '19828665-3d22-47b3-a72f-079e19b45aca'
 
+/**
+ * OPTIONAL, for tuning only: the Vapi PRIVATE key, which unlocks the
+ * post-call timeline at /api/last-call. Vapi stamps every event with
+ * secondsFromStart, so this is the only place with true end-to-end timings -
+ * the browser cannot see when the model decided, only when audio arrived.
+ *
+ * Like the robot token it stays in this process and is NEVER sent to the
+ * browser; /api/last-call returns transcript text and timings only. The
+ * console works fine without it - the button just reports it is not set.
+ */
+const VAPI_PRIVATE_KEY = process.env.VAPI_PRIVATE_KEY
+
 if (!TOKEN) {
   console.error('D1_ROBOT_TOKEN is not set.\n')
   console.error('  D1_ROBOT_TOKEN=<token> node tools/robot-console/server.mjs\n')
@@ -176,6 +188,41 @@ createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/voice-config') {
       return json(res, 200, { publicKey: VAPI_PUBLIC_KEY, assistantId: VAPI_ASSISTANT_ID })
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/last-call') {
+      if (!VAPI_PRIVATE_KEY) {
+        return json(res, 200, { error: 'VAPI_PRIVATE_KEY is not set, so the post-call timeline is unavailable. Restart the console with it to enable this.' })
+      }
+      const list = await (await fetch(
+        `https://api.vapi.ai/call?assistantId=${VAPI_ASSISTANT_ID}&limit=1`,
+        { headers: { Authorization: `Bearer ${VAPI_PRIVATE_KEY}` }, signal: AbortSignal.timeout(15000) },
+      )).json()
+
+      const call = Array.isArray(list) ? list[0] : null
+      if (!call) return json(res, 200, { error: 'no calls recorded for this assistant yet' })
+
+      // Normalise Vapi's role soup into one ordered timeline. `at` is
+      // secondsFromStart, which is what makes the gaps meaningful.
+      const timeline = []
+      for (const m of call.messages ?? []) {
+        const at = m.secondsFromStart ?? null
+        if (m.role === 'user') timeline.push({ at, kind: 'user', text: m.message ?? '' })
+        else if (m.role === 'bot') timeline.push({ at, kind: 'bot', text: m.message ?? '' })
+        else if (m.role === 'tool_calls') {
+          for (const c of m.toolCalls ?? []) {
+            timeline.push({ at, kind: 'tool', name: c.function?.name, args: c.function?.arguments })
+          }
+        } else if (m.role === 'tool_call_result') {
+          timeline.push({ at, kind: 'result', text: String(m.result ?? '') })
+        }
+      }
+      return json(res, 200, {
+        id: call.id,
+        endedReason: call.endedReason ?? null,
+        startedAt: call.startedAt ?? null,
+        timeline,
+      })
     }
 
     if (req.method === 'GET' && url.pathname === '/api/status') {

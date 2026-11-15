@@ -96,12 +96,34 @@
   .banner.bad { background: #3d1518; border: 1px solid #6e2b2b; color: #ffb4ab; }
   .banner.warn { background: #3a2d10; border: 1px solid #6b5420; color: #ecc48d; }
 
-  #transcript {
-    max-height: 170px; overflow-y: auto; font-size: 14px;
+  #transcript, #analysis {
+    max-height: 300px; overflow-y: auto; font-size: 14px;
     background: #0a0d12; border: 1px solid var(--line); border-radius: 9px;
     padding: 12px; min-height: 48px;
   }
+  #analysis { margin-top: 10px; }
   #transcript:empty::after { content: "…listening"; color: var(--muted); }
+  .ev { margin-bottom: 7px; line-height: 1.5; }
+  .ev code {
+    background: #161b22; border: 1px solid var(--line); border-radius: 5px;
+    padding: 1px 6px; font-size: 12.5px; color: #c9d7e6;
+  }
+  .ev .at {
+    display: inline-block; min-width: 46px; color: #6e7681;
+    font: 12px ui-monospace, Menlo, monospace;
+  }
+  .ev.tool {
+    background: #11202e; border-left: 2px solid var(--accent);
+    border-radius: 7px; padding: 8px 11px; margin: 8px 0;
+  }
+  .tool-res { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .lat {
+    font: 600 11px ui-monospace, Menlo, monospace; padding: 2px 7px;
+    border-radius: 999px; margin-left: 7px; white-space: nowrap;
+  }
+  .lat.fast { background: #10301a; color: #5fd97a; }
+  .lat.mid  { background: #35290d; color: #e3b341; }
+  .lat.slow { background: #3d1518; color: #ff8b82; }
   #log {
     font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
     background: #0a0d12; border: 1px solid var(--line); border-radius: 9px;
@@ -203,9 +225,13 @@
 </div>
 
 <div class="panel" id="voice-panel" style="margin-top:14px; display:none">
-  <h2>Voice <span id="voice-state" style="text-transform:none;letter-spacing:0;color:var(--accent)"></span></h2>
+  <h2>
+    Voice <span id="voice-state" style="text-transform:none;letter-spacing:0;color:var(--accent)"></span>
+    <button id="analyse" style="float:right;padding:5px 11px;font-size:12px">⟲ Analyse last call</button>
+  </h2>
   <div id="transcript"></div>
-  <div class="note">Say things like “stand up”, “sit down”, “give me your paw”, “do a little wiggle”, “walk forward 30 centimetres”, or “stop”. The assistant calls the same seven tools as the buttons above — tool calls go from Vapi straight to the robot, not through this page.</div>
+  <div id="analysis" style="display:none"></div>
+  <div class="note">Every tool the assistant invokes appears above <b>as it is chosen</b>, with the delay measured from the moment you stopped speaking — <span class="lat fast">green</span> is snappy, <span class="lat mid">amber</span> is noticeable, <span class="lat slow">red</span> feels broken. <b>Analyse last call</b> pulls Vapi's own server-side timings, which show where the time really went.</div>
 </div>
 
 <div class="panel" style="margin-top:14px">
@@ -411,12 +437,91 @@ function voiceState(text, cls = '') {
   $('voice-state').style.color = cls === 'err' ? 'var(--bad)' : cls === 'ok' ? 'var(--ok)' : 'var(--accent)'
 }
 
+/** When the user last stopped speaking. Every latency below is measured from here. */
+let userDoneAt = null
+const since = () => userDoneAt === null ? null : Math.round(performance.now() - userDoneAt)
+
+const esc = s => String(s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))
+
+function feed() { $('voice-panel').style.display = 'block'; return $('transcript') }
+function scroll() { const f = $('transcript'); f.scrollTop = f.scrollHeight }
+
 function say(role, text) {
-  $('voice-panel').style.display = 'block'
   const who = role === 'assistant' ? 'robot' : 'you'
   const colour = role === 'assistant' ? 'var(--accent)' : 'var(--ink)'
-  $('transcript').innerHTML += `<div style="margin-bottom:6px"><b style="color:${colour}">${who}:</b> ${text}</div>`
-  $('transcript').scrollTop = $('transcript').scrollHeight
+  // Time the robot's FIRST words after you stop - the "is it dead?" moment.
+  const ms = role === 'assistant' ? since() : null
+  const tag = ms === null ? '' : ` <span class="lat ${ms > 2000 ? 'slow' : ms > 1000 ? 'mid' : 'fast'}">${ms}ms to speak</span>`
+  feed().innerHTML += `<div class="ev"><b style="color:${colour}">${who}:</b> ${esc(text)}${tag}</div>`
+  scroll()
+}
+
+function showPartial(role, text) {
+  if (role !== 'user') return
+  let el = document.getElementById('partial')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'partial'
+    el.className = 'ev'
+    el.style.opacity = '.5'
+    feed().appendChild(el)
+  }
+  el.innerHTML = `<b>you:</b> ${esc(text)}<span style="color:var(--muted)"> …</span>`
+  scroll()
+}
+const clearPartial = () => document.getElementById('partial')?.remove()
+
+/** A tool call, rendered as a chip the moment it is chosen. */
+function toolEvent(name, args) {
+  const ms = since()
+  const tag = ms === null ? '' : `<span class="lat ${ms > 2500 ? 'slow' : ms > 1500 ? 'mid' : 'fast'}">${ms}ms to act</span>`
+  const a = Object.keys(args ?? {}).length ? `<code>${esc(JSON.stringify(args))}</code>` : ''
+  feed().innerHTML += `<div class="ev tool" id="tool-live">🔧 <b>${esc(name)}</b> ${a} ${tag}<div class="tool-res">…waiting for the robot</div></div>`
+  scroll()
+  log(`→ [voice] ${name} ${JSON.stringify(args ?? {})}${ms === null ? '' : `  (${ms}ms after you stopped)`}`, 'log-send')
+}
+
+function toolResult(text) {
+  const live = document.getElementById('tool-live')
+  const failed = /fail|sorry|not standing|no live link/i.test(text)
+  if (live) {
+    live.querySelector('.tool-res').innerHTML = `<span class="${failed ? 'log-err' : 'log-ok'}">${esc(text)}</span>`
+    live.removeAttribute('id')
+  }
+  log(`   ${text}`, failed ? 'log-err' : 'log-ok')
+  scroll()
+}
+
+/** Post-call timeline from Vapi, which stamps true server-side timings. */
+async function analyseLastCall() {
+  const btn = $('analyse')
+  btn.disabled = true; btn.textContent = 'loading…'
+  try {
+    const d = await (await fetch('/api/last-call')).json()
+    const out = $('analysis')
+    out.style.display = 'block'
+    if (d.error) { out.innerHTML = `<span class="log-err">${esc(d.error)}</span>`; return }
+
+    let prev = null
+    const rows = d.timeline.map(e => {
+      const gap = prev !== null && e.at !== null ? e.at - prev : null
+      prev = e.at ?? prev
+      const gapTag = gap === null ? '' : `<span class="lat ${gap > 2.5 ? 'slow' : gap > 1.5 ? 'mid' : 'fast'}">+${gap.toFixed(1)}s</span>`
+      const at = e.at === null ? '' : e.at.toFixed(1) + 's'
+      const body =
+        e.kind === 'tool' ? `🔧 <b>${esc(e.name)}</b> <code>${esc(typeof e.args === 'string' ? e.args : JSON.stringify(e.args ?? {}))}</code>`
+        : e.kind === 'result' ? `<span style="color:var(--muted)">↳ ${esc(e.text)}</span>`
+        : `<b style="color:${e.kind === 'bot' ? 'var(--accent)' : 'var(--ink)'}">${e.kind === 'bot' ? 'robot' : 'you'}:</b> ${esc(e.text)}`
+      return `<div class="ev"><span class="at">${at}</span> ${body} ${gapTag}</div>`
+    }).join('')
+
+    out.innerHTML = `<div style="margin-bottom:8px;color:var(--muted)">call ${esc(d.id)} · ended: ${esc(d.endedReason ?? '—')}</div>${rows}`
+  } catch (e) {
+    $('analysis').style.display = 'block'
+    $('analysis').innerHTML = `<span class="log-err">${esc(e.message)}</span>`
+  } finally {
+    btn.disabled = false; btn.textContent = '⟲ Analyse last call'
+  }
 }
 
 function endVoice(label, cls) {
@@ -454,7 +559,18 @@ async function startVoice() {
 
   try {
     const { publicKey, assistantId } = await (await fetch('/api/voice-config')).json()
-    const { default: Vapi } = await import(VOICE_SDK)
+
+    /**
+     * The CDN build is CommonJS wrapped as ESM, so `default` is the CJS
+     * namespace object and the class sits at `.default.default`:
+     *   F.default = V ... export { se as default }
+     * Taking `mod.default` straight gives "Vapi is not a constructor". The npm
+     * package resolves one level shallower, so handle both rather than pin to
+     * whichever the CDN happens to emit today.
+     */
+    const mod = await import(VOICE_SDK)
+    const Vapi = [mod.default?.default, mod.default, mod.Vapi, mod].find(c => typeof c === 'function')
+    if (!Vapi) throw new Error('could not find the Vapi constructor in the SDK module')
     vapi = new Vapi(publicKey)
 
     vapi.on('call-start', () => {
@@ -472,19 +588,48 @@ async function startVoice() {
       if (!voiceLive) { endVoice('connect failed', 'err') }
       log(`   voice error: ${e?.message ?? e}`, 'log-err')
     })
+    /**
+     * Vapi emits several message shapes and the docs do not pin them down, so
+     * this reads defensively rather than assuming one. An earlier version
+     * guessed a single shape and silently showed no tool calls at all.
+     *
+     * Everything is stamped with ms since the user last STOPPED speaking,
+     * because that is the number that matters when tuning: it is the delay the
+     * person in the room actually experiences between asking and the robot
+     * reacting.
+     */
     vapi.on('message', m => {
-      if (m?.type === 'transcript' && m.transcriptType === 'final' && m.transcript?.trim()) {
-        say(m.role === 'assistant' ? 'assistant' : 'user', m.transcript.trim())
+      if (!m) return
+      const type = m.type ?? ''
+
+      if (type === 'transcript' && m.transcript?.trim()) {
+        const role = m.role === 'assistant' ? 'assistant' : 'user'
+        if (m.transcriptType === 'partial') return showPartial(role, m.transcript.trim())
+        if (m.transcriptType === 'final') {
+          clearPartial()
+          if (role === 'user') userDoneAt = performance.now()   // start the clock
+          say(role, m.transcript.trim())
+          return
+        }
       }
-      // Surface what the voice agent actually did, so the activity log stays
-      // the single place that records every command the robot received.
-      const calls = m?.toolCalls ?? m?.toolCallList
-      if (Array.isArray(calls)) {
+
+      // Tool call. Seen as type 'tool-calls' with toolCallList, and as the
+      // older 'function-call' with functionCall - accept either.
+      const calls = m.toolCallList ?? m.toolCalls ?? (m.functionCall ? [m.functionCall] : null)
+      if (Array.isArray(calls) && calls.length) {
         for (const c of calls) {
           const name = c?.name ?? c?.function?.name
-          const args = c?.arguments ?? c?.function?.arguments
-          if (name) log(`→ [voice] ${name} ${typeof args === 'string' ? args : JSON.stringify(args ?? {})}`, 'log-send')
+          if (!name) continue
+          let args = c?.arguments ?? c?.function?.arguments ?? {}
+          if (typeof args === 'string') { try { args = JSON.parse(args) } catch {} }
+          toolEvent(name, args)
         }
+        return
+      }
+
+      if (type === 'tool-calls-result' || type === 'function-call-result') {
+        const r = m.result ?? m.toolCallResult?.result ?? m.functionCallResult?.result
+        if (r !== undefined) toolResult(String(r))
       }
     })
 
@@ -494,6 +639,8 @@ async function startVoice() {
     log(`   voice failed to start: ${e.message}`, 'log-err')
   }
 }
+
+$('analyse').addEventListener('click', analyseLastCall)
 
 $('talk').addEventListener('click', () => {
   if (voiceLive || vapi) { endVoice('call ended'); log('   voice call ended by you', 'log-ok'); return }

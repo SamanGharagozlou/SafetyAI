@@ -32,10 +32,10 @@ export const ROBOT_ENDPOINT = 'https://d1-jetson.tail5ec076.ts.net/vapi'
 export function robotTools(token) {
   if (!token) throw new Error('D1_ROBOT_TOKEN is not set')
   const server = { url: ROBOT_ENDPOINT, headers: { Authorization: `Bearer ${token}` } }
-  const tool = (name, description, parameters = { type: 'object', properties: {} }) => ({
+  const tool = (name, description, parameters = { type: 'object', properties: {} }, timeoutSeconds) => ({
     type: 'function',
     function: { name, description, parameters },
-    server,
+    server: timeoutSeconds ? { ...server, timeoutSeconds } : server,
   })
 
   return [
@@ -65,7 +65,10 @@ export function robotTools(token) {
       required: ['direction'],
     }),
 
-    tool('walk_distance', "Walk a measured distance in CENTIMETRES, closed-loop on odometry. Use this whenever the user names a distance ('walk half a metre', 'come forward 30 centimetres') - move_robot is timed and undershoots. The robot must be standing. This call blocks until the walk finishes and reports the distance actually travelled.", {
+    // 40s: the walk BLOCKS until it finishes (server caps it at 25s). Vapi's
+    // default tool timeout is shorter, so a long walk would be reported as
+    // failed while the robot was still walking.
+    tool('walk_distance', "Walk a measured distance in CENTIMETRES, closed-loop on odometry. Use this whenever the user names a distance ('walk half a metre', 'come forward 30 centimetres', 'one metre' = 100). The robot must be standing. This blocks until the walk finishes.", {
       type: 'object',
       properties: {
         distance_cm: { type: 'number', description: 'Distance in centimetres, 2 to 200.' },
@@ -73,7 +76,7 @@ export function robotTools(token) {
         speed: { type: 'number', description: 'Optional fraction of max speed 0.05-1.0. Leave unset: the default is slow and most accurate, because overshoot grows with the square of speed.' },
       },
       required: ['distance_cm'],
-    }),
+    }, 40),
 
     tool('set_gait', "Change how the robot walks: 'move' is normal, 'crawl' is low and slow, 'climb' is for steps and obstacles.", {
       type: 'object',
@@ -110,13 +113,21 @@ Plain language maps onto tools like this:
 - a vague nudge ("come here", "back up")  -> move_robot with a short duration
 - "stop", "wait", "hold on", "freeze"     -> stop_robot, immediately, before anything else
 
-SAFETY
+CALL THE TOOL FIRST. SPEAK AFTERWARDS.
 
-Before the robot WALKS for the first time in a conversation, check out loud that there is clear floor space, and wait for an answer. Gestures and standing up do not need this - only travel.
+This is the most important rule you have. The moment you understand what is being asked, emit the tool call BEFORE you say anything at all. Do not say "just a sec", "let me check", "okay, one moment" and then call the tool - every word you speak first is a word of delay the person watches the robot not move. Measured: speaking first cost 1.5 seconds on every single command.
+
+Tool call first. Then a few words, while the robot is already moving: "coming forward", "getting up", "there you go".
+
+DO NOT ASK FOR CONFIRMATION. The person is standing next to the robot and can stop it instantly. Asking "shall I?" or "is the floor clear?" and waiting makes you useless - an earlier version of you did that and never walked at all.
+
+Keep every reply to one short sentence. Long replies take real seconds to speak and the person is waiting on the robot, not on your commentary. Do not narrate your plan, do not call robot_status first unless something has actually failed, do not list your capabilities unless asked, and never explain control modes.
+
+SAFETY
 
 Never move because you inferred someone might want it. Move when you are asked.
 
-If someone sounds alarmed, or says stop, stop first and talk afterwards.
+If someone sounds alarmed, or says stop, wait, hold on or freeze: call stop_robot FIRST, then talk.
 
 You have no way to drop the robot to the ground on purpose, and you should not look for one.
 
@@ -190,6 +201,53 @@ try {
     console.log(`Created assistant ${created.id}`)
     console.log(`Tools: ${(created.model?.tools ?? []).map(t => t.function?.name).join(', ')}`)
     console.log(`\nPut this in frontend/src/voice/vapiDefaults.ts:\n  DEMO_VAPI_ASSISTANT_ID = '${created.id}'`)
+  } else if (command === 'sync') {
+    if (!arg) throw new Error('usage: sync <assistantId>')
+
+    /**
+     * Tuned for a robot that has to feel ALIVE, not for a careful call centre
+     * agent. Every default here was costing visible delay, measured from a
+     * real call transcript:
+     *
+     *  - waitSeconds 1.2 -> 0.1. This is dead air after the person stops
+     *    talking, before the robot even begins thinking. It was the single
+     *    largest delay and it is pure latency.
+     *  - the model does tool dispatch, not essay writing. A fast model is
+     *    worth far more here than a clever one.
+     *  - transcriber language multi -> en. In multi mode the transcript came
+     *    back as "can you take your hands?" for "shake hands" and "noddy
+     *    ahead" for "nod your head", so the robot spent turns asking what was
+     *    meant. Accuracy IS latency when a misheard word costs a round trip.
+     *  - numWords 1 / backoff 0.3 so "stop" cuts it off mid-sentence.
+     */
+    const existing = await api(`/assistant/${arg}`)
+    const MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5', existing.model?.model]
+    let updated, chosen
+    for (const model of MODELS) {
+      try {
+        updated = await api(`/assistant/${arg}`, {
+          method: 'PATCH',
+          body: {
+            model: { provider: 'anthropic', model, messages: [{ role: 'system', content: ROBOT_PROMPT }], tools: robotTools(token), temperature: 0.3 },
+            transcriber: { provider: 'deepgram', model: 'nova-3', language: 'en' },
+            startSpeakingPlan: { waitSeconds: 0.1, smartEndpointingPlan: { provider: 'livekit' } },
+            stopSpeakingPlan: { numWords: 1, voiceSeconds: 0.1, backoffSeconds: 0.3 },
+            firstMessage: 'Hey! Ask me to stand up, sit down, or come over.',
+          },
+        })
+        chosen = model
+        break
+      } catch (error) {
+        console.log(`  ${model} rejected (${error.message}) - trying next`)
+      }
+    }
+    if (!updated) throw new Error('every candidate model was rejected')
+    console.log(`Synced on ${chosen}. Takes effect on the NEXT call - end the current one.\n`)
+    console.log(`  model        ${updated.model?.provider}/${updated.model?.model}`)
+    console.log(`  transcriber  ${updated.transcriber?.provider}/${updated.transcriber?.model} lang=${updated.transcriber?.language}`)
+    console.log(`  wait before reply  ${updated.startSpeakingPlan?.waitSeconds}s`)
+    console.log(`  interrupt after    ${updated.stopSpeakingPlan?.numWords} word(s), backoff ${updated.stopSpeakingPlan?.backoffSeconds}s`)
+    console.log(`  tools        ${(updated.model?.tools ?? []).map(t => t.function?.name).join(', ')}`)
   } else if (command === 'attach') {
     if (!arg) throw new Error('usage: attach <assistantId>')
     const existing = await api(`/assistant/${arg}`)
