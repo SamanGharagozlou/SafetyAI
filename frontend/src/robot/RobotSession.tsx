@@ -60,12 +60,14 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
     onPropose: name => { if (!blocked) setPending({ key: ++counter.current, text: `Take me to ${label(name)}`, proposedAction: 'GO_TO_PLACE', place: name }) },
     onYes: () => setYes(n => n + 1), onNo: () => setPending(null), onStop: () => { void stop() }, onFinish: onLeave, onExpired })
   // The guest agreed to voice by tapping the consent button, so greet aloud and then listen.
-  const greeted = useRef(false)
+  // A short delay (cancelled on unmount) so React's development double-mount cannot cut the sentence off right after it starts.
   useEffect(() => {
-    if (greeted.current || !info.consent.voice) return
-    greeted.current = true
-    talk_.enable()
-    talk_.robotSays(`Hi ${nickname || 'there'}! Where would you like to go?`, true)
+    if (!info.consent.voice) return
+    const timer = setTimeout(() => {
+      talk_.enable()
+      talk_.robotSays(`Hi ${nickname || 'there'}! Where would you like to go?`, true)
+    }, 400)
+    return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   function send(event: FormEvent) {
