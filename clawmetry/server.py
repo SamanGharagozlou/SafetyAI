@@ -71,6 +71,7 @@ class Hub:
         self.breaches: list[dict] = []
         self.sources: dict = {}
         self._n = 0
+        self._replay()
         self.cor.expect("bridge")
         if args.guard:
             self.cor.expect("guard")
@@ -78,6 +79,26 @@ class Hub:
             "event": "collector_started", "body": args.body,
             "upstream": args.upstream, "guard": args.guard or None,
             "cosmos": self.judge.configured})
+
+    def _replay(self):
+        """Rebuild the in-memory view from an existing ledger.
+
+        Without this a restart shows an intact chain of 800 events beside an
+        empty breach feed, which reads as "nothing has gone wrong" - the exact
+        reassuring-blank this collector exists to abolish. Breaches are
+        re-shown, never re-appended: the record is append-only and replaying
+        it must not forge new entries.
+        """
+        for ev in self.led.read():
+            d = ev.get("data") or {}
+            if ev["kind"] == "breach":
+                self.breaches.insert(0, d | {"seq": ev["seq"], "ts": ev["ts"]})
+            elif ev["kind"] == "state":
+                self.last_state = d
+            src = d.get("source") or ev.get("actor")
+            if src:
+                self.sources[src] = {"last_ts": ev["ts"], "kind": ev["kind"]}
+        del self.breaches[200:]
 
     @staticmethod
     def _load_zones(path):
@@ -346,7 +367,14 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         q = self.hub.subscribe()
         try:
-            for ev in self.hub.led.read(limit=30):
+            # Replay the ACTIONS, not the telemetry. State samples arrive at
+            # 2 Hz, so a flat "last 30 events" is 15 seconds of heartbeat and
+            # the ledger panel opens empty on a run full of real decisions.
+            # Keep every correlated event plus the newest state for liveness.
+            hist = self.hub.led.read()
+            acts = [e for e in hist if e["kind"] != "state"][-80:]
+            latest_state = next((e for e in reversed(hist) if e["kind"] == "state"), None)
+            for ev in acts + ([latest_state] if latest_state else []):
                 self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
             self.wfile.flush()
             while True:

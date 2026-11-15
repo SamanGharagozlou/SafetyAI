@@ -104,18 +104,32 @@ function renderLedger() {
     const cos = (a.preds || []).find(p => p.basis === 'cosmos');
     const rows = [];
     rows.push(['who asked', a.asked ? esc(a.asked) : '<span class=t>no transcript — Vapi self-report not wired</span>']);
-    rows.push(['intended', `<span class="tool">${esc(a.tool || '?')}</span> ${esc(JSON.stringify(a.args || {}))}`]);
+    rows.push(['intended', a.tool
+      ? `<span class="tool">${esc(a.tool)}</span> ${a.args && Object.keys(a.args).length ? esc(JSON.stringify(a.args)) : ''}`
+      : '<span style="color:var(--amber)">unknown — no intent was ever recorded for this action</span>']);
     if (kin) rows.push(['predicted', kin.confidence === 0
       ? `<span style="color:var(--amber)">unknown — ${esc(kin.reason)}</span>`
       : `→ x ${kin.end_pose[0]} y ${kin.end_pose[1]} · ${kin.duration_s}s${kin.predicted_breach ? ` · <span style="color:var(--red)">BREACH: ${esc(kin.reason)}</span>` : ''}`]);
     if (cos) rows.push(['world model', cos.available
-      ? `${cos.unsafe ? '<span style="color:var(--red)">unsafe</span>' : 'clear'} — ${esc(cos.reason)} (${cos.latency_s}s)`
+      ? (cos.contradiction
+          ? `<span style="color:var(--red)">unsafe (self-contradictory)</span> — flags said clear, reasoning said: ${esc(cos.reason)} · taking the cautious reading (${cos.latency_s}s)`
+          : `${cos.unsafe ? '<span style="color:var(--red)">unsafe</span>' : '<span style="color:var(--green)">clear</span>'} — ${esc(cos.reason) || 'no reason given'} (${cos.latency_s}s)`)
       : `<span style="color:var(--amber)">unavailable — ${esc(cos.reason)}</span>`]);
     if (a.decision) rows.push(['gate', a.decision === 'deny'
       ? `<span style="color:var(--red)">DENIED</span> — ${esc(a.reason)}`
       : '<span style="color:var(--green)">allowed</span>']);
     if (a.human) rows.push(['intervened', `<span style="color:var(--amber)">${esc(a.by)} tapped ${esc(a.human).toUpperCase()}</span> at ${clock(a.hts)}`]);
-    if (a.out) rows.push(['what it did', `end x ${a.out.end_pose?.[0]} y ${a.out.end_pose?.[1]} · ${a.out.duration_s}s · deviation <b style="color:${a.out.deviation_z >= 3 ? 'var(--red)' : 'var(--green)'}">${a.out.deviation_z}σ</b>${a.out.error ? ` · <span style="color:var(--red)">${esc(a.out.error)}</span>` : ''}`]);
+    if (a.out) {
+      const p = a.out.end_pose;
+      const pose = (Array.isArray(p) && p[0] != null)
+        ? `end x ${(+p[0]).toFixed(2)} y ${(+p[1]).toFixed(2)}`
+        : '<span class=t>no pose feed</span>';
+      const dev = a.out.deviation_z == null
+        ? '<span style="color:var(--amber)">unverified</span>'
+        : `deviation <b style="color:${a.out.deviation_z >= 3 ? 'var(--red)' : 'var(--green)'}">${a.out.deviation_z}σ</b>`;
+      rows.push(['what it did', `${pose} · ${a.out.duration_s ?? '?'}s · ${dev}` +
+        (a.out.error ? ` · <span style="color:var(--red)">${esc(a.out.error)}</span>` : '')]);
+    }
     (a.breaches || []).forEach(b => rows.push(['breach', `<span style="color:var(--red)">${esc(b.rule)}</span> — ${esc(b.detail)}`]));
     return `<div class="act ${cls}"><div class="t">${clock(a.t)} · ${esc(a.corr)}</div>` +
       rows.map(([k, v]) => `<div class="row"><div class="k">${k}</div><div>${v}</div></div>`).join('') + '</div>';

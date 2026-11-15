@@ -330,9 +330,23 @@ class BrainJudge:
                         "reason": f"judge answered in a shape this client does not "
                                   f"understand: {sorted(v)[:6] if isinstance(v, dict) else type(v).__name__}",
                         "raw": body}
+            flags_unsafe = bool(v.get("stop") or v.get("unsafe") or v.get("leaves_go_zone"))
+            # THE JUDGE CAN CONTRADICT ITSELF. Observed on the real robot: flags
+            # said stop=false, leaves_go_zone=false, while the same verdict's
+            # prose read "forward is unsafe because the person is in the path".
+            # The gate trusted the flags and allowed the walk. A judge whose
+            # structured output disagrees with its own reasoning is not a clear
+            # answer, so this resolves the disagreement the only safe way - the
+            # cautious reading wins - and says so, rather than silently picking.
+            prose = str(v.get("reason", "")).lower()
+            prose_unsafe = any(w in prose for w in
+                               ("unsafe", "must stop", "should stop", "do not", "danger",
+                                "blocked", "in the path", "collision", "not safe"))
+            contradiction = prose_unsafe and not flags_unsafe
             return {"available": True, "latency_s": lat,
-                    "unsafe": bool(v.get("stop") or v.get("unsafe")
-                                   or v.get("leaves_go_zone")),
+                    "unsafe": flags_unsafe or contradiction,
+                    "flags_unsafe": flags_unsafe,
+                    "contradiction": contradiction,
                     "reason": str(v.get("reason", ""))[:200],
                     "hazards": v.get("hazards") or [],
                     "people_within_2m": v.get("people_within_2m"),

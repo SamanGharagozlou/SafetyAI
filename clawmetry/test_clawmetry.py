@@ -390,6 +390,25 @@ class TestPredict(unittest.TestCase):
                 "verdict": {"leaves_go_zone": True, "confidence": 0.8, "reason": "exits zone"}}
         self.assertTrue(_fake_brain(body).judge("walk_distance", {}, {}, b"\xff\xd8x")["unsafe"])
 
+    def test_flags_clear_but_prose_unsafe_resolves_to_unsafe(self):
+        """Observed live: stop=false while the reason read "forward is unsafe
+        because the person is in the path". The cautious reading must win."""
+        body = {"ok": True, "judged": True, "verdict": {
+            "stop": False, "leaves_go_zone": False, "confidence": 0.8,
+            "reason": "forward is unsafe because the person is in the path"}}
+        r = _fake_brain(body).judge("walk_distance", {}, {}, b"\xff\xd8x")
+        self.assertTrue(r["unsafe"])
+        self.assertTrue(r["contradiction"])
+        self.assertFalse(r["flags_unsafe"])
+
+    def test_a_genuinely_clear_verdict_is_not_flagged_as_contradictory(self):
+        body = {"ok": True, "judged": True, "verdict": {
+            "stop": False, "leaves_go_zone": False, "confidence": 0.9,
+            "reason": "the corridor ahead is clear and empty"}}
+        r = _fake_brain(body).judge("walk_distance", {}, {}, b"\xff\xd8x")
+        self.assertFalse(r["unsafe"])
+        self.assertFalse(r["contradiction"])
+
     def test_an_unrecognised_verdict_shape_fails_closed(self):
         """Not understanding the answer must never read as approval."""
         for body in ({"ok": True, "judged": True, "verdict": {"something_else": 1}},

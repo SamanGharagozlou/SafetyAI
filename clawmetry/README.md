@@ -19,6 +19,26 @@ python3 clawmetry/server.py --body agibot_d1w \
 python3 test_clawmetry.py        # 41 tests, no robot, no camera, no network
 ```
 
+## What it looks like
+
+| | |
+|---|---|
+| ![overview](docs/01-overview-all-detectors.png) | **Every detector firing at once** (`scenarios.py`). Authority pipeline across the top, the ledger showing intention vs action, breach feed by severity, and source ages — because a feed that has gone quiet has to be visible, not absent. |
+| ![cosmos](docs/04-cosmos-world-model.png) | **The world model on real hardware.** A walk judged clear and allowed at 0.24σ; a gesture where the judge is correctly *not* consulted (0 m translation); and a `do_gesture` denied because Cosmos saw people in the path — the robot never received that command. |
+| ![tamper](docs/05-chain-tamper-detected.png) | **Someone edited a `predicted_breach` into "all clear".** The header reads `chain BROKEN at 235`, naming the exact line. Note the stale "clear — forward is unsafe" verdict below it: recorded before the self-contradiction fix, and an append-only chain does not rewrite history. |
+
+Reproduce all of it with no robot:
+
+```bash
+node tools/robot-sim/server.mjs &
+python3 clawmetry/server.py --upstream http://127.0.0.1:5175 \
+        --zones clawmetry/zones.example.json --port 8901 &
+python3 clawmetry/scenarios.py --url http://127.0.0.1:8901
+```
+
+`scenarios.py` drives ten scenarios — one per detector — through the real tap
+and the real `/ingest` door, not a test backdoor.
+
 ## Why a tap and not an SDK client
 
 The D1 permits **one SDK client**, which the team bridge already holds. Anything
@@ -154,7 +174,13 @@ simulation. They are the reason the tests now number 62.
 3. **A collector that never starts was invisible.** `silence` only watched
    feeds that had reported at least once. Declared-but-absent feeds now raise
    `source_never_reported`, after a startup grace.
-4. **A world model asked the wrong question.** Cosmos denied a *nod* because
+4. **The judge contradicted itself.** A verdict came back with `stop: false`
+   and `leaves_go_zone: false` while its own prose read *"forward is unsafe
+   because the person is in the path"*. The gate trusted the flags and allowed
+   the walk. Disagreement between a judge's structured output and its own
+   reasoning is now detected, resolved the cautious way, and labelled
+   `self-contradictory` rather than silently picking one.
+5. **A world model asked the wrong question.** Cosmos denied a *nod* because
    "people are in the path ahead, restricting forward movement" - true of
    walking, irrelevant to a gesture with four feet planted. In a room with
    eight people that denies every gesture the greeter has. Only translating
