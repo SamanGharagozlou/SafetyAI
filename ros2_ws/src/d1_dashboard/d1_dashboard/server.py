@@ -21,6 +21,8 @@ import argparse  # noqa: E402
 import base64  # noqa: E402
 import json  # noqa: E402
 import math  # noqa: E402
+import re  # noqa: E402
+import shutil  # noqa: E402
 import signal  # noqa: E402
 import subprocess  # noqa: E402
 import threading  # noqa: E402
@@ -32,7 +34,7 @@ import numpy as np  # noqa: E402
 import rclpy  # noqa: E402
 import tf2_ros  # noqa: E402
 from action_msgs.msg import GoalStatus  # noqa: E402
-from geometry_msgs.msg import PoseStamped, Twist  # noqa: E402
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist  # noqa: E402
 from nav2_msgs.action import NavigateToPose  # noqa: E402
 from nav_msgs.msg import OccupancyGrid, Path  # noqa: E402
 from rclpy.action import ActionClient  # noqa: E402
@@ -131,7 +133,9 @@ class Dashboard(Node):
         self._teleop_active = False
         self.job = {'name': None, 'status': 'idle', 'message': ''}
         self.ui_mode = 'idle'                                # idle | mapping | navigation
-        self.current_map = None
+        self.current_map = None                              # id of the loaded map
+        self.current_entry = None                            # its list entry (dict)
+        self.start_pose, self.pose_confirmed = None, False   # robot pose in the map set by the operator (lidar maps have no live localization)
 
         qos_latched = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1, reliability=ReliabilityPolicy.RELIABLE,
                                  durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -149,6 +153,7 @@ class Dashboard(Node):
 
         self.pub_vel = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_cmd = self.create_publisher(String, '/robot_cmd', 10)
+        self.pub_init = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -292,6 +297,8 @@ class Dashboard(Node):
     def send_goal(self, x, y, yaw):
         if not self.nav_client.wait_for_server(timeout_sec=1.0):
             return False, 'Nav2 is not running (use Load map)'
+        if self.running('static_nav') and not self.pose_confirmed:
+            return False, 'place the robot first: use Place robot and mark where it really stands (or "robot is at map origin")'
         if not self.localized:
             return False, 'robot is not localized in the map yet'
         goal = NavigateToPose.Goal()
@@ -361,6 +368,10 @@ class Dashboard(Node):
                     'delete_db:=false', 'localization:=true']
         if name == 'nav2':
             return ['ros2', 'launch', 'd1_nav', 'navigation.launch.py']
+        if name == 'static_nav':          # saved lidar map + hand-placed localization + Nav2
+            sp = self.start_pose or (0.0, 0.0, 0.0)
+            return ['ros2', 'launch', 'd1_nav', 'static_navigation.launch.py', f'map:={db}',
+                    f'x:={sp[0]:.3f}', f'y:={sp[1]:.3f}', f'yaw:={sp[2]:.3f}']
         if name == 'rviz':
             return ['ros2', 'run', 'rviz2', 'rviz2', '-d', os.path.join(
                 os.popen('ros2 pkg prefix d1_slam').read().strip(), 'share/d1_slam/rviz/mapping.rviz')]
@@ -422,9 +433,7 @@ class Dashboard(Node):
         with self.lock:
             self.job = {'name': name, 'status': status, 'message': message}
 
-    def save_map(self, name=None):
-        if not self.mono:
-            return {'ok': False, 'error': 'monocular SLAM is deactivated (start the dashboard with mono_slam:=true)'}
+    def _save_mono_map(self, name=None):
         if not self.running('mapping'):
             return {'ok': False, 'error': 'not mapping'}
         if 'map' not in self.grids:
@@ -464,7 +473,114 @@ class Dashboard(Node):
         except Exception as e:  # noqa: BLE001
             self._job('save_map', 'error', str(e))
 
+    # ------------------------------------------------------------------ lidar maps (static navigation)
+    def _repo_maps_dir(self):
+        """<repo>/maps (one folder per lidar scan). D1_MAPS_DIR wins; else walk up from this file (works with --symlink-install)."""
+        if os.environ.get('D1_MAPS_DIR'):
+            return os.environ['D1_MAPS_DIR']
+        here = os.path.dirname(os.path.realpath(__file__))
+        while here != os.path.dirname(here):
+            if os.path.isfile(os.path.join(here, 'maps', 'README.md')) or os.path.isdir(os.path.join(here, 'maps')):
+                return os.path.join(here, 'maps')
+            here = os.path.dirname(here)
+        return ''
+
+    def _static_maps(self):
+        out = []
+        for source, root in (('saved', os.path.join(self.maps_dir, 'maps')), ('repo', self._repo_maps_dir())):
+            try:
+                names = sorted(os.listdir(root)) if root else []
+            except OSError:
+                names = []
+            for d in names:
+                y = os.path.join(root, d, 'map.yaml')
+                if not os.path.isfile(y):
+                    continue
+                meta = {}
+                try:
+                    meta = json.load(open(os.path.join(root, d, 'meta.json')))
+                except (OSError, ValueError):
+                    pass
+                created = time.strftime('%Y-%m-%d %H:%M', time.localtime(os.path.getmtime(y)))
+                out.append({'id': f'{source}:{d}', 'name': f'{d}', 'kind': 'lidar', 'source': source, 'yaml': y,
+                            'created': created, 'start': meta.get('start_pose')})
+        return out
+
     def list_maps(self):
+        out = self._static_maps()
+        if self.mono:
+            out += self._list_mono_maps()
+        return sorted(out, key=lambda m: (m.get('kind') != 'lidar', m.get('source') != 'saved', m.get('name', '')))
+
+    def _find_map(self, mid):
+        return next((m for m in self.list_maps() if m['id'] == mid or m['name'] == mid), None)
+
+    def load_map(self, mid):
+        m = self._find_map(mid)
+        if m is None:
+            return {'ok': False, 'error': f'unknown map "{mid}"'}
+        if m['kind'] != 'lidar':
+            if not self.mono:
+                return {'ok': False, 'error': 'monocular SLAM is deactivated (start the dashboard with mono_slam:=true)'}
+            return self._load_mono_map(m['name'])
+        self.cancel_goal('load map')
+        for n in ('mapping', 'bag', 'nav2', 'localization', 'static_nav'):
+            self.stop(n)
+        if not self.running('robot'):
+            self.start_process()
+            time.sleep(2.0)
+        with self.lock:
+            for g in ('map', 'global', 'local'):
+                self.grids.pop(g, None)
+            self.plan = []
+            self.current_map, self.current_entry, self.ui_mode = m['id'], m, 'navigation'
+            self.trail = []
+            self.start_pose = tuple(m['start']) if m.get('start') else None
+            self.pose_confirmed = bool(self.start_pose)       # a saved start pose counts as placed
+            self.localized = False
+        self.start('static_nav', db=m['yaml'])
+        return {'ok': True, 'name': m['name'], 'start_pose': self.start_pose, 'placed': self.pose_confirmed}
+
+    def set_pose(self, x, y, yaw):
+        """Tell the robot where it is in the map (like RViz '2D Pose Estimate'); the localizer sets map->odom."""
+        if not self.running('static_nav'):
+            return {'ok': False, 'error': 'no map loaded (use Load map first)'}
+        msg = PoseWithCovarianceStamped()
+        msg.header.frame_id = 'map'
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.pose.pose.position.x, msg.pose.pose.position.y = float(x), float(y)
+        msg.pose.pose.orientation.z, msg.pose.pose.orientation.w = math.sin(yaw / 2), math.cos(yaw / 2)
+        msg.pose.covariance[0] = msg.pose.covariance[7] = 0.05
+        msg.pose.covariance[35] = 0.1
+        self.pub_init.publish(msg)
+        with self.lock:
+            self.start_pose, self.pose_confirmed = (float(x), float(y), float(yaw)), True
+            self.trail, self.trail_frame = [], None
+        return {'ok': True, 'pose': [x, y, yaw]}
+
+    def save_map(self, name=None):
+        if self.mono and self.running('mapping'):
+            return self._save_mono_map(name)
+        e = self.current_entry
+        if not e or e.get('kind') != 'lidar' or not self.running('static_nav'):
+            return {'ok': False, 'error': 'load a map first'}
+        name = ''.join(ch for ch in (name or '') if ch.isalnum() or ch in '-_') or (e['name'] + time.strftime('_%H%M%S'))
+        dst = os.path.join(self.maps_dir, 'maps', name)
+        try:
+            os.makedirs(dst, exist_ok=True)
+            src = os.path.dirname(e['yaml'])
+            y = open(e['yaml']).read()
+            img = re.search(r'^image:\s*(\S+)', y, re.M).group(1)
+            shutil.copy(os.path.join(src, img), os.path.join(dst, img))
+            shutil.copy(e['yaml'], os.path.join(dst, 'map.yaml'))
+            json.dump({'name': name, 'source_map': e['id'], 'start_pose': list(self.start_pose) if self.pose_confirmed else None,
+                       'created': time.strftime('%F %T')}, open(os.path.join(dst, 'meta.json'), 'w'))
+        except Exception as ex:  # noqa: BLE001
+            return {'ok': False, 'error': f'save failed: {ex}'}
+        return {'ok': True, 'name': name, 'start_pose': self.start_pose if self.pose_confirmed else None,
+                'message': f'saved map "{name}"' + (' with its start pose' if self.pose_confirmed else ' (no start pose set yet)')}
+
+    def _list_mono_maps(self):
         out = []
         try:
             for fn in sorted(os.listdir(self.maps_dir)):
@@ -472,6 +588,7 @@ class Dashboard(Node):
                     try:
                         m = json.load(open(os.path.join(self.maps_dir, fn)))
                         if os.path.exists(m.get('db', '')):
+                            m.update(id=m.get('name'), kind='mono')
                             out.append(m)
                     except (OSError, ValueError):
                         pass
@@ -479,9 +596,7 @@ class Dashboard(Node):
             pass
         return sorted(out, key=lambda m: m.get('created', ''), reverse=True)
 
-    def load_map(self, name):
-        if not self.mono:
-            return {'ok': False, 'error': 'monocular SLAM is deactivated (start the dashboard with mono_slam:=true)'}
+    def _load_mono_map(self, name):
         db = os.path.join(self.maps_dir, name + '.db')
         if not os.path.exists(db):
             return {'ok': False, 'error': f'no database for "{name}"'}
@@ -504,7 +619,7 @@ class Dashboard(Node):
     def clear_all(self, stop_robot=False):
         self.cancel_goal('clear all')
         self.teleop = (0.0, 0.0, 0.0, 0.0)
-        for n in ('nav2', 'localization', 'mapping', 'bag', 'rviz', 'perception'):
+        for n in ('nav2', 'localization', 'static_nav', 'mapping', 'bag', 'rviz', 'perception'):
             self.stop(n)
         kept_robot = False
         standing = self.mode in STANDING_MODES
@@ -516,7 +631,8 @@ class Dashboard(Node):
             self.grids.clear()
             self.plan = []
             self.nav.update(status='idle', goal=None, distance_remaining=None, goal_handle=None)
-            self.ui_mode, self.current_map = 'idle', None
+            self.ui_mode, self.current_map, self.current_entry = 'idle', None, None
+            self.start_pose, self.pose_confirmed = None, False
             self.trail = []
             self.job = {'name': None, 'status': 'idle', 'message': ''}
         msg = 'all stopped'
@@ -525,7 +641,7 @@ class Dashboard(Node):
         return {'ok': True, 'message': msg}
 
     def shutdown_all(self):
-        for n in ('nav2', 'localization', 'mapping', 'bag', 'rviz', 'perception'):
+        for n in ('nav2', 'localization', 'static_nav', 'mapping', 'bag', 'rviz', 'perception'):
             self.stop(n)
         if self.mode not in STANDING_MODES:
             self.stop('robot')
@@ -544,7 +660,7 @@ class Dashboard(Node):
                 'procs': {n: p.info() for n, p in self.procs.items()},
                 'job': self.job,
                 'grids': {n: g['version'] for n, g in self.grids.items()},
-                'features': {'mono_slam': self.mono},
+                'features': {'mono_slam': self.mono, 'lidar_nav': True}, 'start_pose': self.start_pose, 'pose_confirmed': self.pose_confirmed,
             }
 
     def grid_payload(self, name):
@@ -653,7 +769,7 @@ def make_handler(dash):
                     return self._send(400, {'ok': False, 'error': 'unknown action'})
                 if u == '/api/process':
                     name, act = b.get('name', ''), b.get('action', '')
-                    if name not in ('robot', 'perception', 'mapping', 'bag', 'localization', 'nav2', 'rviz'):
+                    if name not in ('robot', 'perception', 'mapping', 'bag', 'localization', 'nav2', 'static_nav', 'rviz'):
                         return self._send(400, {'ok': False, 'error': 'unknown process'})
                     if act == 'start':
                         db = os.path.join(dash.maps_dir, (dash.current_map or 'manual') + '.db')
@@ -664,6 +780,8 @@ def make_handler(dash):
                             return self._send(200, {'ok': False, 'error': 'robot is standing: lie it down first'})
                         return self._send(200, {'ok': dash.stop(name)})
                     return self._send(400, {'ok': False, 'error': 'unknown action'})
+                if u == '/api/pose':
+                    return self._send(200, dash.set_pose(float(b['x']), float(b['y']), float(b.get('yaw', 0))))
                 if u == '/api/goal':
                     ok, msg = dash.send_goal(float(b['x']), float(b['y']), float(b.get('yaw', 0)))
                     return self._send(200, {'ok': ok, 'message': msg})
