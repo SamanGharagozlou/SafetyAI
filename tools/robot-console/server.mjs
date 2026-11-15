@@ -187,7 +187,15 @@ createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/api/voice-config') {
-      return json(res, 200, { publicKey: VAPI_PUBLIC_KEY, assistantId: VAPI_ASSISTANT_ID })
+      // `simulated` drives a banner in the page. When this console is public
+      // (a tunnel, for a phone), the single most important thing a viewer can
+      // know is whether the buttons move a real machine or a fake one.
+      return json(res, 200, {
+        publicKey: VAPI_PUBLIC_KEY,
+        assistantId: VAPI_ASSISTANT_ID,
+        simulated: /127\.0\.0\.1|localhost/.test(ROBOT) && !ROBOT.includes(':8090'),
+        robot: ROBOT,
+      })
     }
 
     if (req.method === 'GET' && url.pathname === '/api/last-call') {

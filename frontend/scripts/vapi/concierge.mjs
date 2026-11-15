@@ -217,8 +217,10 @@ function tools(url) {
 }
 
 const BASE = url => ({
-  name: 'Testbad Spa Concierge (simulator)',
-  firstMessage: 'Oh, hello! Welcome to Testbad. Ask me anything about the spa, or I can walk you somewhere.',
+  name: 'Leukerbad Therme greeter (simulator)',
+  // Spoken to someone WALKING PAST, not to someone who came to a desk. It has
+  // about three seconds to earn a reply, so it is a hook, not a welcome.
+  firstMessage: 'Oh, hello! Fancy a hot soak? Ten thermal pools in there, right under the mountains.',
   // Slightly longer than the bare robot: a guest mid-thought in a warm room
   // should not be cut off. Still far below the 1.2s that felt broken.
   startSpeakingPlan: { waitSeconds: 0.3, smartEndpointingPlan: { provider: 'livekit' } },

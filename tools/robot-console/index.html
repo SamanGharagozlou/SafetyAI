@@ -229,6 +229,7 @@
     Voice <span id="voice-state" style="text-transform:none;letter-spacing:0;color:var(--accent)"></span>
     <button id="analyse" style="float:right;padding:5px 11px;font-size:12px">⟲ Analyse last call</button>
   </h2>
+  <div id="moments"></div>
   <div id="transcript"></div>
   <div id="analysis" style="display:none"></div>
   <div class="note">Every tool the assistant invokes appears above <b>as it is chosen</b>, with the delay measured from the moment you stopped speaking — <span class="lat fast">green</span> is snappy, <span class="lat mid">amber</span> is noticeable, <span class="lat slow">red</span> feels broken. <b>Analyse last call</b> pulls Vapi's own server-side timings, which show where the time really went.</div>
@@ -432,6 +433,26 @@ const MIC_HINT_MS = 7000
 
 let vapi = null, voiceLive = false, connectTimer, hintTimer
 
+/**
+ * PRELOAD, STARTED AT PAGE LOAD, NOT AT CLICK.
+ *
+ * Fetching and parsing the SDK bundle off a CDN is seconds of work, and doing
+ * it inside the click handler put all of it between the button and the first
+ * word. The same goes for the config fetch. Both are started here, the moment
+ * the page loads, so by the time anyone presses the button they are long done
+ * and the click only pays for the parts that genuinely cannot start earlier.
+ */
+const sdkPromise = import(VOICE_SDK).catch(e => ({ __error: e }))
+const configPromise = fetch('/api/voice-config').then(r => r.json()).catch(e => ({ __error: e }))
+
+/** Phase timings, so "it is slow" becomes a number we can act on. */
+let t0 = 0
+const mark = label => {
+  const ms = Math.round(performance.now() - t0)
+  log(`   ⏱ ${label}: ${ms}ms`, ms > 1500 ? 'log-err' : 'log-ok')
+  return ms
+}
+
 function voiceState(text, cls = '') {
   $('voice-state').textContent = text ? '— ' + text : ''
   $('voice-state').style.color = cls === 'err' ? 'var(--bad)' : cls === 'ok' ? 'var(--ok)' : 'var(--accent)'
@@ -535,6 +556,7 @@ function endVoice(label, cls) {
 }
 
 async function startVoice() {
+  t0 = performance.now()          // the clock the person actually experiences
   $('voice-panel').style.display = 'block'
   voiceState('connecting…')
   log('→ starting voice call', 'log-send')
@@ -548,17 +570,25 @@ async function startVoice() {
   }, CONNECT_TIMEOUT_MS)
   hintTimer = setTimeout(() => voiceState('waiting for microphone permission — choose Allow'), MIC_HINT_MS)
 
-  try {
-    const probe = await navigator.mediaDevices.getUserMedia({ audio: true })
-    probe.getTracks().forEach(t => t.stop())   // release at once, or the SDK publishes a dead track
-    clearTimeout(hintTimer)
-  } catch {
-    endVoice('microphone blocked', 'err')
-    return log('   microphone access denied — the buttons still work', 'log-err')
-  }
+  // The mic probe runs IN PARALLEL with the already-preloaded SDK and config.
+  // These used to be serial, so the wait was the SUM of all three rather than
+  // the longest one.
+  const micPromise = navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(s => { s.getTracks().forEach(t => t.stop()); return true })   // release at once, or the SDK publishes a dead track
+    .catch(() => false)
 
   try {
-    const { publicKey, assistantId } = await (await fetch('/api/voice-config')).json()
+    const [micOk, mod, cfg] = await Promise.all([micPromise, sdkPromise, configPromise])
+    clearTimeout(hintTimer)
+    mark('mic + sdk + config ready')
+
+    if (!micOk) {
+      endVoice('microphone blocked', 'err')
+      return log('   microphone access denied — the buttons still work', 'log-err')
+    }
+    if (mod?.__error) throw new Error('SDK failed to load: ' + mod.__error)
+    if (cfg?.__error) throw new Error('config failed to load: ' + cfg.__error)
+    const { publicKey, assistantId } = cfg
 
     /**
      * The CDN build is CommonJS wrapped as ESM, so `default` is the CJS
@@ -568,7 +598,6 @@ async function startVoice() {
      * package resolves one level shallower, so handle both rather than pin to
      * whichever the CDN happens to emit today.
      */
-    const mod = await import(VOICE_SDK)
     const Vapi = [mod.default?.default, mod.default, mod.Vapi, mod].find(c => typeof c === 'function')
     if (!Vapi) throw new Error('could not find the Vapi constructor in the SDK module')
     vapi = new Vapi(publicKey)
@@ -579,7 +608,7 @@ async function startVoice() {
       $('talk').textContent = '⏹ End call'
       $('talk').classList.add('primary')
       voiceState('live — speak', 'ok')
-      log('   voice call live', 'log-ok')
+      mark('CALL LIVE (click → ready to speak)')
       banner(null)
     })
     vapi.on('call-end', () => { endVoice('call ended'); log('   voice call ended', 'log-ok') })
@@ -639,6 +668,73 @@ async function startVoice() {
     log(`   voice failed to start: ${e.message}`, 'log-err')
   }
 }
+
+/**
+ * One-press greet and sales moments.
+ *
+ * Each is a gesture plus a line, because out front the MOVEMENT is what stops
+ * someone and the words only land afterwards. The gesture always fires (it
+ * goes through the proxy and does not need a call); the line needs a live
+ * call.
+ *
+ * CAVEAT, surfaced rather than hidden: Vapi's say() is documented as
+ * unsupported on realtime / GPT-Live style assistants, and this assistant is
+ * OpenAI Realtime. So we try say(), then fall back to injecting a user turn
+ * with send(), and if BOTH are rejected the log says so plainly instead of
+ * leaving a button that looks like it worked.
+ */
+const MOMENTS = [
+  { label: '👋 Hook a passer-by', gesture: 'greet',
+    say: 'Oh, hello! Fancy a hot soak? Ten thermal pools in there, right under the mountains.' },
+  { label: '🏔 The view pitch', gesture: 'look_around',
+    say: 'Outdoor pool, snow on the peaks, forty-three degrees. That is the one people remember.' },
+  { label: '🎟 Day vs three hours', gesture: 'nod',
+    say: 'Three hours is thirty-three francs, the whole day is thirty-nine. If you are staying past lunch, take the day.' },
+  { label: '👨‍👩‍👧 Family / the slide', gesture: 'wiggle',
+    say: 'Bring the kids. The Badnerblitz is a hundred and twenty-six metres with two full loops, and under-sixes come in free.' },
+  { label: '🥐 Sunday brunch', gesture: 'tilt',
+    say: 'Sundays we do brunch and spa together, half eight to half ten, fifty-one francs. It is the best deal we have.' },
+  { label: '🧖 Sauna & hammam', gesture: 'bow',
+    say: 'There is a sauna world and a hammam too, with a garden looking straight at the mountains. Ten until seven, sixteen and over.' },
+  { label: '🚶 Walk them in', gesture: 'shake',
+    say: 'The desk is just inside. Come on, I will walk you over - stay close behind me.' },
+  { label: '🙇 Thanks, goodbye', gesture: 'bow',
+    say: 'Enjoy the water! I will be out here if you need me.' },
+]
+
+$('moments').innerHTML =
+  '<div class="btn-grid" style="margin-bottom:12px">' +
+  MOMENTS.map((m, i) => `<button class="moment" data-i="${i}" style="font-size:12.5px;padding:9px 10px;text-align:left">${m.label}</button>`).join('') +
+  '</div>'
+
+async function playMoment(i) {
+  const m = MOMENTS[i]
+  log(`→ moment: ${m.label}`, 'log-send')
+
+  // The gesture goes via the proxy, so it works with or without a live call.
+  send('do_gesture', { gesture: m.gesture })
+
+  if (!voiceLive || !vapi) {
+    log('   (no live call — gesture only. Press Talk to robot to hear the line.)', 'log-err')
+    return
+  }
+  try {
+    await vapi.say(m.say)
+    say('assistant', m.say)
+  } catch (e1) {
+    try {
+      vapi.send({ type: 'add-message', message: { role: 'user', content: `Say this to the guest, in your own voice: ${m.say}` } })
+      log('   say() unsupported here — injected it as a prompt instead', 'log-err')
+    } catch (e2) {
+      log(`   this assistant accepts neither say() nor add-message (${e1.message}). Scripted lines need the pipeline stack, not realtime.`, 'log-err')
+    }
+  }
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button.moment')
+  if (b) playMoment(Number(b.dataset.i))
+})
 
 $('analyse').addEventListener('click', analyseLastCall)
 
