@@ -356,6 +356,8 @@ async function poll() {
     $('s-batt').textContent = d.battery_pct != null ? d.battery_pct + '%' : '—'
     $('s-last').textContent = d.last_action ?? '—'
 
+    commandFromRobotState(d)
+
     if (d.battery_pct != null && d.battery_pct < 25) {
       banner('warn', `Battery ${d.battery_pct}%. The robot can cut power outright when low, which drops it — and the Jetson is powered from this same battery.`)
     }
@@ -673,6 +675,7 @@ function commandLabel(name, a = {}) {
 const MOVES = new Set(['robot_command', 'do_gesture', 'guide_to', 'walk_distance', 'move_robot', 'stop_robot'])
 
 function showCommand(name, args, source) {
+  lastShownAt = performance.now()
   const bar = $('cmdbar')
   bar.className = 'panel cmdbar live'
   $('cmd-k').textContent = `Command to robot · ${source} · ${new Date().toLocaleTimeString()}`
@@ -681,10 +684,57 @@ function showCommand(name, args, source) {
   $('cmd-res').textContent = MOVES.has(name) ? 'sent — waiting for the robot…' : 'sent…'
 }
 
+let lastShownAt = 0
 function showCommandResult(text) {
   const bad = /fail|sorry|refused|not standing|no live link/i.test(text)
   $('cmdbar').className = 'panel cmdbar ' + (bad ? 'bad' : 'ok')
   $('cmd-res').textContent = text
+}
+
+/**
+ * FALLBACK, and in practice the reliable path.
+ *
+ * Tool calls made by the ASSISTANT run on Vapi's servers and go straight to
+ * the robot - they never pass through this page. We were relying on Vapi
+ * echoing them to the browser as a `message`, and the shape it emits changed
+ * when we moved off realtime to a pipeline, so the command bar sat on "idle"
+ * while the simulator log showed stand_up, guide_to and robot_status all
+ * arriving perfectly.
+ *
+ * So instead of guessing that shape again, read the ROBOT's own last_action
+ * out of the status poll. The robot cannot be wrong about what it was just
+ * told to do, whoever told it.
+ */
+let lastSeenAction = null
+function commandFromRobotState(d) {
+  const a = d.last_action
+  if (!a || a === 'none' || a === lastSeenAction) return
+  lastSeenAction = a
+  // Do not stomp on a command this page sent a moment ago - that one already
+  // has richer detail (exact arguments) than last_action carries.
+  if (performance.now() - lastShownAt < 2500) return
+
+  const m = {
+    stand_up: 'STAND UP', lie_down: 'SIT DOWN', shake_hand: 'SHAKE HAND',
+    stop: 'STOP', settled: 'SETTLED DOWN BY ITSELF',
+  }
+  let label = m[a]
+  if (!label && a.startsWith('gesture ')) {
+    const g = a.slice(8)
+    label = (g === 'greet' || g === 'welcome') ? 'GREET — bow + shake hand' : `GESTURE — ${g.replace('_', ' ')}`
+  }
+  if (!label && a.startsWith('guiding to ')) label = `WALK TO ${a.slice(11).replace(/_/g, ' ')}`.toUpperCase()
+  if (!label && a.startsWith('ARRIVED at ')) label = `ARRIVED — ${a.slice(11).replace(/_/g, ' ')}`.toUpperCase()
+  if (!label && a.startsWith('walk ')) label = a.toUpperCase()
+  if (!label && a.startsWith('gait ')) label = a.toUpperCase()
+  if (!label) label = a.toUpperCase()
+
+  $('cmdbar').className = 'panel cmdbar ok'
+  $('cmd-k').textContent = `Command to robot · voice · ${new Date().toLocaleTimeString()}`
+  $('cmd-main').textContent = label
+  $('cmd-raw').textContent = `robot reports: last_action = ${a}`
+  $('cmd-res').textContent = d.standing ? 'standing' : d.ctrl_mode === 51 ? 'lying down' : 'not standing'
+  log(`→ [voice] ${a}`, 'log-send')
 }
 
 const esc = s => String(s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))
