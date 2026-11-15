@@ -72,8 +72,10 @@ function utter(text: string, lang: string | null, signal?: AbortSignal): Promise
     }
     let spoke = false
     let timer: ReturnType<typeof setTimeout> | undefined
-    const done = (ok: boolean) => { clearTimeout(timer); alive.delete(utterance); signal?.removeEventListener('abort', cancel); resolve(ok) }
+    const done = (ok: boolean) => { clearTimeout(timer); clearTimeout(longest); alive.delete(utterance); signal?.removeEventListener('abort', cancel); resolve(ok) }
     const cancel = () => { try { synth.cancel() } catch { /* ignore */ } done(spoke) }
+    // some engines report start and never end: stop waiting after a generous time for this sentence
+    const longest = setTimeout(() => { try { synth.cancel() } catch { /* ignore */ } done(spoke) }, 4000 + text.length * 120)
     utterance.onstart = () => { spoke = true; clearTimeout(timer) }
     utterance.onend = () => done(spoke)
     utterance.onerror = event => done(spoke || (event as SpeechSynthesisErrorEvent).error === 'canceled' || (event as SpeechSynthesisErrorEvent).error === 'interrupted')
