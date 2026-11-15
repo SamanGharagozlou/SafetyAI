@@ -111,6 +111,7 @@ class Dashboard(Node):
     def __init__(self, args):
         super().__init__('d1_dashboard')
         self.args = args
+        self.external_robot = str(getattr(args, 'external_robot', 'false')).lower() in ('1', 'true', 'yes')
         self.lock = threading.RLock()
         self.maps_dir = os.path.expanduser(args.maps_dir)
         self.log_dir = os.path.join(self.maps_dir, 'logs')
@@ -362,6 +363,8 @@ class Dashboard(Node):
         raise KeyError(name)
 
     def start(self, name, db=None, bag=None):
+        if name == 'robot' and self.external_robot:      # the bridge is owned by someone else (SDK allows one client)
+            return False
         return self.make_proc(name, self.proc_cmds(name, db, bag)).start()
 
     def stop(self, name):
@@ -369,6 +372,8 @@ class Dashboard(Node):
         return p.stop() if p else False
 
     def running(self, name):
+        if name == 'robot' and self.external_robot:
+            return True
         p = self.procs.get(name)
         return bool(p and p.running())
 
@@ -667,6 +672,7 @@ def main():
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--maps-dir', default='~/d1_maps')
+    ap.add_argument('--external-robot', default='false', help='true: a bridge already runs elsewhere; never start/stop one')
     args, ros_args = ap.parse_known_args()
     rclpy.init(args=ros_args)
     dash = Dashboard(args)

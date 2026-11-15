@@ -29,3 +29,8 @@ Open `http://<orin wifi ip>:8080` from the PC. Use a private `ROS_DOMAIN_ID` on 
 * The Orin is shared: another session ran `apt-get upgrade`, which restarted Docker and killed a build. The Dockerfile uses BuildKit cache mounts so a retry is cheap.
 * Pin: `transformers==4.46.3` (works with torch 2.5); the PC uses newer versions with a newer torch.
 * First depth run downloads the model into `~/.d1_hf_cache` (needs internet; the ethernet has none, so it goes over Wi-Fi).
+
+## Using a bridge that is already running (shared Orin)
+The SDK accepts one client. If someone already runs `agibot_d1_bridge` on the Orin, do not start a second one (it fails with
+`bind: Address already in use`). Start the dashboard with `external_robot:=true`: it never starts/stops a bridge and
+uses the running bridge's `/odom`, `/imu`, `/tf` (same ROS domain), while camera, depth, RTAB-Map and Nav2 run in the container.
