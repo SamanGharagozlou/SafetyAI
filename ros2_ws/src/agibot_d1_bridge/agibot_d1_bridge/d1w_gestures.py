@@ -10,7 +10,7 @@ end at zero (no jerk at segment boundaries).
 Usage:
   python3 d1w_gestures.py --list
   python3 d1w_gestures.py --dry-run nod shake          # no robot, mock backend
-  ros2 run agibot_d1_bridge d1w_gestures --local-ip 192.168.234.100 [--stand] [--scale 0.5] nod
+  ros2 run agibot_d1_bridge d1w_gestures --local-ip 192.168.234.100 [--stand] [--scale 1.0] nod
   (SDK found via --sdk-lib, $AGIBOT_SDK_DIR, or the third_party submodule.
    Do not run while cmd_vel_bridge is connected - both open the SDK link.)
   (no gesture names -> interactive prompt)
@@ -26,7 +26,8 @@ import time
 from dataclasses import dataclass, replace
 
 SDK_LIMIT = 0.5      # per-axis limit from api_zsl-1w.md
-SAFE_LIMIT = 0.4     # our cap, margin under the SDK limit
+SAFE_LIMIT = 0.45    # our cap, margin under the SDK limit
+GESTURE_RATE = 0.44  # peak rate used to time angle-based gestures (<= SAFE_LIMIT)
 RATE_HZ = 50
 MODE_PASSIVE, MODE_STAND, MODE_MOVE = 0, 1, 3   # getCurrentCtrlmode() values
 DEFAULT_PORT = 43988                            # port used in the vendor demos
@@ -67,36 +68,50 @@ def hold(d):
     return Seg(d)
 
 
-def _alternate(axis, peak, half, cycles):
-    """Oscillate on one axis: +quarter, then (-,+) full swings, then back to centre."""
-    segs = [Seg(half / 2, **{axis: peak})]
+def turn(duration=None, **amounts):
+    """Segment that moves the body by `amounts` (roll/pitch/yaw in rad, height in m).
+
+    A half-sine of peak p over T moves 2pT/pi, so p = amount*pi/(2T). With no
+    `duration`, T is the shortest that keeps the largest *angle* at GESTURE_RATE.
+    """
+    if duration is None:
+        biggest = max(abs(v) for k, v in amounts.items() if k != "height")
+        duration = math.pi * biggest / (2 * GESTURE_RATE)
+    return Seg(duration, **{k: v * math.pi / (2 * duration) for k, v in amounts.items()})
+
+
+def _alternate(axis, amp, cycles):
+    """Oscillate on one axis by +-amp rad: out, (-,+) full swings, back to centre."""
+    segs = [turn(**{axis: amp})]
     for i in range(2 * cycles - 1):
-        segs.append(Seg(half, **{axis: -peak if i % 2 == 0 else peak}))
-    segs.append(Seg(half / 2, **{axis: -peak if (2 * cycles - 1) % 2 == 0 else peak}))
+        segs.append(turn(**{axis: -2 * amp if i % 2 == 0 else 2 * amp}))
+    segs.append(turn(**{axis: -amp if (2 * cycles - 1) % 2 == 0 else amp}))
     return segs
 
 
+# Amplitudes are body angles (rad) / height (m). Reference: the vendor demo holds
+# attitudeControl(0.1, 0.1, 0.1, 0.1) for 4 s, i.e. ~0.4 rad (23 deg) per axis.
+# Untested on hardware: the SDK may clamp posture internally below these.
 P = PITCH_NOSE_DOWN
 GESTURES = {
-    # "yes": nose down/up twice
-    "nod": [Seg(0.4, pitch=0.35 * P), Seg(0.4, pitch=-0.35 * P)] * 2,
-    # "no": yaw left-right-left, back to centre
-    "shake": _alternate("yaw", 0.35, 0.7, 2),
-    # curious head tilt: roll, hold, return
-    "tilt": [Seg(0.6, roll=0.3), hold(1.0), Seg(0.6, roll=-0.3)],
-    # bow: nose down + lower body, hold, return
-    "bow": [Seg(0.8, pitch=0.3 * P, height=-0.15), hold(0.8),
-            Seg(0.8, pitch=-0.3 * P, height=0.15)],
-    # squat: lower body, hold, rise
-    "squat": [Seg(0.8, height=-0.15), hold(0.5), Seg(0.8, height=0.15)],
-    # quick side-to-side wiggle
-    "wiggle": _alternate("roll", 0.4, 0.5, 3),
-    # look left, then right, then centre
-    "look_around": [Seg(0.8, yaw=0.3), hold(0.5), Seg(1.6, yaw=-0.3), hold(0.5),
-                    Seg(0.8, yaw=0.3)],
-    # body traces a loop in roll/pitch
-    "sway_circle": [Seg(0.6, roll=0.3), Seg(0.6, pitch=0.3), Seg(0.6, roll=-0.3),
-                    Seg(0.6, pitch=-0.3)],
+    # "yes": nose down/up twice, 14 deg
+    "nod": [turn(pitch=0.25 * P), turn(pitch=-0.25 * P)] * 2,
+    # "no": yaw +-14 deg, left-right-left, back to centre
+    "shake": _alternate("yaw", 0.25, 2),
+    # curious head tilt: roll 17 deg, hold, return
+    "tilt": [turn(roll=0.3), hold(1.0), turn(roll=-0.3)],
+    # bow: nose down 20 deg + lower body 6 cm, hold, return
+    "bow": [turn(pitch=0.35 * P, height=-0.06), hold(1.0),
+            turn(pitch=-0.35 * P, height=0.06)],
+    # squat: lower body 10 cm, hold, rise
+    "squat": [turn(0.8, height=-0.10), hold(0.8), turn(0.8, height=0.10)],
+    # side-to-side wiggle, roll +-9 deg
+    "wiggle": _alternate("roll", 0.15, 2),
+    # look left 23 deg, then right, then centre
+    "look_around": [turn(yaw=0.4), hold(0.6), turn(yaw=-0.8), hold(0.6), turn(yaw=0.4)],
+    # body traces a loop in roll/pitch, 14 deg
+    "sway_circle": [turn(roll=0.25), turn(pitch=0.25), turn(roll=-0.25),
+                    turn(pitch=-0.25)],
 }
 
 # Sequences mixing our attitude gestures with built-in SDK actions.
@@ -341,8 +356,8 @@ def main(argv=None):
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--sdk-lib", help="dir containing mc_sdk_zsl_1w_py*.so (default: "
                                       "$AGIBOT_SDK_DIR or third_party submodule)")
-    ap.add_argument("--scale", type=float, default=0.5,
-                    help="rate multiplier in (0,1], default 0.5")
+    ap.add_argument("--scale", type=float, default=1.0,
+                    help="rate multiplier in (0,1], default 1.0")
     ap.add_argument("--stand", action="store_true", help="call standUp() before starting")
     ap.add_argument("--no-reset", action="store_true",
                     help="skip standUp() re-centre after each gesture")

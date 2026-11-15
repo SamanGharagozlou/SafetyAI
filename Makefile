@@ -7,6 +7,7 @@
 #   make up source=d1-wifi robot_ip=172.24.1.41   D1 on another network (e.g. event Wi-Fi)
 #   make up source=d1-camera robot_ip=<ip>   teammate's d1_camera driver + detector, one container
 #   make down | make logs | make shell | make test
+#   On a Jetson the same commands use the GPU image (default source=d1-camera, detector_gpu).
 #
 # Variables (all optional):
 #   rviz=false|true        start rviz2 (default false)
@@ -24,8 +25,15 @@
 #   torch=cpu              build only: cpu | cu121 | cu128 ...
 #   models="yolo26n.pt"    build only: weights baked into the image
 
+# On an NVIDIA Jetson (JetPack 6) the same commands build the CUDA image and run on the GPU.
+JETSON := $(if $(wildcard /etc/nv_tegra_release),true,false)
+
 rviz     ?= false
+ifeq ($(JETSON),true)
+source   ?= d1-camera
+else
 source   ?= webcam
+endif
 webcam   ?= 0
 robot_ip ?=
 rtsp_url ?=
@@ -69,7 +77,22 @@ ifeq ($(source),wsl-webcam)
   SOURCE_PARAMS := wsl_webcam_pipe.yaml
 endif
 
-COMPOSE_ENV = SOURCE_TYPE='$(SOURCE_TYPE)' WEBCAM_DEVICE='$(webcam)' RTSP_URL='$(rtsp_url)' \
+ifeq ($(JETSON),true)
+  COMPOSE      := docker compose -f docker-compose.yml -f docker-compose.jetson.yml
+  TORCH_INDEX  := https://pypi.jetson-ai-lab.io/jp6/cu126
+  TORCH_PKGS   := torch==2.11.0 torchvision==0.26.0
+  TORCH_ARGS   := --no-deps
+  models       := yolo26s.pt
+  JETSON_ENV   := DETECTOR_PARAMS='detector_gpu.yaml'
+else
+  COMPOSE      := docker compose
+  TORCH_INDEX  := https://download.pytorch.org/whl/$(torch)
+  TORCH_PKGS   := torch torchvision
+  TORCH_ARGS   :=
+  JETSON_ENV   :=
+endif
+
+COMPOSE_ENV = $(JETSON_ENV) SOURCE_TYPE='$(SOURCE_TYPE)' WEBCAM_DEVICE='$(webcam)' RTSP_URL='$(rtsp_url)' \
 	FILE_PATH='$(FILE_PATH)' FILE_DIR='$(FILE_DIR)' SOURCE_PARAMS='$(SOURCE_PARAMS)' \
 	MODEL_NAME='$(model)' DEVICE='$(device)' RVIZ='$(rviz)' DISPLAY='$(display)' \
 	ROS_DOMAIN_ID='$(domain)'
@@ -80,8 +103,8 @@ help:
 	@sed -n '1,30p' Makefile | grep '^#' | sed 's/^# \{0,1\}//'
 
 build:
-	TORCH_INDEX_URL=https://download.pytorch.org/whl/$(torch) PRELOAD_MODELS='$(models)' \
-		docker compose build
+	TORCH_INDEX_URL=$(TORCH_INDEX) TORCH_PACKAGES='$(TORCH_PKGS)' TORCH_PIP_ARGS='$(TORCH_ARGS)' PRELOAD_MODELS='$(models)' \
+		$(COMPOSE) build
 
 up:
 	@case "$(source)" in webcam|d1-wifi|d1-ethernet|d1-camera|rtsp|file|wsl-webcam) ;; \
@@ -91,17 +114,17 @@ up:
 	@mkdir -p $(MEDIA_DIR)
 	@if [ "$(rviz)" = true ] && command -v xhost >/dev/null 2>&1; then xhost +local:root >/dev/null 2>&1 || true; fi
 	@if [ "$(source)" = wsl-webcam ]; then scripts/wsl_webcam_pipe.sh start $(WSL_FIFO) "$(camera)"; fi
-	$(COMPOSE_ENV) docker compose up -d --force-recreate
+	$(COMPOSE_ENV) $(COMPOSE) up -d --force-recreate
 	@echo "perception stack up (source=$(source), rviz=$(rviz)). Logs: make logs | stop: make down"
 
 down:
-	-docker compose down
+	-$(COMPOSE) down
 	@scripts/wsl_webcam_pipe.sh stop $(WSL_FIFO)
 
 restart: down up
 
 logs:
-	docker compose logs -f --tail=50
+	$(COMPOSE) logs -f --tail=50
 
 shell:
 	docker exec -it human_perception bash
