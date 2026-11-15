@@ -129,3 +129,4 @@ Future task wiring must use backend-issued credentials separately from nicknames
 
 ### Voice and consent (robot mode)
 The guest first sees a consent screen (voice, face; nothing pre-ticked; data deleted at the end). The conversation is voice first with typing optional. Phone microphones need HTTPS; over plain LAN HTTP the app falls back to taps and typing. *Unverified on a real phone.*
+Phone demo with microphone: `tools/phone_demo.sh start --https` (self-signed certificate; Chrome on Android: Advanced > Proceed). If Chrome still blocks the mic, use `adb reverse tcp:5173 tcp:5173` over USB and open `https`-free `http://localhost:5173/...` (localhost counts as secure). *Unverified.*
