@@ -183,7 +183,7 @@
 <div class="banner" id="banner"></div>
 
 <div class="panel cmdbar" id="cmdbar">
-  <div class="cmd-k">Command to robot</div>
+  <div class="cmd-k" id="cmd-k">Command to robot</div>
   <div class="cmd-main" id="cmd-main">— idle —</div>
   <div class="cmd-raw" id="cmd-raw"></div>
   <div class="cmd-res" id="cmd-res"></div>
@@ -689,6 +689,7 @@ function commandLabel(name, a = {}) {
 /** Does this command physically move the robot? Those get the loud treatment. */
 const MOVES = new Set(['robot_command', 'do_gesture', 'guide_to', 'walk_distance', 'move_robot', 'stop_robot'])
 
+let lastShownAt = 0
 function showCommand(name, args, source) {
   lastShownAt = performance.now()
   const bar = $('cmdbar')
@@ -699,7 +700,6 @@ function showCommand(name, args, source) {
   $('cmd-res').textContent = MOVES.has(name) ? 'sent — waiting for the robot…' : 'sent…'
 }
 
-let lastShownAt = 0
 function showCommandResult(text) {
   const bad = /fail|sorry|refused|not standing|no live link/i.test(text)
   $('cmdbar').className = 'panel cmdbar ' + (bad ? 'bad' : 'ok')
