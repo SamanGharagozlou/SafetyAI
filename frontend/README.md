@@ -103,6 +103,22 @@ The demo adapter, `CallController`, `RequestFlow` and their tests are not modifi
 `END_SESSION`, optional `place`, `message`, `progress`) and components. Folding them into `tasks/contracts.ts` is a clean-up for the frontend owners once the contract is agreed.
 Tests: `npm test` (54 new tests in `src/robot/`: decoder rules, API client, layout, escort bar, request flow, whole screen against a fake backend, app in robot mode, demo unchanged). *Not covered:* Playwright e2e and a real phone.
 
+## Try it on a phone without the robot
+
+`tools/phone_demo.sh` runs the real gateway core and companion with a **mock robot** (no ROS, no hardware) plus this app in robot mode, reachable on your Wi-Fi:
+
+```sh
+tools/phone_demo.sh start                    # prints the URL and writes a QR code to /tmp/d1_phone_demo/qr.svg
+tools/phone_demo.sh start --not-localized    # shows the "Not ready" state (robot not placed on the map)
+tools/phone_demo.sh start --speed 0.15       # slower mock robot, easier to watch the journey card
+tools/phone_demo.sh stop | status
+```
+Open the printed `http://<PC-ip>:5173/join?t=<token>` on a phone **on the same Wi-Fi** (or scan the QR). The token is random per start. While it runs, the app is visible to that network. Notes:
+* Plain HTTP on a LAN address is fine here: no microphone is used and live voice (Vapi) is off in this demo. A phone microphone would need HTTPS (e.g. Tailscale Serve).
+* If the phone cannot connect: same Wi-Fi? (guest networks often isolate devices), and a firewall on the PC may need `sudo ufw allow 5173/tcp`.
+* The mock robot is `ros2_ws/src/d1_gateway/d1_gateway/mock_robot.py`: it walks at the given speed, stands up when lying, and refuses when not placed, like the real one. It is **not** a test of the real robot, Nav2 or the lidar.
+* The app's own `npm run qr` refuses links with a query string (its QR rule is "no session data in the link"). The robot QR carries the join token in the link, so the script writes the QR with the same `qr` library directly. Agree this with the frontend owners.
+
 ## Backend preparation
 
 [API_INTEGRATION.md](./API_INTEGRATION.md) describes **proposed, unverified** contracts. The default transcription adapter is disconnected and tasks always use `createMockTaskAdapter`.
