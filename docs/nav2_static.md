@@ -31,6 +31,12 @@ Open http://127.0.0.1:8080
 API additions: `GET /api/maps` (lidar maps first), `POST /api/workflow {action: load_map | save_map}`, `POST /api/pose {x,y,yaw}` (same as RViz "2D Pose Estimate").
 The `d1_gateway` WebSocket gateway sends goals to the same `navigate_to_pose` action, so frontends work on the loaded map too.
 
+## RViz2 view
+`ros2 launch d1_nav static_navigation.launch.py map:=... rviz:=true` (works with both localizers) opens RViz2 with `d1_nav/rviz/static_nav.rviz`:
+lidar map (white/black/grey), global costmap (blue->red, cyan inscribed, magenta lethal), local costmap (off by default), plan, robot footprint, TF.
+Tools: **2D Pose Estimate** = Place robot (`/initialpose`, the localizer picks it up), **2D Goal Pose** = navigate (`/goal_pose`; unlike the dashboard it does not check that the robot is placed).
+Checked 2026-11-15: RViz loads the config without errors, the map and costmaps display, and a goal sent on `/goal_pose` was reached in simulation (no screenshot was taken; please look at it once).
+
 ## Test without the robot
 ```bash
 export ROS_DOMAIN_ID=93                       # private domain

@@ -1,6 +1,9 @@
 """Static navigation on a saved lidar map: map_server + hand-placed localization (map->odom) + Nav2 (global/local costmaps from the map).
 
-  ros2 launch d1_nav static_navigation.launch.py map:=/path/map.yaml [x:=1.0 y:=2.0 yaw:=0.5]
+  ros2 launch d1_nav static_navigation.launch.py map:=/path/map.yaml [x:=1.0 y:=2.0 yaw:=0.5] [rviz:=true]
+
+rviz:=true opens RViz2 with rviz/static_nav.rviz: lidar map, global/local costmap, plan, footprint, TF; tools "2D Pose Estimate" (= place the robot) and
+"2D Goal Pose" (= navigate). Needs a display.
 
 Needs the robot bridge running (it provides /odom and odom->base_link / base_footprint TF and consumes /cmd_vel).
 No live sensors: the costmaps are the saved map inflated by the robot footprint. Re-place the robot (RViz "2D Pose Estimate"
@@ -12,6 +15,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -59,7 +63,7 @@ def _setup(context):
         loc = os.path.join(get_package_share_directory('d1_localization'), 'launch', 'localize.launch.py')
         localize = [IncludeLaunchDescription(
             PythonLaunchDescriptionSource(loc),
-            launch_arguments={'map': map_yaml, 'x': c('x'), 'y': c('y'), 'yaw': c('yaw'), 'rviz': c('rviz'),
+            launch_arguments={'map': map_yaml, 'x': c('x'), 'y': c('y'), 'yaw': c('yaw'), 'rviz': 'false',
                               'use_ekf': 'false'}.items())]
     else:
         # lidar localizer: placed pose + live MetaCam odometry -> map->odom; falls back to odometry-only when the lidar is absent
@@ -78,7 +82,10 @@ def _setup(context):
         PythonLaunchDescriptionSource(os.path.join(bringup, 'launch', 'navigation_launch.py')),
         launch_arguments={'params_file': params, 'use_sim_time': 'false', 'autostart': 'true',
                           'use_composition': 'False', 'use_respawn': 'False'}.items())
-    return localize + [nav]
+    rviz = Node(package='rviz2', executable='rviz2', name='rviz2', output='log',
+                arguments=['-d', os.path.join(get_package_share_directory('d1_nav'), 'rviz', 'static_nav.rviz')],
+                condition=IfCondition(c('rviz')))
+    return localize + [nav, rviz]
 
 
 def generate_launch_description():
