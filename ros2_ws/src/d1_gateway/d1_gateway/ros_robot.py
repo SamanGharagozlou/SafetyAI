@@ -1,4 +1,5 @@
 """RobotPort on ROS 2: goals -> Nav2 NavigateToPose, intents -> the D1 bridge services, state <- bridge topics + TF."""
+import json
 import math
 import threading
 import time
@@ -46,6 +47,7 @@ class RosRobot(Node):
         self._lock = threading.RLock()
         self._goal = None                    # {'id', 'handle', 'last_progress'}
         self.mode, self.connected, self.battery = 'unknown', False, None
+        self.loc, self.loc_t = None, 0.0               # /lidar_localization/status from d1_lidar (static navigation), if running
 
         self.nav = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         self.tfb = tf2_ros.Buffer()
@@ -56,6 +58,7 @@ class RosRobot(Node):
         self.create_subscription(Int32, 'ctrl_mode', self._on_mode, 10)
         self.create_subscription(Bool, 'connected', self._on_conn, 10)
         self.create_subscription(BatteryState, 'battery', self._on_batt, 10)
+        self.create_subscription(String, '/lidar_localization/status', self._on_loc, 10)
         bn = g('bridge_node')
         self.trig = {s: self.create_client(Trigger, f'/{bn}/{s}') for s in set(SERVICE_FOR.values())}
 
@@ -65,7 +68,7 @@ class RosRobot(Node):
 
     def state(self):
         return {'pose': self._pose(), 'battery': self.battery, 'mode': self.mode, 'connected': self.connected,
-                'nav_ready': self.nav.server_is_ready()}
+                'nav_ready': self.nav.server_is_ready(), 'localization': self._loc()}
 
     def navigate(self, gid, pose):
         if not self.connected:
@@ -74,6 +77,9 @@ class RosRobot(Node):
             return self._emit({'type': 'goal_rejected', 'id': gid, 'reason': f'robot is {self.mode}; send intent stand_up first'})
         if not self.nav.server_is_ready():
             return self._emit({'type': 'goal_rejected', 'id': gid, 'reason': 'Nav2 is not running (navigate_to_pose unavailable)'})
+        ls = self._loc()
+        if ls is not None and not ls.get('ready'):         # a localizer is running and the robot is not placed on the map yet
+            return self._emit({'type': 'goal_rejected', 'id': gid, 'reason': 'robot is not localized on the map (' + str(ls.get('message', ls.get('state'))) + ')'})
         with self._lock:
             old = self._goal
             self._goal = {'id': gid, 'handle': None, 'last_progress': 0.0}
@@ -211,6 +217,16 @@ class RosRobot(Node):
             self._emit({'type': 'robot_event', 'kind': 'link_up' if m.data else 'link_down',
                         'detail': 'robot SDK link ' + ('restored' if m.data else 'lost')})
         self.connected = bool(m.data)
+
+    def _on_loc(self, m):
+        try:
+            self.loc, self.loc_t = json.loads(m.data), time.monotonic()
+        except ValueError:
+            pass
+
+    def _loc(self):
+        """Localizer status, or None when no localizer is publishing (older setups: goals are then not gated)."""
+        return self.loc if self.loc is not None and time.monotonic() - self.loc_t < 3.0 else None
 
     def _on_batt(self, m):
         self.battery = round(float(m.percentage), 3) if m.percentage == m.percentage else None

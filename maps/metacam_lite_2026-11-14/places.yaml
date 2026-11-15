@@ -1,0 +1,38 @@
+# Named destinations for this map (frame `map`, metres / rad; origin = where the MetaCam scan started, +x = the way the scanner faced).
+# Used by d1_gateway (`places_file:=`) and d1_companion. Extra keys (label, aliases, description) are for the guest app.
+# Four test destinations 2 m from the origin: front (+x), back (-x), right (-y), left (+y). `home` is the origin (reception).
+home:
+  x: 0.0
+  y: 0.0
+  yaw: 0.0
+  label: Start point
+  aliases: [home, start, reception, start point, entrance]
+  description: Where the robot waits for guests.
+front_2m:
+  x: 2.0
+  y: 0.0
+  yaw: 0.0
+  label: Front, 2 m ahead
+  aliases: [front, ahead, forward, straight, front 2 m]
+  description: Test destination 2 m in front of the start point.
+back_2m:
+  x: -2.0
+  y: 0.0
+  yaw: 3.1416
+  label: Back, 2 m behind
+  aliases: [back, behind, backward, back 2 m]
+  description: Test destination 2 m behind the start point (about 0.34 m from the edge of the scanned area).
+right_2m:
+  x: 0.0
+  y: -2.0
+  yaw: -1.5708
+  label: Right, 2 m
+  aliases: [right, right side, right 2 m]
+  description: Test destination 2 m to the right of the start point.
+left_2m:
+  x: 0.0
+  y: 2.0
+  yaw: 1.5708
+  label: Left, 2 m
+  aliases: [left, left side, left 2 m]
+  description: Test destination 2 m to the left of the start point.

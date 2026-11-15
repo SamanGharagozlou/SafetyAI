@@ -1,0 +1,43 @@
+:root { --bg:#f4f7f8; --card:#fff; --ink:#14232b; --dim:#51646e; --line:#d5dee3; --brand:#0e7c86; --brand-ink:#fff; --place:#2563eb; --target:#f08c1d; --here:#1a9b5a; --bad:#c2352f; }
+* { box-sizing: border-box; }
+html, body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+.top { position:sticky; top:0; z-index:5; display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 16px; padding-top:calc(10px + env(safe-area-inset-top));
+       background:var(--brand); color:var(--brand-ink); }
+.brand { font-weight:700; }
+.chip { background:rgba(255,255,255,.2); border-radius:999px; padding:4px 12px; font-size:14px; white-space:nowrap; }
+.chip.ok { background:#d8f5e6; color:#0b4f2d; } .chip.warn { background:#ffeccb; color:#6b4300; } .chip.bad { background:#ffd9d6; color:#7a1812; }
+main { max-width:560px; margin:0 auto; padding:12px 16px 32px; }
+h1 { font-size:22px; margin:0 0 8px; } h2 { font-size:15px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin:18px 0 8px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin:10px 0; }
+input[type=text] { width:100%; min-height:48px; border:2px solid var(--line); border-radius:10px; padding:10px 12px; font:inherit; color:var(--ink); background:#fff; }
+input[type=text]:focus { outline:3px solid #8cd3d8; border-color:var(--brand); }
+button { min-height:48px; min-width:48px; border-radius:10px; border:2px solid var(--line); background:#fff; color:var(--ink); font:inherit; font-weight:600; padding:8px 16px; cursor:pointer; }
+button.primary { background:var(--brand); border-color:var(--brand); color:var(--brand-ink); }
+button.danger { background:var(--bad); border-color:var(--bad); color:#fff; flex:1; font-size:18px; }
+button.ghost { background:#fff; }
+button:disabled { opacity:.5; cursor:not-allowed; }
+button:focus-visible { outline:3px solid #8cd3d8; outline-offset:2px; }
+.row { display:flex; gap:8px; align-items:center; margin:10px 0; }
+.row input { flex:1; min-width:0; }
+.actions { flex-wrap:wrap; } .speak { font-size:14px; color:var(--dim); display:flex; gap:6px; align-items:center; }
+.chat { display:flex; flex-direction:column; gap:8px; max-height:20vh; overflow-y:auto; padding:2px; }
+.msg { max-width:88%; padding:10px 14px; border-radius:16px; background:#fff; border:1px solid var(--line); }
+.msg.robot { align-self:flex-start; border-bottom-left-radius:4px; }
+.msg.me { align-self:flex-end; background:var(--brand); color:#fff; border-color:var(--brand); border-bottom-right-radius:4px; }
+.map canvas { width:100%; display:block; border-radius:10px; background:#cdcdcd; touch-action:manipulation; }
+.legend { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:13px; color:var(--dim); margin-top:8px; }
+.dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:4px; vertical-align:-1px; border:2px solid; background:#fff; }
+.dot.place { border-color:var(--place); background:var(--place); } .dot.target { border-color:var(--target); background:var(--target); } .dot.here { border-color:var(--here); background:var(--here); }
+.arrow { display:inline-block; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:12px solid #111; margin-right:4px; vertical-align:-1px; }
+.progress { margin:8px 0; } .bar { height:10px; background:#dbe6ea; border-radius:6px; overflow:hidden; } #barFill { height:100%; width:0; background:var(--target); transition:width .4s; }
+#progressText { font-size:14px; color:var(--dim); margin-top:4px; }
+.gobar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:#e9f6f7; border:1px solid #9fd2d6; border-radius:12px; padding:10px 12px; margin:8px 0; }
+.gobar span { flex:1 1 100%; font-weight:600; }
+.chips { display:flex; flex-wrap:wrap; gap:8px; }
+.chips button { border-radius:999px; padding:8px 16px; }
+.chips button.active { border-color:var(--target); background:#fff3e2; }
+.chips button.here { border-color:var(--here); background:#e4f6ec; }
+.hint { color:var(--dim); font-size:14px; }
+[hidden] { display:none !important; }
+@media (prefers-reduced-motion: reduce) { #barFill { transition:none; } }

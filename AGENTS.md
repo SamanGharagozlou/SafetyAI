@@ -24,6 +24,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | `ros2_ws/src/d1_slam` | RTAB-Map RGB-only / RGB-D launch files | experimental, **off by default** |
 | `ros2_ws/src/d1_localization` | `map_server` + `initial_pose_localizer` on MetaCam LiDAR maps (no drift correction) | working |
 | `ros2_ws/src/d1_nav` | Nav2 (MPPI) + local costmap configs | static maps verified, not with guests |
+| `ros2_ws/src/d1_companion` | Guest session state machine: phone <-> gateway (QR join, places, escort, arrival, next step), phone page | built + sim tested, not on robot |
 | `ros2_ws/src/d1_gateway` | ROS 2 <-> WebSocket (`:8765`): goals, named places, intents, state | working + mock robot + tests |
 | `ros2_ws/src/d1_dashboard` | Developer web UI (`:8080`): start/stop pipeline, maps, click-to-navigate, E-STOP | working |
 | `frontend/` | Visitor web app (React 19 + Vite + TS), QR join, voice via Vapi | **demo mode only, no robot connection** |
@@ -51,6 +52,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | Map + localization (MetaCam maps) | [docs/map_localization.md](docs/map_localization.md) |
 | SLAM/Nav2 sensor study | [docs/slam_nav2_study.md](docs/slam_nav2_study.md), [docs/costmap_plan.md](docs/costmap_plan.md) |
 | Gateway protocol | [docs/robot_gateway.md](docs/robot_gateway.md) |
+| Companion state machine (guest flow, phone protocol) | [docs/companion_state_machine.md](docs/companion_state_machine.md) |
 | Frontend/voice vs robot stack | [docs/frontend_robot_integration.md](docs/frontend_robot_integration.md) |
 | Dashboard | [docs/dashboard.md](docs/dashboard.md) |
 | Jetson services / watchdog | [deploy/jetson/README.md](deploy/jetson/README.md) |

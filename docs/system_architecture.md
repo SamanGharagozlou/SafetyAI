@@ -94,7 +94,7 @@ flowchart TB
 | Monocular RTAB-Map + `d1_depth` | built, off by default |
 | `d1_nav` (Nav2 MPPI) | built, not run with guests |
 | `d1_gateway` | built + tests, mock robot |
-| Companion behaviour (greet trigger, escort flow, follow-check) | planned |
+| Companion behaviour: escort flow (`d1_companion`, [companion_state_machine.md](companion_state_machine.md)) | built, simulation tested; greet trigger and follow-check planned |
 | Frontend -> robot integration | planned (frontend is demo-only) |
 | `d1-ros-agent`, `d1-vapi-server` | run on the Jetson, **source not in this repo** |
 
