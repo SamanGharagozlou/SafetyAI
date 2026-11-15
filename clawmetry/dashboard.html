@@ -1,0 +1,160 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ClawMetry Control Plane</title>
+<style>
+:root{--bg:#0a0e14;--panel:#121820;--line:#1f2a36;--ink:#e6edf3;--dim:#7d8da0;
+--cyan:#2fd4c8;--amber:#f0b429;--red:#f05b5b;--green:#3ddc97;--violet:#9b8cf0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
+header{display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:#0d131a;position:sticky;top:0;z-index:5}
+h1{font-size:14px;margin:0;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}
+.sp{flex:1}
+.badge{padding:3px 9px;border-radius:3px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+.badge b{color:var(--ink);font-weight:600}
+.ok{border-color:#1d4d3c;color:var(--green)}.bad{border-color:#5a2222;color:var(--red)}
+.warn{border-color:#5a4418;color:var(--amber)}
+main{display:grid;grid-template-columns:1fr 380px;gap:14px;padding:14px;align-items:start}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px}
+h2{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin:0;padding:10px 12px;border-bottom:1px solid var(--line)}
+.pipe{display:flex;gap:8px;padding:12px;flex-wrap:wrap}
+.node{flex:1;min-width:120px;border:1px solid var(--line);border-radius:5px;padding:9px 11px;background:#0e141b}
+.node .n{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.node .v{font-size:15px;margin-top:3px}
+.node.live{border-color:#1d4d3c}.node.stale{border-color:#5a2222;background:#1a0f12}
+.led{padding:6px 12px 12px;max-height:60vh;overflow:auto}
+.act{border:1px solid var(--line);border-left:3px solid var(--violet);border-radius:5px;margin-top:8px;padding:9px 11px;background:#0e141b}
+.act.denied{border-left-color:var(--red)}.act.breached{border-left-color:var(--amber)}
+.act.done{border-left-color:var(--green)}
+.row{display:grid;grid-template-columns:118px 1fr;gap:10px;padding:2px 0}
+.row .k{color:var(--dim);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding-top:2px}
+.tool{color:var(--cyan)}
+.feed{max-height:48vh;overflow:auto;padding:6px 12px 12px}
+.b{border-left:3px solid var(--line);padding:7px 10px;margin-top:7px;background:#0e141b;border-radius:0 5px 5px 0}
+.b.critical{border-left-color:var(--red)}.b.high{border-left-color:var(--amber)}
+.b.medium{border-left-color:var(--violet)}
+.b .r{color:var(--ink);font-weight:600}.b .d{color:var(--dim);margin-top:2px}
+.src{display:flex;justify-content:space-between;padding:6px 12px;border-top:1px solid var(--line)}
+.src:first-of-type{border-top:0}
+.age{color:var(--green)}.age.old{color:var(--red)}
+.empty{color:var(--dim);padding:14px 12px;font-style:italic}
+.t{color:var(--dim);font-size:11px}
+</style>
+
+<header>
+  <h1>ClawMetry · Physical AI Control Plane</h1>
+  <span class="badge" id="body">body <b>—</b></span>
+  <span class="badge" id="chain">chain <b>—</b></span>
+  <span class="badge" id="cosmos">cosmos <b>—</b></span>
+  <span class="sp"></span>
+  <span class="badge" id="run">—</span>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>Authority pipeline · who acts, and are they still talking</h2>
+      <div class="pipe" id="pipe"></div>
+    </section>
+    <section style="margin-top:14px">
+      <h2>The ledger · intention vs action</h2>
+      <div class="led" id="ledger"><div class="empty">waiting for the first tool call…</div></div>
+    </section>
+  </div>
+  <div>
+    <section>
+      <h2>Breaches</h2>
+      <div class="feed" id="breaches"><div class="empty">none recorded</div></div>
+    </section>
+    <section style="margin-top:14px">
+      <h2>Sources · silence is a finding</h2>
+      <div id="sources"><div class="empty">no sources yet</div></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const acts = new Map();            // corr -> rolled-up action
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+const clock = ts => new Date(ts * 1000).toLocaleTimeString();
+
+function fold(ev) {
+  const c = ev.corr; if (!c) return;
+  const a = acts.get(c) || { corr: c, t: ev.ts };
+  const d = ev.data || {};
+  if (ev.kind === 'utterance')    { a.asked = d.text; a.lang = d.lang; }
+  if (ev.kind === 'intent')       { a.tool = d.tool; a.args = d.args; a.t = ev.ts; }
+  if (ev.kind === 'prediction')   { (a.preds = a.preds || []).push(d); }
+  if (ev.kind === 'decision')     { a.decision = d.decision; a.reason = d.reason; }
+  if (ev.kind === 'intervention') { a.by = d.by; a.human = d.decision; a.hts = ev.ts; }
+  if (ev.kind === 'command')      { a.sent = true; }
+  if (ev.kind === 'outcome')      { a.out = d; }
+  if (ev.kind === 'breach')       { (a.breaches = a.breaches || []).push(d); }
+  acts.set(c, a);
+}
+
+function renderLedger() {
+  const list = [...acts.values()].sort((x, y) => y.t - x.t).slice(0, 25);
+  if (!list.length) return;
+  $('ledger').innerHTML = list.map(a => {
+    const cls = a.decision === 'deny' ? 'denied' : a.breaches?.length ? 'breached' : a.out ? 'done' : '';
+    const kin = (a.preds || []).find(p => p.basis === 'kinematic');
+    const cos = (a.preds || []).find(p => p.basis === 'cosmos');
+    const rows = [];
+    rows.push(['who asked', a.asked ? esc(a.asked) : '<span class=t>no transcript — Vapi self-report not wired</span>']);
+    rows.push(['intended', `<span class="tool">${esc(a.tool || '?')}</span> ${esc(JSON.stringify(a.args || {}))}`]);
+    if (kin) rows.push(['predicted', kin.confidence === 0
+      ? `<span style="color:var(--amber)">unknown — ${esc(kin.reason)}</span>`
+      : `→ x ${kin.end_pose[0]} y ${kin.end_pose[1]} · ${kin.duration_s}s${kin.predicted_breach ? ` · <span style="color:var(--red)">BREACH: ${esc(kin.reason)}</span>` : ''}`]);
+    if (cos) rows.push(['world model', cos.available
+      ? `${cos.unsafe ? '<span style="color:var(--red)">unsafe</span>' : 'clear'} — ${esc(cos.reason)} (${cos.latency_s}s)`
+      : `<span style="color:var(--amber)">unavailable — ${esc(cos.reason)}</span>`]);
+    if (a.decision) rows.push(['gate', a.decision === 'deny'
+      ? `<span style="color:var(--red)">DENIED</span> — ${esc(a.reason)}`
+      : '<span style="color:var(--green)">allowed</span>']);
+    if (a.human) rows.push(['intervened', `<span style="color:var(--amber)">${esc(a.by)} tapped ${esc(a.human).toUpperCase()}</span> at ${clock(a.hts)}`]);
+    if (a.out) rows.push(['what it did', `end x ${a.out.end_pose?.[0]} y ${a.out.end_pose?.[1]} · ${a.out.duration_s}s · deviation <b style="color:${a.out.deviation_z >= 3 ? 'var(--red)' : 'var(--green)'}">${a.out.deviation_z}σ</b>${a.out.error ? ` · <span style="color:var(--red)">${esc(a.out.error)}</span>` : ''}`]);
+    (a.breaches || []).forEach(b => rows.push(['breach', `<span style="color:var(--red)">${esc(b.rule)}</span> — ${esc(b.detail)}`]));
+    return `<div class="act ${cls}"><div class="t">${clock(a.t)} · ${esc(a.corr)}</div>` +
+      rows.map(([k, v]) => `<div class="row"><div class="k">${k}</div><div>${v}</div></div>`).join('') + '</div>';
+  }).join('');
+}
+
+function renderState(s) {
+  $('body').innerHTML = `body <b>${esc(s.body)}</b>`;
+  $('run').innerHTML = `<b>${esc(s.robot_id)}</b> · ${esc(s.run_id)}`;
+  const ch = $('chain');
+  ch.className = 'badge ' + (s.chain.ok ? 'ok' : 'bad');
+  ch.innerHTML = s.chain.ok ? `chain <b>intact · ${s.chain.count}</b>`
+                            : `chain <b>BROKEN at ${s.chain.broken_at}</b>`;
+  const co = $('cosmos');
+  co.className = 'badge ' + (s.cosmos.configured && s.cosmos.enabled ? 'ok' : 'warn');
+  co.innerHTML = `cosmos <b>${s.cosmos.configured ? (s.cosmos.enabled ? 'judging' : 'configured, off') : 'not configured'}</b>`;
+
+  const r = s.robot || {};
+  const nodes = [
+    ['guest / staff', s.sources.vapi_tap ? 'calling' : 'idle', !!s.sources.vapi_tap],
+    ['agent brain', s.open_actions.length ? `${s.open_actions.length} in flight` : 'idle', true],
+    ['gate', 'kinematic' + (s.cosmos.enabled ? ' + cosmos' : ''), true],
+    ['robot bridge', r.connected === undefined ? 'no state' : (r.moving ? 'moving' : 'standing'),
+      !!(s.sources.bridge && s.sources.bridge.age_s < 3)],
+  ];
+  $('pipe').innerHTML = nodes.map(([n, v, live]) =>
+    `<div class="node ${live ? 'live' : 'stale'}"><div class="n">${n}</div><div class="v">${esc(v)}</div></div>`).join('');
+
+  const src = Object.entries(s.sources);
+  $('sources').innerHTML = src.length ? src.map(([k, v]) =>
+    `<div class="src"><span>${esc(k)}</span><span class="age ${v.age_s > 2 ? 'old' : ''}">${v.age_s}s ago</span></div>`
+  ).join('') : '<div class="empty">no sources yet</div>';
+
+  if (s.breaches.length) $('breaches').innerHTML = s.breaches.map(b =>
+    `<div class="b ${esc(b.severity)}"><div class="r">${esc(b.rule)}</div>
+     <div class="d">${esc(b.detail)}</div><div class="t">${clock(b.ts)}</div></div>`).join('');
+}
+
+new EventSource('/api/events').onmessage = e => { fold(JSON.parse(e.data)); renderLedger(); };
+const poll = () => fetch('/api/state').then(r => r.json()).then(renderState).catch(() => {});
+poll(); setInterval(poll, 1000);
+</script>

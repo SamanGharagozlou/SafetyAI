@@ -1,0 +1,47 @@
+[
+ {
+  "direction": "forward",
+  "requested_cm": 50.0,
+  "wall_s": 7.47,
+  "ok": true,
+  "walked_cm": 46.4,
+  "error_cm": -3.6,
+  "speed_mps": 0.12
+ },
+ {
+  "direction": "forward",
+  "requested_cm": 100.0,
+  "wall_s": 11.22,
+  "ok": true,
+  "walked_cm": 97.1,
+  "error_cm": -2.9,
+  "speed_mps": 0.12
+ },
+ {
+  "direction": "forward",
+  "requested_cm": 150.0,
+  "wall_s": 14.68,
+  "ok": true,
+  "walked_cm": 145.4,
+  "error_cm": -4.6,
+  "speed_mps": 0.12
+ },
+ {
+  "direction": "backward",
+  "requested_cm": 100.0,
+  "wall_s": 11.82,
+  "ok": true,
+  "walked_cm": 95.2,
+  "error_cm": -4.8,
+  "speed_mps": 0.12
+ },
+ {
+  "direction": "backward",
+  "requested_cm": 50.0,
+  "wall_s": 6.69,
+  "ok": true,
+  "walked_cm": 45.6,
+  "error_cm": -4.4,
+  "speed_mps": 0.12
+ }
+]
