@@ -327,6 +327,28 @@
   </h2>
   <div class="row" style="margin-bottom:12px;align-items:center">
     <div style="flex:2">
+      <label class="field">Speaker <span id="spk-note" style="color:var(--muted)"></span></label>
+      <select id="spkpick"><option>…</option></select>
+    </div>
+  </div>
+
+  <div class="note"><b>Pick both before you press Talk.</b> Device names only
+  appear once the microphone has been allowed, and a speaker you pair after
+  loading the page shows up on its own.
+  <br><br>
+  <b>If a Bluetooth speaker plays music but not the call:</b> that is iOS, not
+  this page. Music is output-only, so it goes over A2DP in stereo. The moment a
+  call opens the microphone, iOS switches to two-way audio, which over
+  Bluetooth needs the HFP profile — and most Bluetooth <i>speakers</i> have no
+  usable HFP, so iOS falls back to the phone's own speaker. iOS Safari will not
+  even list output devices, so the dropdown above is empty there and nothing in
+  a web page can override it. What does work: <b>run the call from the Mac</b>
+  (macOS routes input and output separately, so an A2DP speaker plus any mic is
+  fine), or use a Bluetooth <i>headset</i>, which has HFP — routed, but mono and
+  8–16&nbsp;kHz.</div>
+
+  <div class="row" style="margin-bottom:12px;align-items:center">
+    <div style="flex:2">
       <label class="field">Microphone</label>
       <select id="micpick"><option>…</option></select>
     </div>
@@ -677,7 +699,10 @@ async function startMeter() {
       meterRAF = requestAnimationFrame(tick)
     }
     tick()
-    await listMics()   // labels resolve once permission is granted
+    // Labels (and, in Chrome, the audiooutput entries at all) only appear
+    // once permission has been granted, so re-list BOTH here.
+    await listMics()
+    await listSpeakers()
   } catch (e) {
     $('lvl-txt').textContent = 'cannot open this mic'
     $('lvl-txt').style.color = 'var(--bad)'
@@ -692,6 +717,95 @@ function stopMeter() {
   meterStream = meterCtx = meterRAF = null
 }
 
+/*
+ * SPEAKER CHOICE, and why a Bluetooth speaker gets dropped the moment the call
+ * starts.
+ *
+ * The symptom: music plays over the Bluetooth speaker perfectly, then you open
+ * this page and start a call and the voice comes out of the phone instead.
+ *
+ * It is not a bug in the page. Playing music needs output only, so iOS uses
+ * A2DP - stereo, high quality. The moment anything calls getUserMedia, iOS
+ * switches the audio session to two-way communication, and a two-way route
+ * over Bluetooth needs HFP. Most Bluetooth SPEAKERS implement A2DP and no
+ * usable HFP, so there is no bidirectional route to be had and iOS falls back
+ * to the built-in speaker and mic. Nothing in a web page can override that -
+ * iOS Safari does not even enumerate audio output devices, so there is no
+ * handle to grab.
+ *
+ * What does work:
+ *   - this picker, on desktop Chrome/Edge and Android Chrome, where output
+ *     devices are selectable;
+ *   - a Bluetooth HEADSET rather than a speaker, which has HFP - routed, but
+ *     mono and 8-16 kHz;
+ *   - running the call on a Mac: macOS routes input and output independently,
+ *     so an A2DP speaker plus a separate mic is fine. That is the setup to use
+ *     for a demo that has to sound good.
+ */
+const SPK_KEY = 'd1-console-speaker'
+
+function outputSelectable() {
+  // Chrome/Edge expose setSinkId on media elements; Safari and iOS do not.
+  return typeof HTMLMediaElement !== 'undefined'
+    && 'setSinkId' in HTMLMediaElement.prototype
+}
+
+async function listSpeakers() {
+  const sel = $('spkpick')
+  if (!outputSelectable()) {
+    sel.innerHTML = '<option value="">not selectable in this browser</option>'
+    sel.disabled = true
+    $('spk-note').textContent = '— this browser picks the output itself; see below'
+    return []
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const outs = devices.filter(d => d.kind === 'audiooutput')
+    const saved = localStorage.getItem(SPK_KEY)
+    sel.innerHTML = outs.map(d =>
+      `<option value="${d.deviceId}"${d.deviceId === saved ? ' selected' : ''}>${esc(d.label || 'output ' + d.deviceId.slice(0, 6))}</option>`
+    ).join('') || '<option value="">no output device found</option>'
+    $('spk-note').textContent = outs.length ? '' : '— none listed yet; allow the mic once'
+    return outs
+  } catch (e) {
+    log(`   could not list speakers: ${e.message}`, 'log-err')
+    return []
+  }
+}
+
+/** Route an in-progress call to the chosen output. */
+async function applySpeakerToCall() {
+  const deviceId = $('spkpick').value
+  if (!deviceId || !outputSelectable()) return
+  const label = $('spkpick').selectedOptions[0]?.textContent ?? deviceId
+  let routed = false
+
+  // The SDK's own call, which hands straight to Daily underneath.
+  if (vapi?.setOutputDeviceAsync) {
+    try {
+      await vapi.setOutputDeviceAsync({ outputDeviceId: deviceId })
+      routed = true
+    } catch (e) {
+      log(`   SDK would not switch output: ${e.message}`, 'log-err')
+    }
+  }
+
+  // Belt and braces: the SDK creates its own <audio> elements and a version
+  // bump could stop forwarding this, so set the sink directly too. Harmless
+  // when the call above already worked.
+  for (const el of document.querySelectorAll('audio, video')) {
+    try { await el.setSinkId(deviceId); routed = true } catch {}
+  }
+
+  log(routed ? `   audio out: ${label}` : `   could not route audio to ${label}`,
+      routed ? 'log-ok' : 'log-err')
+}
+
+$('spkpick').addEventListener('change', async () => {
+  localStorage.setItem(SPK_KEY, $('spkpick').value)
+  await applySpeakerToCall()
+})
+
 /** Point an in-progress call at the chosen device. */
 async function applyMicToCall() {
   const deviceId = $('micpick').value
@@ -703,6 +817,23 @@ async function applyMicToCall() {
     log(`   could not switch the call's mic: ${e.message}`, 'log-err')
   }
 }
+
+listSpeakers()
+
+/*
+ * Re-list when the hardware changes. Connecting the Bluetooth speaker AFTER
+ * the page is open is the normal case here, and without this the dropdown
+ * keeps showing the devices that existed at load and the speaker you just
+ * paired is simply absent.
+ */
+navigator.mediaDevices?.addEventListener?.('devicechange', async () => {
+  const before = $('spkpick').value
+  await listMics()
+  await listSpeakers()
+  if ($('spkpick').value !== before) {
+    log('   audio devices changed - lists refreshed', 'log-ok')
+  }
+})
 
 $('micpick').addEventListener('change', async () => {
   localStorage.setItem(MIC_KEY, $('micpick').value)
@@ -972,9 +1103,10 @@ async function startVoice() {
       voiceState('live — speak', 'ok')
       mark('CALL LIVE (click → ready to speak)')
       banner(null)
-      // Chrome's per-site default may not be the mic you chose, so tell the
-      // call explicitly once it is up.
+      // Chrome's per-site default may not be the devices you chose, so tell
+      // the call explicitly once it is up - both directions.
       applyMicToCall()
+      applySpeakerToCall()
     })
     vapi.on('call-end', () => { endVoice('call ended'); log('   voice call ended', 'log-ok') })
     vapi.on('call-start-failed', () => { endVoice('connect failed', 'err'); log('   voice connect failed', 'log-err') })
