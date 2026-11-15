@@ -389,7 +389,17 @@ createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && (url.pathname === '/vapi' || url.pathname === '/')) {
-    const body = JSON.parse(await readBody(req) || '{}')
+    // A malformed body used to throw here, and because this handler is async
+    // with nothing catching it, the rejection took the WHOLE SIMULATOR DOWN -
+    // one stray request and the demo is over. Vapi is not the only thing that
+    // can reach this port once it is tunnelled to the internet.
+    let body
+    try {
+      body = JSON.parse(await readBody(req) || '{}')
+    } catch (error) {
+      log(`bad request body: ${error.message}`)
+      return send(400, { error: `body is not JSON: ${error.message}` })
+    }
     const calls = body?.message?.toolCallList ?? body?.message?.toolCalls ?? []
     const results = []
     for (const c of calls) {
