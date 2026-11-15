@@ -83,8 +83,7 @@ export function useConversation(o: Options) {
         opts.current.onPropose(r.place)
         await say(`Shall I take you to ${r.label ?? 'there'}? Say yes, or tap the button.`, true)
       } else if (r.action === 'STOP_ROBOT') {
-        opts.current.onStop()
-        await say('Okay, I am stopping.')
+        opts.current.onStop()          // the robot's own "I have stopped" line is spoken by the screen
       } else if (r.action === 'END_SESSION') {
         await say('Goodbye! It was nice to walk with you.')
         if (alive.current) opts.current.onFinish()

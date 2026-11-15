@@ -70,6 +70,18 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // What the robot says during a walk ("Follow me, we are going to ...", "We have arrived ...") is spoken too. Lines present at the start (the backend's own hello) are not.
+  const spokenSeq = useRef<number | null>(null)
+  useEffect(() => {
+    if (!lines.length) return
+    const top = lines[lines.length - 1].seq
+    if (spokenSeq.current === null) { spokenSeq.current = top; return }
+    const fresh = lines.filter(l => l.seq > (spokenSeq.current ?? 0))
+    if (!fresh.length) return
+    spokenSeq.current = top
+    if (info.consent.voice) talk_.robotSays(fresh.map(l => l.text).join(' '))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines])
   function send(event: FormEvent) {
     event.preventDefault()
     const text = draft.trim()
@@ -89,7 +101,7 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
         onClick={() => talk_.phase === 'listening' ? talk_.stopListening() : talk_.begin()}><MicIcon/></button>
       <p className="voice-status" role="status">{talk_.phase === 'listening' ? 'Listening…' : talk_.phase === 'thinking' ? 'One moment…' : talk_.phase === 'speaking' ? 'Speaking…' : talk_.state === 'ready' ? 'Tap the microphone and talk to me' : 'Tap a place below, or type'}</p>
       {talk_.heard && <p className="voice-heard">“{talk_.heard}”</p>}
-      <p className="robot-says" aria-live="polite">{talk_.said || last || `Hi ${nickname}! Where would you like to go?`}</p>
+      <p className="robot-says" aria-live="polite">{talk_.said || (info.consent.voice ? `Hi ${nickname || 'there'}! Where would you like to go?` : last) || `Hi ${nickname || 'there'}! Where would you like to go?`}</p>
       {talk_.notice && <p className="stage-note" role="status">{talk_.notice}</p>}
       {talk_.state === 'unsupported' && <p className="stage-note" role="status">Voice needs a secure (HTTPS) page and a supported browser. You can tap a place or type.</p>}
       <div className="voice-tools">
