@@ -55,6 +55,8 @@ const OFFERINGS = [
   // is solid where the ticket prices are second-hand.
   { id: 'brunch_spa',  name: 'Brunch and Spa, Sundays', price: 'fifty-one francs', dur: 'Sundays, 08:30 to 10:30', note: 'Brunch and the spa together. The best thing to offer a couple or a family on a Sunday morning.' },
   { id: 'massage',     name: 'Massage and therapy',    price: 'ask at the desk - the rate is not on the door sign', dur: '10:00 to 18:00', note: 'Booked at reception. Hours are shorter than the pools.' },
+  // Read off the handwritten board by the till, so these are exact.
+  { id: 'bakery',      name: 'Bakery counter',         price: 'Gipfeli and croissant one fifty; Schoggiweggli, Nussschnecke, pain au chocolat and escargot two seventy; Schinkengipfel and croissant au jambon three ninety', dur: 'while the cafe is open', note: 'Cheap way in for someone who is hungry, cold, or waiting for somebody. A Gipfeli and a coffee is under five francs.' },
 ]
 
 /**

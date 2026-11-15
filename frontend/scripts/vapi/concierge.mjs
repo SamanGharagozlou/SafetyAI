@@ -41,6 +41,14 @@ export const VENUE_FACTS = `
   Children under six are free. There are family reductions.
   If your hotel gave you a Leukerbad guest card, it is worth about fifteen percent off - ask at the desk.
 
+  THE HOUSE MOTTO, carved on the wooden sign inside: "Quelle zum Glueck" - the spring of happiness. Use it. It is theirs, it is charming, and it is literally true: the water comes out of the mountain.
+
+  THE BAKERY COUNTER, prices from the board by the till
+  Gipfeli, one franc fifty. Croissant, one franc fifty.
+  Schoggiweggli, two seventy. Nussschnecke, two seventy. Pain au chocolat, two seventy. Escargot, two seventy.
+  Schinkengipfel, three ninety. Croissant au jambon, three ninety.
+  Good to mention to anyone who says they are hungry, cold, or waiting for someone - a Gipfeli and a coffee for under five francs gets people through the door even when they are not sure about a ticket.
+
   BRUNCH AND SPA - THE ONE TO PUSH ON A SUNDAY
   Every Sunday, half past eight until half past ten, fifty-one francs. Brunch and the spa together.
   This is the best thing you have to offer a couple or a family on a Sunday morning, so lead with it then.
