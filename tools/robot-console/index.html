@@ -121,6 +121,16 @@
   .cmd-res { font-size: 13px; color: var(--muted); margin-top: 5px; }
   @media (max-width: 560px) { .cmd-main { font-size: 21px; } }
 
+  #meter {
+    height: 12px; background: #0a0d12; border: 1px solid var(--line);
+    border-radius: 6px; overflow: hidden;
+  }
+  #meter-fill {
+    height: 100%; width: 0%; background: var(--ok);
+    transition: width .07s linear, background .2s;
+  }
+  #meter-fill.loud { background: var(--warn); }
+
   #transcript, #analysis {
     max-height: 300px; overflow-y: auto; font-size: 14px;
     background: #0a0d12; border: 1px solid var(--line); border-radius: 9px;
@@ -262,6 +272,17 @@
     Voice <span id="voice-state" style="text-transform:none;letter-spacing:0;color:var(--accent)"></span>
     <button id="analyse" style="float:right;padding:5px 11px;font-size:12px">⟲ Analyse last call</button>
   </h2>
+  <div class="row" style="margin-bottom:12px;align-items:center">
+    <div style="flex:2">
+      <label class="field">Microphone</label>
+      <select id="micpick"><option>…</option></select>
+    </div>
+    <div style="flex:1.4">
+      <label class="field">Input level <span id="lvl-txt" style="color:var(--muted)">— silent</span></label>
+      <div id="meter"><div id="meter-fill"></div></div>
+    </div>
+  </div>
+
   <div id="moments"></div>
   <div id="transcript"></div>
   <div id="analysis" style="display:none"></div>
@@ -513,6 +534,97 @@ function sinceOnce() {
   return since()
 }
 
+/* ---------------- microphone: pick it, and PROVE it works ----------------
+ *
+ * Chrome keeps its OWN per-site microphone choice, independent of the macOS
+ * default - and a tunnel URL is a brand new origin with no choice recorded.
+ * So a machine whose system default is the right mic can still hand the page
+ * a different one, silently. That is indistinguishable from "the robot is
+ * ignoring me" unless you can SEE the input level, which is what the meter
+ * below is for: if it moves, audio is reaching the browser and the problem is
+ * downstream; if it does not, it is the device.
+ */
+const MIC_KEY = 'd1-console-mic'
+let meterStream = null, meterCtx = null, meterRAF = null
+
+async function listMics() {
+  try {
+    // Labels are empty until permission has been granted once.
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const mics = devices.filter(d => d.kind === 'audioinput')
+    const saved = localStorage.getItem(MIC_KEY)
+    $('micpick').innerHTML = mics.map(m =>
+      `<option value="${m.deviceId}"${m.deviceId === saved ? ' selected' : ''}>${esc(m.label || 'microphone ' + m.deviceId.slice(0, 6))}</option>`
+    ).join('') || '<option value="">no microphone found</option>'
+    return mics
+  } catch (e) {
+    log(`   could not list microphones: ${e.message}`, 'log-err')
+    return []
+  }
+}
+
+async function startMeter() {
+  stopMeter()
+  const deviceId = $('micpick').value
+  try {
+    meterStream = await navigator.mediaDevices.getUserMedia({
+      audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+    })
+    meterCtx = new AudioContext()
+    const src = meterCtx.createMediaStreamSource(meterStream)
+    const an = meterCtx.createAnalyser()
+    an.fftSize = 512
+    src.connect(an)
+    const buf = new Uint8Array(an.fftSize)
+    let peak = 0
+    const tick = () => {
+      an.getByteTimeDomainData(buf)
+      let max = 0
+      for (const v of buf) max = Math.max(max, Math.abs(v - 128) / 128)
+      peak = Math.max(peak * 0.9, max)
+      const pct = Math.min(100, Math.round(peak * 220))
+      $('meter-fill').style.width = pct + '%'
+      $('meter-fill').className = pct > 85 ? 'loud' : ''
+      $('lvl-txt').textContent = pct < 3 ? '— silent' : pct > 85 ? 'loud (clipping?)' : 'hearing you'
+      $('lvl-txt').style.color = pct < 3 ? 'var(--muted)' : 'var(--ok)'
+      meterRAF = requestAnimationFrame(tick)
+    }
+    tick()
+    await listMics()   // labels resolve once permission is granted
+  } catch (e) {
+    $('lvl-txt').textContent = 'cannot open this mic'
+    $('lvl-txt').style.color = 'var(--bad)'
+    log(`   microphone "${$('micpick').selectedOptions[0]?.textContent}" would not open: ${e.message}`, 'log-err')
+  }
+}
+
+function stopMeter() {
+  if (meterRAF) cancelAnimationFrame(meterRAF)
+  try { meterStream?.getTracks().forEach(t => t.stop()) } catch {}
+  try { meterCtx?.close() } catch {}
+  meterStream = meterCtx = meterRAF = null
+}
+
+/** Point an in-progress call at the chosen device. */
+async function applyMicToCall() {
+  const deviceId = $('micpick').value
+  if (!vapi || !deviceId) return
+  try {
+    await vapi.setInputDevicesAsync({ audioDeviceId: deviceId })
+    log(`   call switched to: ${$('micpick').selectedOptions[0]?.textContent}`, 'log-ok')
+  } catch (e) {
+    log(`   could not switch the call's mic: ${e.message}`, 'log-err')
+  }
+}
+
+$('micpick').addEventListener('change', async () => {
+  localStorage.setItem(MIC_KEY, $('micpick').value)
+  await startMeter()
+  await applyMicToCall()
+})
+
+listMics().then(startMeter)
+
 /* ------------------- the command bus at the top ------------------- */
 
 const DEST_WORDS = {
@@ -684,7 +796,9 @@ async function startVoice() {
   // The mic probe runs IN PARALLEL with the already-preloaded SDK and config.
   // These used to be serial, so the wait was the SUM of all three rather than
   // the longest one.
-  const micPromise = navigator.mediaDevices.getUserMedia({ audio: true })
+  const chosenMic = $('micpick').value
+  const micPromise = navigator.mediaDevices
+    .getUserMedia({ audio: chosenMic ? { deviceId: { exact: chosenMic } } : true })
     .then(s => { s.getTracks().forEach(t => t.stop()); return true })   // release at once, or the SDK publishes a dead track
     .catch(() => false)
 
@@ -721,6 +835,9 @@ async function startVoice() {
       voiceState('live — speak', 'ok')
       mark('CALL LIVE (click → ready to speak)')
       banner(null)
+      // Chrome's per-site default may not be the mic you chose, so tell the
+      // call explicitly once it is up.
+      applyMicToCall()
     })
     vapi.on('call-end', () => { endVoice('call ended'); log('   voice call ended', 'log-ok') })
     vapi.on('call-start-failed', () => { endVoice('connect failed', 'err'); log('   voice connect failed', 'log-err') })
