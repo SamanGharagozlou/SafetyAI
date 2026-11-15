@@ -1,6 +1,7 @@
 d1_follow:
   ros__parameters:
     image_topic: /camera/image_raw
+    image_reliability: reliable   # reliable | best_effort (best effort drops big frames)
     detections_topic: /perception/humans/detections
     embedder: osnet            # osnet | histogram (fallback when boxmot is missing)
     device: cpu
@@ -23,7 +24,8 @@ d1_follow:
     sim_accept: 0.70
     sim_reject: 0.50
     reject_checks: 2
-    reacquire_period_s: 0.3
+    reacquire_period_s: 0.5
+    reacquire_max_candidates: 3
     reacquire_hits: 3
     reacquire_margin: 0.10
     lost_timeout_s: 30.0

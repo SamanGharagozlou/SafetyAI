@@ -8,7 +8,6 @@ Services ``/d1_follow/lock`` and ``/d1_follow/release`` (std_srvs/Trigger).
 """
 
 import dataclasses
-import json
 import sys
 import threading
 from collections import OrderedDict
@@ -29,9 +28,10 @@ from . import annotate
 from .embedder import make_embedder
 from .follow_controller import FollowController, FollowParams
 from .params import clamp_follow_params
-from .ros_io import (ANNOTATED_QOS, DETECTIONS_QOS, IMAGE_QOS, OUT_QOS, detections_to_arrays,
-                     stamp_ns, target_msg)
-from .target_lock import LockParams, State, TargetLock
+from .ros_io import (ANNOTATED_QOS, DETECTIONS_QOS, IMAGE_RELIABILITY, OUT_QOS,
+                     detections_to_arrays, event_text, image_qos, stamp_ns, state_json,
+                     target_msg)
+from .target_lock import LockParams, State, TargetLock, unknown_output
 from .tracker import IouTracker
 
 
@@ -49,6 +49,10 @@ class TargetFollower(Node):
         image_topic = self.declare_parameter('image_topic', '/camera/image_raw').value
         det_topic = self.declare_parameter(
             'detections_topic', '/perception/humans/detections').value
+        self._image_rel = self.declare_parameter('image_reliability', 'reliable').value
+        if self._image_rel not in IMAGE_RELIABILITY:
+            log.warning(f'unknown image_reliability {self._image_rel!r}; using reliable')
+            self._image_rel = 'reliable'
         kind = self.declare_parameter('embedder', 'osnet').value
         device = self.declare_parameter('device', 'cpu').value
         auto_lock = self.declare_parameter('auto_lock', False).value
@@ -67,20 +71,24 @@ class TargetFollower(Node):
 
         self._mx = threading.Lock()  # guards self._lock and self._lock_waiter
         self._lock_waiter = None  # {'evt': Event, 'result': tuple|None} of the active lock call
+        self._img_mx = threading.Lock()  # the buffer is written from its own callback group
         self._images = OrderedDict()  # stamp_ns -> Image
         self._size = (0, 0)
         self._last_det = None
-        self._snap = {'similarity': None, 'n_people': 0, 'event': None, 'reason': None}
+        self._image_topic = image_topic
+        self._snap = {'similarity': None, 'n_people': 0, 'unpaired': 0, 'event': None,
+                      'reason': None}
 
         cb = MutuallyExclusiveCallbackGroup()
+        img_cb = MutuallyExclusiveCallbackGroup()  # only touches the image buffer
         srv_cb = ReentrantCallbackGroup()
         self._pub_cmd = self.create_publisher(Twist, '/follow/cmd_vel', OUT_QOS)
         self._pub_state = self.create_publisher(String, '/follow/state', OUT_QOS)
         self._pub_target = self.create_publisher(Detection2D, '/follow/target', OUT_QOS)
         self._pub_annot = self.create_publisher(
             Image, '/follow/annotated_image', ANNOTATED_QOS)
-        self.create_subscription(Image, image_topic, self._on_image, IMAGE_QOS,
-                                 callback_group=cb)
+        self.create_subscription(Image, image_topic, self._on_image,
+                                 image_qos(self._image_rel), callback_group=img_cb)
         self.create_subscription(Detection2DArray, det_topic, self._on_detections,
                                  DETECTIONS_QOS, callback_group=cb)
         self.create_timer(0.1, self._on_stale_timer, callback_group=cb)
@@ -103,16 +111,33 @@ class TargetFollower(Node):
 
     # -- inputs ---------------------------------------------------------------
     def _on_image(self, msg: Image) -> None:
-        self._images[stamp_ns(msg.header.stamp)] = msg
-        while len(self._images) > self._image_buffer:
-            self._images.popitem(last=False)
+        with self._img_mx:
+            self._images[stamp_ns(msg.header.stamp)] = msg
+            while len(self._images) > self._image_buffer:
+                self._images.popitem(last=False)
 
     def _on_detections(self, msg: Detection2DArray) -> None:
         now = self._now()
+        stamp = stamp_ns(msg.header.stamp)
+        det_t = stamp * 1e-9
+        if now - det_t > self._stale_s:
+            # never act on old boxes: the guest has moved since
+            self.get_logger().warning(
+                f'dropping detections {now - det_t:.2f}s old (> stale_s {self._stale_s})',
+                throttle_duration_sec=10.0)
+            self._publish_cmd(0.0, 0.0)
+            return
         tracks = self._tracker.update(*detections_to_arrays(msg))
 
-        img_msg = self._images.get(stamp_ns(msg.header.stamp))
-        if img_msg is not None:
+        with self._img_mx:
+            img_msg = self._images.get(stamp)
+        if img_msg is None:
+            self._snap['unpaired'] += 1
+            self.get_logger().warning(
+                f"no image for this detection stamp ({self._snap['unpaired']} unpaired): "
+                f'check {self._image_topic} and image_reliability={self._image_rel}',
+                throttle_duration_sec=10.0)
+        else:
             self._size = (int(img_msg.width), int(img_msg.height))
         w, h = self._size
         frame = []  # decoded at most once per detection message
@@ -133,7 +158,9 @@ class TargetFollower(Node):
                 return None
 
         with self._mx:
-            out = self._lock.update(now, tracks, w, h, embed)
+            # no frame size yet (no image paired so far): the lock cannot score anyone
+            out = (self._lock.update(now, tracks, w, h, embed) if w and h
+                   else unknown_output(self._lock.state, tracks))
             target = out.target if out.state == State.TRACKING else None
             target_id = self._lock.target_id
             waiter = self._lock_waiter
@@ -141,9 +168,8 @@ class TargetFollower(Node):
                 waiter['result'] = (out.event, out.reason, target.id if target else None)
                 waiter['evt'].set()
                 self._lock_waiter = None
-        self._last_det = now
+        self._last_det = det_t
 
-        # no frame size yet (no paired image so far): hold still
         vx, wz = (0.0, 0.0)
         if w and h:
             vx, wz = self._controller.compute(target.box if target else None, w, h)
@@ -151,12 +177,17 @@ class TargetFollower(Node):
         if target is not None:
             self._pub_target.publish(target_msg(msg.header, target))
 
-        self._snap = {
+        self._snap.update({
             'similarity': None if out.similarity is None else round(out.similarity, 3),
             'n_people': sum(1 for t in tracks if t.visible),
-            'event': out.event, 'reason': out.reason}
+            'event': out.event, 'reason': out.reason})
+        if out.check and out.similarity is not None:
+            # numbers only (never crops): this is how sim_accept / sim_reject get tuned
+            self.get_logger().info(
+                f'{out.check} sim={out.similarity:.3f} state={out.state.value}',
+                throttle_duration_sec=1.0)
         if out.event:
-            self._log_event(out, target_id)
+            self.get_logger().info(event_text(out, target_id))
             self._publish_state(out.event)
 
         if img_msg is not None and self._pub_annot.get_subscription_count() > 0:
@@ -178,20 +209,8 @@ class TargetFollower(Node):
     def _publish_state(self, event) -> None:
         with self._mx:
             state, target_id = self._lock.state.value, self._lock.target_id
-        s = self._snap
-        self._pub_state.publish(String(data=json.dumps({
-            'state': state, 'target_id': target_id, 'similarity': s['similarity'],
-            'n_people': s['n_people'], 'event': event,
-            'reason': s['reason'], 'embedder': self._embedder.name})))
-
-    def _log_event(self, out, target_id) -> None:
-        if out.event in ('locked', 'reacquired'):
-            text = f'{out.event} target #{target_id}'
-        else:
-            text = out.event
-            if out.reason and out.reason != out.event:
-                text += f' ({out.reason})'
-        self.get_logger().info(text)
+        self._pub_state.publish(String(data=state_json(
+            state, target_id, self._snap, self._embedder.name, event)))
 
     def _on_stale_timer(self) -> None:
         # no fresh detections: never keep a stale velocity alive
@@ -224,6 +243,11 @@ class TargetFollower(Node):
     def _srv_release(self, request, response):
         with self._mx:
             self._lock.release()
+            waiter = self._lock_waiter
+            if waiter is not None:  # do not leave a lock caller waiting for a cleared lock
+                waiter['result'] = ('released', 'released', None)
+                waiter['evt'].set()
+                self._lock_waiter = None
         response.success, response.message = True, 'released'
         return response
 
