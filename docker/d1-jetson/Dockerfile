@@ -9,7 +9,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
       ros-humble-cv-bridge ros-humble-vision-opencv ros-humble-image-transport \
       ros-humble-tf2-ros ros-humble-tf2-tools ros-humble-rosbag2-storage-default-plugins \
       python3-pip python3-venv python3-colcon-common-extensions python3-opencv python3-yaml \
-      python3-websockets python3-numpy python3-scipy curl ca-certificates xz-utils iproute2 iputils-ping
+      python3-websockets python3-websocket python3-numpy python3-scipy curl ca-certificates xz-utils iproute2 iputils-ping
 
 # cuSPARSELt (needed by the JetPack 6.1 PyTorch wheel). Kept outside /usr/local/cuda, which the NVIDIA runtime mounts from the host.
 RUN mkdir -p /opt/cusparselt && curl -fsSL https://developer.download.nvidia.com/compute/cusparselt/redist/libcusparse_lt/linux-aarch64/libcusparse_lt-linux-aarch64-0.6.2.3-archive.tar.xz \

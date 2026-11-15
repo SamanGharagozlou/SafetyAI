@@ -83,13 +83,15 @@
   <aside>
     <div class="card wf">
       <h2>Workflow</h2>
-      <button id="bStart" class="primary"><span>1&nbsp;&nbsp;Start process</span><span class="n">robot + camera + depth</span></button>
+      <button id="bStart" class="primary"><span>1&nbsp;&nbsp;Start process</span><span class="n">robot link</span></button>
       <input type="text" id="mapName" placeholder="map name (optional)">
       <label class="dim" style="font-size:12px;display:flex;gap:6px;margin:0 0 6px"><input type="checkbox" id="rec" checked> record a rosbag of the run (~300 MB/min)</label>
       <button id="bMap" class="go"><span>2&nbsp;&nbsp;Start map</span><span class="n">RTAB-Map</span></button>
-      <button id="bSave"><span>3&nbsp;&nbsp;Save map</span><span class="n">grid + database</span></button>
       <select id="mapSel"></select>
-      <button id="bLoad" class="go"><span>4&nbsp;&nbsp;Load map &amp; navigate</span><span class="n">localize + Nav2</span></button>
+      <button id="bLoad" class="go"><span>2&nbsp;&nbsp;Load map</span><span class="n">lidar map + Nav2 + costmaps</span></button>
+      <button id="bPlace"><span>3&nbsp;&nbsp;Place robot</span><span class="n">click + drag on the map</span></button>
+      <button id="bOrigin" style="font-size:12px;padding:6px"><span>robot is at the map origin (0, 0, 0)</span></button>
+      <button id="bSave"><span>4&nbsp;&nbsp;Save map + start pose</span><span class="n">copy to ~/d1_maps</span></button>
       <button id="bClear" class="danger"><span>5&nbsp;&nbsp;Clear all</span><span class="n">stop everything</span></button>
       <label class="dim" style="font-size:12px"><input type="checkbox" id="stopRobot"> also stop the robot link (only when lying)</label>
       <div id="msg"></div>
@@ -100,8 +102,10 @@
       <pre id="logbox"></pre>
     </div>
     <div class="card dim" style="font-size:12px">
-      Click <b>Nav mode</b> on the map, then click a spot (drag to set the heading). Drive the robot with the pad in the corner
-      or keys <b>W A S D</b> (move), <b>Q E</b> (turn); <b>Esc</b> or <b>Space</b> = E-STOP.
+      <b>Static navigation on a lidar map:</b> 1 start the robot link, 2 pick a map and <b>Load map</b> (Nav2 + costmaps start),
+      3 <b>Place robot</b>: press where it really stands, drag toward the way it faces (or use the origin button), then
+      <b>Nav mode</b> and click a goal (drag = heading). 4 <b>Save map</b> keeps a copy and the start pose.
+      The map has no live sensing: re-place the robot when odometry has drifted. Drive with the pad or <b>W A S D</b> / <b>Q E</b>; <b>Esc</b> / <b>Space</b> = E-STOP.
     </div>
   </aside>
 
@@ -119,12 +123,14 @@
       <label><input type="checkbox" id="lLocal"> Local costmap</label>
       <label><input type="checkbox" id="lPlan" checked> Plan</label>
       <hr style="border:0;border-top:1px solid var(--line);width:100%">
+      <label><input type="checkbox" id="placeMode"> <b>Place robot</b> (click + drag = pose)</label>
       <label><input type="checkbox" id="navMode"> <b>Nav mode</b> (click = goal)</label>
       <label><input type="checkbox" id="follow" checked> Follow robot</label>
       <div class="legend">
-        <div><i style="background:#ff5a3c"></i> <b>obstacle</b> &mdash; avoid (box, wall, person)</div>
-        <div><i style="background:#24303f;border:1px solid #556"></i> free floor</div>
-        <div><i style="background:transparent;border:1px dashed #556"></i> empty = not seen yet</div>
+        <div><i style="background:#000;border:1px solid #888"></i> <b>wall / obstacle</b> (map)</div>
+        <div><i style="background:#fefefe"></i> free floor &nbsp;<i style="background:#cdcdcd"></i> not scanned</div>
+        <div><i style="background:#f0f"></i> costmap: lethal &nbsp;<i style="background:#0ff"></i> robot centre may not enter</div>
+        <div><i style="background:linear-gradient(90deg,#00f,#f00)"></i> costmap: low &rarr; high cost (Nav2 avoids)</div>
         <div><i style="background:#59b8ff"></i> trail &nbsp;<i style="background:#3ecf8e"></i> plan &nbsp;<i style="background:#ffd24c"></i> goal</div>
       </div>
       <div class="row"><button id="zin">+</button><button id="zout">&minus;</button><button id="fit">Fit</button><button id="center">Center</button></div>
@@ -185,19 +191,28 @@ function addGrid(g) {
   grids[g.name] = {w:g.w, h:g.h, res:g.res, ox:g.ox, oy:g.oy, raw:raw, canvas:(grids[g.name] && grids[g.name].canvas) || document.createElement('canvas'), version:g.version};
   renderGrid(g.name);
 }
-// Map look: walls = bright, free = dark slate, unknown = empty (no grey box). Costmaps: blue->orange gradient, lethal = red.
+// Look = RViz. Map: free white, occupied black, unknown grey. Costmap overlay: blue->red gradient, cyan = robot centre may not enter
+// (inscribed), magenta = lethal. The live camera layer (monocular SLAM only) keeps its own orange.
 function renderGrid(name) {
   const g = grids[name]; if (!g) return;
   const w = g.w, h = g.h, raw = g.raw, cv = g.canvas; cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d'), img = ctx.createImageData(w, h), d = img.data;
   const isMap = name === 'map', isLive = name === 'live';
-  let keep = null;
-  if (isMap && $('lClean') && $('lClean').checked) {            // display-only despeckle: an occupied cell needs >= 2 occupied neighbours
-    keep = new Uint8Array(w * h);
+  let keep = null, known = null;
+  if (isMap && $('lClean') && $('lClean').checked) {
+    // display-only clean-up (the map file is untouched): (1) an occupied cell needs >= 2 occupied neighbours, otherwise it is a stray dot;
+    // (2) a known cell needs >= 8 known cells in its 5x5 neighbourhood, otherwise it is a thin ray-cast spike and is shown as unknown.
+    keep = new Uint8Array(w * h); known = new Uint8Array(w * h);
     for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
       if (raw[j * w + i] < 50) continue; let c = 0;
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const jj = j + dj, ii = i + di; if (jj >= 0 && jj < h && ii >= 0 && ii < w && raw[jj * w + ii] >= 50) c++; }
       keep[j * w + i] = c >= 2 ? 1 : 0; }
+    const W = w + 1, sat = new Int32Array(W * (h + 1));                  // summed-area table of known cells
+    for (let j = 0; j < h; j++) { let row = 0; for (let i = 0; i < w; i++) { row += raw[j * w + i] >= 0 ? 1 : 0; sat[(j + 1) * W + i + 1] = sat[j * W + i + 1] + row; } }
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      if (raw[j * w + i] < 0) continue;
+      const j0 = Math.max(0, j - 2), j1 = Math.min(h, j + 3), i0 = Math.max(0, i - 2), i1 = Math.min(w, i + 3);
+      known[j * w + i] = (sat[j1 * W + i1] - sat[j0 * W + i1] - sat[j1 * W + i0] + sat[j0 * W + i0]) >= 8 ? 1 : 0; }
   }
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) {
@@ -205,13 +220,14 @@ function renderGrid(name) {
       let r = 0, gg = 0, b = 0, a = 0;
       if (isLive) { if (v >= 99) { r = 255; gg = 90; b = 60; a = 255; } else if (v > 0 && $('lHalo').checked) { r = 255; gg = 90; b = 60; a = 70; } }
       else if (isMap) {
-        if (v < 0) { a = 0; }                                                        // unknown: transparent
-        else if (v >= 50 && (!keep || keep[j * w + i])) { r = 255; gg = 90; b = 60; a = 255; }        // obstacle (same colour as live)
-        else { r = 36; gg = 47; b = 63; a = 255; }                                   // free (also despeckled cells)
+        if (v < 0 || (known && !known[j * w + i])) { r = gg = b = 205; a = 255; }                    // unknown: RViz grey
+        else if (v >= 50 && (!keep || keep[j * w + i])) { r = gg = b = 0; a = 255; }               // occupied: black
+        else { r = gg = b = 254; a = 255; }                                                        // free: white
       }
-      else if (v <= 0) { a = 0; }
-      else if (v >= 99) { r = 255; gg = 40; b = 90; a = 200; }
-      else { const t = v / 98; r = Math.round(40 + 215 * t); gg = Math.round(120 + 100 * t); b = Math.round(255 - 215 * t); a = 70 + Math.round(110 * t); }
+      else if (v <= 0) { a = 0; }                                                                  // costmap: free / unknown = transparent
+      else if (v >= 100) { r = 255; gg = 0; b = 255; a = 230; }                                    // lethal: magenta
+      else if (v === 99) { r = 0; gg = 255; b = 255; a = 220; }                                    // inscribed: cyan
+      else { const t = v / 98; r = Math.round(255 * t); gg = 0; b = Math.round(255 * (1 - t)); a = 70 + Math.round(120 * t); }   // blue -> red
       d[o] = r; d[o + 1] = gg; d[o + 2] = b; d[o + 3] = a;
     }
   }
@@ -219,10 +235,13 @@ function renderGrid(name) {
 }
 
 // ---------------------------------------------------------------- state -> UI
-const PROCS = ['robot','perception','mapping','bag','localization','nav2'];
+const PROCS = ['robot','lidar_relay','static_nav','perception','mapping','bag','localization','nav2'];
+const MONO_PROCS = ['perception','mapping','bag','localization','nav2'];
 function renderState() {
   var mono = !S.features || S.features.mono_slam;
-  ['bMap', 'bSave', 'mapName', 'rec'].forEach(function (id) { var e = document.getElementById(id); var t = (e && e.tagName == 'INPUT' && e.type == 'checkbox') ? e.parentNode : e; if (t) t.style.display = mono ? '' : 'none'; });
+  if (S.current_map && renderState.lastMap !== S.current_map) { var ms = document.getElementById('mapSel'); if (ms && Array.prototype.some.call(ms.options, function (o) { return o.value === S.current_map; })) { ms.value = S.current_map; renderState.lastMap = S.current_map; } }
+  if (!S.current_map) renderState.lastMap = null;
+  ['bMap', 'mapName', 'rec'].forEach(function (id) { var e = document.getElementById(id); var t = (e && e.tagName == 'INPUT' && e.type == 'checkbox') ? e.parentNode : e; if (t) t.style.display = mono ? '' : 'none'; });
   var lv = document.getElementById('lLive'); if (lv) lv.parentNode.style.display = mono ? '' : 'none';
   var bs = document.getElementById('bStart'); if (bs) bs.innerHTML = mono ? '<span>1&nbsp;&nbsp;Start process</span><span class="n">robot + camera + depth</span>' : '<span>1&nbsp;&nbsp;Start process</span><span class="n">robot link</span>';
   const r = S.robot, el = (id, html, cls) => { const e = $(id); e.innerHTML = html; if (cls !== undefined) e.className = 'chip ' + cls; };
@@ -231,7 +250,12 @@ function renderState() {
   el('cBatt', 'Battery: <b>' + (r.battery === null ? '?' : r.battery + '%') + '</b>', r.battery !== null && r.battery < 25 ? 'bad' : (r.battery !== null && r.battery < 40 ? 'warn' : ''));
   $('cRec').style.display = (S.procs.bag && S.procs.bag.running) ? '' : 'none';
   el('cUi', 'Workflow: <b>' + S.ui_mode + (S.current_map ? ' · ' + S.current_map : '') + '</b>', '');
-  el('cLoc', 'Localized: <b>' + (S.localized ? 'yes' : 'no') + '</b>', S.localized ? 'ok' : 'dim');
+  const nm = S.procs.static_nav && S.procs.static_nav.running, ls = S.localization;
+  if (nm) { let txt, cls; if (!ls) { txt = 'Localizer: <b>starting&hellip;</b>'; cls = 'dim'; } else if (ls.state === 'localized') { txt = '<b>Ready for navigation</b> · lidar'; cls = 'ok'; }
+    else if (ls.state === 'odometry_only') { txt = '<b>Ready</b> · odometry only (drifts)'; cls = 'warn'; } else if (ls.state === 'lidar_lost') { txt = '<b>Ready</b> · lidar lost, odometry'; cls = 'warn'; }
+    else { txt = '<b>Not ready</b> · place the robot'; cls = 'bad'; }
+    el('cLoc', txt, cls); $('cLoc').title = ls ? ls.message : ''; }
+  else el('cLoc', 'Localized: <b>' + (S.localized ? 'yes' : 'no') + '</b>', S.localized ? 'ok' : 'dim');
   const ns = S.nav.status + (S.nav.distance_remaining != null && S.nav.status === 'navigating' ? ' · ' + S.nav.distance_remaining + ' m' : '');
   el('cNav', 'Nav: <b>' + ns + '</b>', S.nav.status === 'navigating' ? 'warn' : (S.nav.status === 'succeeded' ? 'ok' : ''));
   // processes
@@ -240,7 +264,7 @@ function renderState() {
     d.innerHTML = '<span class="dot"></span><span class="name">' + n + '</span><span class="up"></span><button data-a="toggle">start</button><button data-a="log">log</button>';
     d.querySelector('[data-a=toggle]').onclick = () => procToggle(n); d.querySelector('[data-a=log]').onclick = () => toggleLog(n);
     box.appendChild(d); }); }
-  PROCS.forEach(n => { const p = S.procs[n] || {running:false}, d = $('p_' + n);
+  PROCS.forEach(n => { const p = S.procs[n] || {running:false}, d = $('p_' + n); d.style.display = ((MONO_PROCS.includes(n) && !mono && !p.running) || (n === 'lidar_relay' && !p.running)) ? 'none' : '';
     d.querySelector('.dot').className = 'dot ' + (p.running ? 'on' : (p.exit ? 'err' : ''));
     d.querySelector('.up').textContent = p.running ? Math.round(p.uptime) + 's' : '';
     d.querySelector('[data-a=toggle]').textContent = p.running ? 'stop' : 'start'; });
@@ -249,7 +273,10 @@ function renderState() {
   if (S.job && S.job.status === 'done' && !renderState.loaded) { renderState.loaded = 1; refreshMaps(); }
   if (!S.job || S.job.status !== 'done') renderState.loaded = 0;
   const mapping = S.procs.mapping && S.procs.mapping.running, linkOk = r.connected === true;
-  $('bSave').disabled = !mapping || (S.job && S.job.status === 'running');
+  const staticOn = S.procs.static_nav && S.procs.static_nav.running;
+  $('bSave').disabled = !(mapping || staticOn) || (S.job && S.job.status === 'running'); $('bPlace').disabled = $('bOrigin').disabled = !staticOn; $('placeMode').disabled = !staticOn;
+  if (staticOn && !renderState.layersSet) { renderState.layersSet = 1; $('lGlobal').checked = true; }
+  if (!staticOn) renderState.layersSet = 0;
   $('bMap').disabled = mapping; $('bLoad').disabled = !$('mapSel').value;
   $('pStand').disabled = $('pLie').disabled = !linkOk;
   document.querySelectorAll('#pad button').forEach(b => b.disabled = !linkOk);
@@ -259,7 +286,7 @@ function renderState() {
   const gi = $('goalinfo');
   if (S.nav.goal) { gi.style.display = 'block'; gi.innerHTML = '🎯 goal (' + S.nav.goal[0].toFixed(2) + ', ' + S.nav.goal[1].toFixed(2) + ') — <b>' + ns + '</b> ' + (S.nav.status === 'navigating' || S.nav.status === 'sending' ? '<button id="cancelNav" class="danger" style="padding:3px 10px;margin-left:8px">Cancel</button>' : ''); const c = $('cancelNav'); if (c) c.onclick = () => post('/api/cancel'); }
   else gi.style.display = 'none';
-  $('hint').textContent = $('navMode').checked ? (S.localized ? 'Nav mode: click a spot on the map (drag to set heading)' : 'Nav mode: robot not localized in the map yet') : '';
+  $('hint').textContent = $('placeMode').checked ? 'Place robot: press where the robot really stands, drag toward the way it faces, release' : (staticOn && S.localization && S.localization.state === 'need_pose') ? (S.localization.message + ' (Place robot, or: robot is at the map origin), then Nav mode') : (staticOn && !S.localization && !S.pose_confirmed) ? 'Set the robot pose first: Place robot (or: robot is at the map origin), then Nav mode' : $('navMode').checked ? (S.localized ? 'Nav mode: click a spot on the map (drag to set heading)' : 'Nav mode: robot not localized in the map yet') : '';
   if ($('follow').checked && S.pose) { view.cx = S.pose[0]; view.cy = S.pose[1]; }
 }
 let logOpen = null, logTimer = null;
@@ -271,13 +298,17 @@ function toggleLog(n) {
 async function procToggle(n) { const p = S.procs[n]; const r = await post('/api/process', {name:n, action:(p && p.running) ? 'stop' : 'start'}); if (!r.ok && r.error) toast(r.error, true); }
 function refreshMaps() { fetch('/api/maps').then(r => r.json()).then(list => { const s = $('mapSel'), cur = s.value; s.innerHTML = '';
   if (!list.length) { const o = document.createElement('option'); o.value = ''; o.textContent = '(no saved maps)'; s.appendChild(o); }
-  list.forEach(m => { const o = document.createElement('option'); o.value = m.name; o.textContent = m.name + ' · ' + m.created; s.appendChild(o); }); if (cur) s.value = cur; $('bLoad').disabled = !s.value; }); }
+  list.forEach(m => { const o = document.createElement('option'); o.value = m.id || m.name; o.textContent = (m.kind === 'lidar' ? (m.source === 'saved' ? '★ ' : '') : '(mono) ') + m.name + (m.start ? ' · pose saved' : '') + ' · ' + m.created; s.appendChild(o); }); if (cur) s.value = cur; $('bLoad').disabled = !s.value; }); }
 
 // ---------------------------------------------------------------- workflow buttons
 $('bStart').onclick = async () => { toast('starting robot link + perception…'); const r = await post('/api/workflow', {action:'start_process'}); toast(r.ok ? 'started: ' + (r.started.join(', ') || 'already running') : r.error, !r.ok); };
 $('bMap').onclick = async () => { toast('starting map…'); const r = await post('/api/workflow', {action:'start_map', name:$('mapName').value.trim(), record:$('rec').checked}); toast(r.ok ? 'mapping "' + r.name + '"' + (r.bag ? ' · recording a rosbag' : '') + ' — drive the robot around, then Save map' : r.error, !r.ok); };
 $('bSave').onclick = async () => { const r = await post('/api/workflow', {action:'save_map', name:$('mapName').value.trim()}); toast(r.ok ? 'saving "' + r.name + '"…' : r.error, !r.ok); };
 $('bLoad').onclick = async () => { const n = $('mapSel').value; if (!n) return; toast('loading "' + n + '"…'); const r = await post('/api/workflow', {action:'load_map', name:n}); toast(r.ok ? 'localizing in "' + n + '" and starting Nav2 (drive a little if it does not localize)' : r.error, !r.ok); };
+$('bPlace').onclick = () => { $('placeMode').checked = !$('placeMode').checked; if ($('placeMode').checked) $('navMode').checked = false; };
+$('bOrigin').onclick = async () => { const r = await post('/api/pose', {x:0, y:0, yaw:0}); toast(r.ok ? 'robot placed at the map origin' : r.error, !r.ok); };
+$('placeMode').onchange = () => { if ($('placeMode').checked) $('navMode').checked = false; };
+$('navMode').onchange = () => { if ($('navMode').checked) $('placeMode').checked = false; };
 $('bClear').onclick = async () => { if (!confirm('Stop all processes and clear the view?' + ($('stopRobot').checked ? '\n(the robot link is stopped too if the robot is lying)' : ''))) return; const r = await post('/api/workflow', {action:'clear_all', stop_robot:$('stopRobot').checked}); toast(r.message || r.error, !r.ok); };
 $('estop').onclick = () => post('/api/estop');
 $('pStand').onclick = () => post('/api/robot', {cmd:'stand_up'});
@@ -341,7 +372,7 @@ requestAnimationFrame(draw);
 let pan = null;
 cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect(), [wx, wy] = S2W(e.clientX - r.left, e.clientY - r.top); const f = Math.exp(-e.deltaY * 0.0015); view.scale = Math.max(8, Math.min(400, view.scale * f)); const [wx2, wy2] = S2W(e.clientX - r.left, e.clientY - r.top); if (!$('follow').checked) { view.cx += wx - wx2; view.cy += wy - wy2; } }, {passive:false});
 cv.addEventListener('pointerdown', e => { const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
-  if ($('navMode').checked && e.button === 0) { const [x, y] = S2W(px, py); nav = {down:true, x0:x, y0:y, x1:x, y1:y}; cv.setPointerCapture(e.pointerId); }
+  if (($('navMode').checked || $('placeMode').checked) && e.button === 0) { const [x, y] = S2W(px, py); nav = {down:true, kind:($('placeMode').checked ? 'place' : 'goal'), x0:x, y0:y, x1:x, y1:y}; cv.setPointerCapture(e.pointerId); }
   else { pan = {px:e.clientX, py:e.clientY, cx:view.cx, cy:view.cy}; $('follow').checked = false; cv.setPointerCapture(e.pointerId); } });
 cv.addEventListener('pointermove', e => { const r = cv.getBoundingClientRect();
   if (nav.down) { const [x, y] = S2W(e.clientX - r.left, e.clientY - r.top); nav.x1 = x; nav.y1 = y; }
@@ -349,6 +380,7 @@ cv.addEventListener('pointermove', e => { const r = cv.getBoundingClientRect();
 cv.addEventListener('pointerup', async e => { pan = null;
   if (nav.down) { const dx = nav.x1 - nav.x0, dy = nav.y1 - nav.y0, dragged = Math.hypot(dx, dy) * view.scale > 12; nav.down = false;
     let yaw = dragged ? Math.atan2(dy, dx) : (S && S.pose ? Math.atan2(nav.y0 - S.pose[1], nav.x0 - S.pose[0]) : 0);
+    if (nav.kind === 'place') { if (!dragged) yaw = S && S.pose ? S.pose[2] : 0; const r = await post('/api/pose', {x:nav.x0, y:nav.y0, yaw}); toast(r.ok ? 'robot placed' + (dragged ? '' : ' (keeping its heading; drag to set it)') : r.error, !r.ok); return; }
     const r = await post('/api/goal', {x:nav.x0, y:nav.y0, yaw}); toast(r.ok ? 'goal sent' : (r.message || r.error), !r.ok); } });
 $('zin').onclick = () => { view.scale = Math.min(400, view.scale * 1.3); };
 $('zout').onclick = () => { view.scale = Math.max(8, view.scale / 1.3); };

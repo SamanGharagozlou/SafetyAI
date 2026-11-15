@@ -45,3 +45,6 @@ Start process, Start map, Save map, Load map (relocalized at the end pose of a r
 
 ## Monocular SLAM is deactivated by default
 Since 2026-11-15 the dashboard starts only the robot link; *Start map*, *Save map*, the camera obstacle layer and rosbag recording are hidden and the API refuses them. Pass `mono_slam:=true` (`--mono-slam true`) to enable them again. `external_robot:=true` makes the dashboard use a bridge that is already running (the SDK allows one client).
+
+## Lidar-map navigation (branch `nav2`)
+The workflow is now: Start process -> Load map (lidar map from `maps/` or a saved one) -> Place robot -> click goals -> Save map + start pose. See `docs/nav2_static.md`.

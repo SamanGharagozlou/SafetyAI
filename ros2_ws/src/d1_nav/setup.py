@@ -9,9 +9,9 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', ['launch/local_costmap.launch.py', 'launch/navigation.launch.py']),
-        ('share/' + package_name + '/params', ['params/local_costmap.yaml', 'params/nav2_params.yaml']),
-        ('share/' + package_name + '/rviz', ['rviz/costmap.rviz']),
+        ('share/' + package_name + '/launch', ['launch/local_costmap.launch.py', 'launch/navigation.launch.py', 'launch/static_navigation.launch.py']),
+        ('share/' + package_name + '/params', ['params/local_costmap.yaml', 'params/nav2_params.yaml', 'params/nav2_params_static.yaml']),
+        ('share/' + package_name + '/rviz', ['rviz/costmap.rviz', 'rviz/static_nav.rviz']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
