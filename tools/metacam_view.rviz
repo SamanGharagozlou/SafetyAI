@@ -1,0 +1,13 @@
+Visualization Manager:
+  Global Options: {Fixed Frame: map, Frame Rate: 30}
+  Displays:
+    - {Class: rviz_default_plugins/Map, Name: Map, Enabled: true, Topic: {Value: /map, Durability Policy: Transient Local, Reliability Policy: Reliable}}
+    - {Class: rviz_default_plugins/TF, Name: TF, Enabled: true, Show Names: true}
+    - {Class: rviz_default_plugins/PointCloud2, Name: MetaCam Live Cloud, Enabled: true, Topic: {Value: /metacam/cloud, Reliability Policy: Best Effort, Durability Policy: Volatile}, Style: Points, Size (Pixels): 3, Color Transformer: RGB8, Alpha: 1, Decay Time: 0}
+    - {Class: rviz_default_plugins/Odometry, Name: MetaCam Odometry, Enabled: true, Topic: {Value: /metacam/odom, Reliability Policy: Best Effort, Durability Policy: Volatile}, Keep: 100, Shape: {Value: Arrow, Alpha: 1, Color: 255; 128; 0, Head Length: 0.3, Head Radius: 0.15, Shaft Length: 0.8, Shaft Radius: 0.05}, Position Tolerance: 0.1, Angle Tolerance: 0.1}
+  Tools:
+    - {Class: rviz_default_plugins/Interact}
+    - {Class: rviz_default_plugins/MoveCamera}
+    - {Class: rviz_default_plugins/SetInitialPose, Topic: {Value: /initialpose}}
+  Views:
+    Current: {Class: rviz_default_plugins/TopDownOrtho, Scale: 25, Name: Current View}
