@@ -114,7 +114,7 @@ crowds; one more reason this is dry-run only.
 | Name | Type | Direction | QoS | Notes |
 |---|---|---|---|---|
 | `/camera/image_raw` | `sensor_msgs/Image` | in | RELIABLE, KEEP_LAST 5 | `image_topic`; parameter `image_reliability: best_effort` switches it. Reliable by default: a best-effort subscriber was measured to receive **0** of ~1 MB frames here ([perception.md](perception.md)) |
-| `/perception/humans/detections` | `vision_msgs/Detection2DArray` | in | RELIABLE, KEEP_LAST 10 | `detections_topic`; header must carry the source image stamp. Arrays older than `stale_s` are dropped |
+| `/perception/humans/detections` | `vision_msgs/Detection2DArray` | in | RELIABLE, KEEP_LAST 1 | `detections_topic`; header must carry the source image stamp. Newest only (no backlog behind a slow embed). Arrays older than `stale_s` are dropped |
 | `/follow/cmd_vel` | `geometry_msgs/Twist` | out | RELIABLE, KEEP_LAST 10 | **Dry run.** At the detection rate, plus zero from a 10 Hz timer when the last processed detection stamp is older than `stale_s` |
 | `/follow/state` | `std_msgs/String` (JSON) | out | RELIABLE, KEEP_LAST 10 | 2 Hz and on events: `{state, target_id, similarity, n_people, unpaired, event, reason, embedder}` |
 | `/follow/target` | `vision_msgs/Detection2D` | out | RELIABLE, KEEP_LAST 10 | Target box only, `id` = track id; only while TRACKING |
@@ -134,12 +134,12 @@ Node `d1_follow`, defaults from [config/follow.yaml](../ros2_ws/src/d1_follow/co
 | Parameter | Default | Meaning |
 |---|---|---|
 | `image_topic` | `/camera/image_raw` | Frames to embed and annotate |
-| `image_reliability` | `reliable` | `reliable` or `best_effort` QoS for the image subscription |
+| `image_reliability` | `reliable` | `reliable` or `best_effort` QoS for the image subscription. Use `best_effort` with `d1_camera`'s `rtsp_camera` (it publishes BEST_EFFORT; a reliable subscriber gets nothing and the node warns about unpaired detections) |
 | `detections_topic` | `/perception/humans/detections` | Person detections |
 | `embedder` | `osnet` | `osnet` or `histogram` (automatic fallback) |
 | `device` | `cpu` | Device for OSNet |
 | `auto_lock` | `false` | Lock onto the first confirmed person without a service call; retries after a `lock_failed` until the first successful lock |
-| `stale_s` | `0.5` | Detection arrays older than this (by header stamp) are dropped and the velocity is zeroed |
+| `stale_s` | `0.8` | Detection arrays older than this (by header stamp) are dropped and the velocity is zeroed. Covers detector latency (~0.2 s) plus one OSNet call (~0.3 s on CPU) |
 | `image_buffer` | `15` | Frames kept to pair with slow detections by stamp |
 | `iou_min` | `0.3` | Minimum IoU to associate a detection with a track |
 | `min_hits` | `3` | Hits before a track counts as confirmed |

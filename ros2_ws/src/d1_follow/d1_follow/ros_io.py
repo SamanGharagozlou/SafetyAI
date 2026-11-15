@@ -7,8 +7,9 @@ from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from vision_msgs.msg import Detection2D
 
 IMAGE_RELIABILITY = ('reliable', 'best_effort')
+# newest-only: a backlog behind a slow re-ID embed would just be dropped as stale anyway
 DETECTIONS_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
-                            history=HistoryPolicy.KEEP_LAST, depth=10)
+                            history=HistoryPolicy.KEEP_LAST, depth=1)
 OUT_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
                      history=HistoryPolicy.KEEP_LAST, depth=10)
 ANNOTATED_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,

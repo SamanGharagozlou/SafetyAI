@@ -56,7 +56,7 @@ class TargetFollower(Node):
         kind = self.declare_parameter('embedder', 'osnet').value
         device = self.declare_parameter('device', 'cpu').value
         auto_lock = self.declare_parameter('auto_lock', False).value
-        self._stale_s = self.declare_parameter('stale_s', 0.5).value
+        self._stale_s = self.declare_parameter('stale_s', 0.8).value
         self._image_buffer = max(1, self.declare_parameter('image_buffer', 15).value)
 
         self._follow_p, clamp_warnings = clamp_follow_params(self._follow_p)

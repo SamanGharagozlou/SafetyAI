@@ -6,7 +6,7 @@ d1_follow:
     embedder: osnet            # osnet | histogram (fallback when boxmot is missing)
     device: cpu
     auto_lock: false           # true: lock onto the first confirmed person by itself
-    stale_s: 0.5               # publish zero velocity when detections are older
+    stale_s: 0.8               # drop detections older than this (detector ~0.2 s + one OSNet embed)
     image_buffer: 15           # frames kept to pair with (slow) detections by stamp
 
     # IoU tracker
