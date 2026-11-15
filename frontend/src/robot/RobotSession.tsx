@@ -99,7 +99,7 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
     <div className="voice-card">
       <button type="button" className={`voice-orb is-${talk_.phase}`} disabled={talk_.state !== 'ready'} aria-label={talk_.phase === 'listening' ? 'Listening. Tap to finish' : 'Tap to talk'}
         onClick={() => talk_.phase === 'listening' ? talk_.stopListening() : talk_.begin()}><MicIcon/></button>
-      <p className="voice-status" role="status">{talk_.phase === 'listening' ? 'Listening…' : talk_.phase === 'thinking' ? 'One moment…' : talk_.phase === 'speaking' ? 'Speaking…' : talk_.state === 'ready' ? 'Tap the microphone and talk to me' : 'Tap a place below, or type'}</p>
+      <p className="voice-status" role="status">{talk_.phase === 'listening' ? 'Listening…' : talk_.phase === 'thinking' ? 'One moment…' : talk_.phase === 'speaking' ? 'Speaking…' : talk_.state === 'ready' ? 'Tap the microphone to talk to me' : 'Tap a place below, or type'}</p>
       {talk_.heard && <p className="voice-heard">“{talk_.heard}”</p>}
       <p className="robot-says" aria-live="polite">{talk_.said || (info.consent.voice ? `Hi ${nickname || 'there'}! Where would you like to go?` : last) || `Hi ${nickname || 'there'}! Where would you like to go?`}</p>
       {talk_.notice && <p className="stage-note" role="status">{talk_.notice}</p>}

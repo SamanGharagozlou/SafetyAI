@@ -52,9 +52,10 @@ export function useConversation(o: Options) {
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; handle.current?.abort(); speaking.current?.abort(); stopSpeaking() } }, [])
 
-  const say = useCallback(async (text: string, listenAfter = false) => {
+  const say = useCallback(async (text: string, listenAfter = true) => {
     setSaid(text)
-    if (!started.current || mutedRef.current) { setPhase('idle'); return }
+    if (!started.current) { setPhase('idle'); return }
+    if (mutedRef.current) { setPhase('idle'); if (listenAfter && opts.current.voice) begin(); return }
     speaking.current?.abort()
     const controller = new AbortController()
     speaking.current = controller
@@ -85,7 +86,7 @@ export function useConversation(o: Options) {
       } else if (r.action === 'STOP_ROBOT') {
         opts.current.onStop()          // the robot's own "I have stopped" line is spoken by the screen
       } else if (r.action === 'END_SESSION') {
-        await say('Goodbye! It was nice to walk with you.')
+        await say('Goodbye! It was nice to walk with you.', false)
         if (alive.current) opts.current.onFinish()
       } else {
         await say(r.reply || 'I didn’t catch that. Where would you like to go?')
@@ -114,7 +115,7 @@ export function useConversation(o: Options) {
   /** Typed text goes through exactly the same path as speech. */
   const submitText = (text: string) => { const t = text.trim(); if (t) { handle.current?.abort(); void understand(t) } }
   /** Lines the robot says on its own (greeting, "We have arrived"): shown as the caption, spoken once the guest has used voice. */
-  const robotSays = useCallback((text: string, listenAfter = false) => { void say(text, listenAfter) }, [say])
+  const robotSays = useCallback((text: string, listenAfter = true) => { void say(text, listenAfter) }, [say])
   /** The guest already tapped something (the consent button), so the browser lets the robot speak and listen. */
   const enable = useCallback(() => { started.current = true }, [])
 
