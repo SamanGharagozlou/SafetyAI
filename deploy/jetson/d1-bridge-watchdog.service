@@ -1,0 +1,9 @@
+[Unit]
+Description=Restart the D1 ROS bridge when the robot link goes dead
+After=d1-ros-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/d1-bridge-watchdog.sh
+# Needs root only to call `systemctl restart d1-bridge.service`.
+User=root

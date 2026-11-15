@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D1 Robot Console</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c2230; --line: #2a3140;
+    --ink: #e6edf3; --muted: #8b949e;
+    --ok: #3fb950; --warn: #d29922; --bad: #f85149; --accent: #58a6ff;
+    --stop: #da3633;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+    padding: 16px; max-width: 1100px; margin-inline: auto;
+  }
+  h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
+  h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--muted); margin: 0 0 12px; font-weight: 600;
+  }
+  .top {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+
+  /* Status */
+  .stat-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .stat {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px;
+    padding: 9px 13px; min-width: 94px; flex: 1;
+  }
+  .stat .k { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+  .stat .v { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px; padding: 6px 13px;
+    border-radius: 999px; font-size: 13px; font-weight: 600;
+    background: var(--panel-2); border: 1px solid var(--line);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 9px var(--ok); }
+  .dot.bad { background: var(--bad); box-shadow: 0 0 9px var(--bad); }
+  .dot.warn { background: var(--warn); }
+
+  /* Buttons */
+  button {
+    font: inherit; font-weight: 550; color: var(--ink); cursor: pointer;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 9px; padding: 11px 14px; transition: .12s;
+  }
+  button:hover:not(:disabled) { background: #263040; border-color: #3d4759; transform: translateY(-1px); }
+  button:active:not(:disabled) { transform: translateY(0); }
+  button:disabled { opacity: .36; cursor: not-allowed; }
+  button.primary { background: #1f6feb; border-color: #388bfd; }
+  button.primary:hover:not(:disabled) { background: #2b7cf3; }
+
+  .stop {
+    background: var(--stop); border-color: #f85149; font-size: 16px; font-weight: 700;
+    padding: 14px 30px; letter-spacing: .03em; margin-left: auto;
+  }
+  .stop:hover { background: #f85149 !important; }
+
+  .btn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+
+  /* D-pad */
+  .dpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 290px; }
+  .dpad button { padding: 15px 6px; font-size: 13px; }
+  .dpad .spacer { visibility: hidden; }
+
+  label.field { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  input[type=number], select {
+    width: 100%; background: var(--bg); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; font: inherit;
+  }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .row { display: flex; gap: 10px; align-items: flex-end; }
+  .row > * { flex: 1; }
+
+  .note {
+    font-size: 12.5px; color: var(--muted); margin-top: 11px;
+    padding: 9px 11px; background: var(--panel-2); border-radius: 8px;
+    border-left: 2px solid var(--line);
+  }
+  .note.warn { border-left-color: var(--warn); color: #e3c08d; }
+
+  .banner {
+    padding: 11px 15px; border-radius: 10px; margin-bottom: 14px;
+    font-size: 13.5px; font-weight: 500; display: none;
+  }
+  .banner.show { display: block; }
+  .banner.bad { background: #3d1518; border: 1px solid #6e2b2b; color: #ffb4ab; }
+  .banner.warn { background: #3a2d10; border: 1px solid #6b5420; color: #ecc48d; }
+
+  #transcript {
+    max-height: 170px; overflow-y: auto; font-size: 14px;
+    background: #0a0d12; border: 1px solid var(--line); border-radius: 9px;
+    padding: 12px; min-height: 48px;
+  }
+  #transcript:empty::after { content: "…listening"; color: var(--muted); }
+  #log {
+    font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #0a0d12; border: 1px solid var(--line); border-radius: 9px;
+    padding: 11px; height: 190px; overflow-y: auto; white-space: pre-wrap;
+  }
+  .log-t { color: #6e7681; }
+  .log-ok { color: var(--ok); }
+  .log-err { color: var(--bad); }
+  .log-send { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>D1 Robot Console</h1>
+  <span class="pill"><span class="dot" id="link-dot"></span><span id="link-text">connecting…</span></span>
+  <button id="talk">🎙 Talk to robot</button>
+  <button class="stop" id="stop">■ STOP</button>
+</div>
+
+<div class="banner" id="banner"></div>
+
+<div class="panel" style="margin-bottom:14px">
+  <h2>Status</h2>
+  <div class="stat-row">
+    <div class="stat"><div class="k">Posture</div><div class="v" id="s-posture">—</div></div>
+    <div class="stat"><div class="k">Ctrl mode</div><div class="v" id="s-mode">—</div></div>
+    <div class="stat"><div class="k">Moving</div><div class="v" id="s-moving">—</div></div>
+    <div class="stat"><div class="k">Gait</div><div class="v" id="s-gait">—</div></div>
+    <div class="stat"><div class="k">Battery</div><div class="v" id="s-batt">—</div></div>
+    <div class="stat"><div class="k">Last action</div><div class="v" id="s-last" style="font-size:13px">—</div></div>
+  </div>
+</div>
+
+<div class="grid">
+
+  <div class="panel">
+    <h2>Posture</h2>
+    <div class="btn-grid">
+      <button class="primary act" data-tool="robot_command" data-args='{"command":"stand_up"}'>Stand up</button>
+      <button class="act" data-tool="robot_command" data-args='{"command":"lie_down"}'>Sit / lie down</button>
+      <button class="act needs-stand" data-tool="robot_command" data-args='{"command":"shake_hand"}'>Shake hand</button>
+    </div>
+    <div class="note">The robot settles out of standing on its own when idle. Gestures and walks are refused unless it is standing — tick auto stand-up below and the console will do it for you.</div>
+    <div class="note" style="display:flex;align-items:center;gap:9px">
+      <input type="checkbox" id="autostand" checked style="width:auto;accent-color:var(--accent)">
+      <label for="autostand" style="cursor:pointer;margin:0">Auto stand-up, then retry once</label>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Gestures <span style="text-transform:none;letter-spacing:0">— all 10</span></h2>
+    <div class="btn-grid" id="gestures"></div>
+    <div class="note">Each is the same <code>GesturePlayer</code> sequence the keyboard teleop uses. <b>welcome</b> and <b>greet</b> are the same bow + shake-hand move.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Move</h2>
+    <div class="dpad">
+      <button class="act needs-stand" data-move="strafe_left">⇦<br>strafe</button>
+      <button class="act needs-stand" data-move="forward">▲<br>fwd</button>
+      <button class="act needs-stand" data-move="strafe_right">⇨<br>strafe</button>
+      <button class="act needs-stand" data-move="turn_left">↺<br>turn</button>
+      <button class="act needs-stand" data-move="backward">▼<br>back</button>
+      <button class="act needs-stand" data-move="turn_right">↻<br>turn</button>
+    </div>
+    <div style="margin-top:14px">
+      <label class="field">Duration <b id="dur-v">1.5</b> s <span style="opacity:.6">(0.1–5)</span></label>
+      <input type="range" id="dur" min="0.1" max="5" step="0.1" value="1.5">
+      <label class="field" style="margin-top:9px">Speed <b id="spd-v">0.40</b> <span style="opacity:.6">— fraction of max, not m/s</span></label>
+      <input type="range" id="spd" min="0.05" max="1" step="0.05" value="0.4">
+    </div>
+    <div class="note warn">Speed is a <b>fraction of the cap</b> (0.6 m/s / 1.0 rad/s), so 1.0 means 0.6 m/s. Motion always auto-stops when the duration elapses.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Walk a measured distance</h2>
+    <div class="row">
+      <div style="flex:1.2">
+        <label class="field">Distance (cm, 2–200)</label>
+        <input type="number" id="dist" value="30" min="2" max="200">
+      </div>
+      <div>
+        <label class="field">Direction</label>
+        <select id="dist-dir"><option>forward</option><option>backward</option></select>
+      </div>
+      <button class="primary needs-stand" id="walk" style="flex:0 0 auto">Walk</button>
+    </div>
+    <div class="note">Closed-loop on odometry and accurate to a few cm, unlike the timed move above which undershoots. <b>Blocks until the walk finishes</b> — about 7 s for 30 cm.</div>
+
+    <h2 style="margin-top:18px">Gait</h2>
+    <div class="btn-grid">
+      <button class="act" data-tool="set_gait" data-args='{"gait":"move"}'>move</button>
+      <button class="act" data-tool="set_gait" data-args='{"gait":"crawl"}'>crawl</button>
+      <button class="act" data-tool="set_gait" data-args='{"gait":"climb"}'>climb</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="panel" id="voice-panel" style="margin-top:14px; display:none">
+  <h2>Voice <span id="voice-state" style="text-transform:none;letter-spacing:0;color:var(--accent)"></span></h2>
+  <div id="transcript"></div>
+  <div class="note">Say things like “stand up”, “sit down”, “give me your paw”, “do a little wiggle”, “walk forward 30 centimetres”, or “stop”. The assistant calls the same seven tools as the buttons above — tool calls go from Vapi straight to the robot, not through this page.</div>
+</div>
+
+<div class="panel" style="margin-top:14px">
+  <h2>Activity</h2>
+  <div id="log"></div>
+</div>
+
+<script>
+const GESTURES = ['nod','shake','tilt','bow','squat','wiggle','look_around','sway_circle','greet','welcome']
+
+/**
+ * The robot emits ctrl_mode values the SDK does not document. The SDK documents
+ * 0/1/3; 18, 21 and 51 are observed on the live robot. d1_dashboard's MODE_NAMES
+ * has no entry for 21 at all and labels 18 "moving".
+ *
+ * So this map ends in an explicit "unknown" rather than a reassuring word. A
+ * console that invents a confident label for a mode nobody has identified is
+ * worse than one that admits the gap.
+ */
+const MODES = { 0:'damping', 1:'standing', 3:'moving', 18:'moving', 51:'lying' }
+const modeName = m => m === null || m === undefined ? '—'
+  : (MODES[m] ? `${MODES[m]} (${m})` : `unknown (${m})`)
+
+const $ = id => document.getElementById(id)
+const state = { standing: false, link: false, busy: false, misses: 0 }
+
+function log(msg, cls = '') {
+  const t = new Date().toLocaleTimeString()
+  const el = $('log')
+  el.innerHTML += `<span class="log-t">${t}</span>  <span class="${cls}">${msg}</span>\n`
+  el.scrollTop = el.scrollHeight
+}
+
+/**
+ * Only believe the link is gone after three consecutive misses.
+ *
+ * This console was built while /status read T F F F F T F F F T on a robot
+ * that was standing and perfectly healthy. The cause was not a flaky link:
+ * /connected published at 19.98 Hz in a false,false,true pattern, so every
+ * sampler aliased against a 2:1 square wave and saw ~1-in-3 true. It is fixed
+ * at the source now (connected is latched over 10 s), but the tolerance stays
+ * - a UI that announces "disconnected" on one missed poll is both unusable
+ * and, as it turned out, wrong about the robot.
+ */
+const MISSES_BEFORE_DOWN = 3
+
+async function poll() {
+  try {
+    const r = await fetch('/api/status')
+    const d = await r.json()
+
+    if (d.unreachable || d.ok === false || d.connected === false) {
+      state.misses++
+      if (state.misses >= MISSES_BEFORE_DOWN) setLink(false, d.unreachable ? 'console cannot reach the funnel' : 'no live link to the robot')
+      else setLink(state.link, 'link flapping…', true)
+      return
+    }
+
+    state.misses = 0
+    state.standing = d.standing === true
+    setLink(true)
+
+    $('s-posture').textContent = d.standing ? 'standing' : (d.ctrl_mode === 51 ? 'lying' : 'not standing')
+    $('s-mode').textContent = modeName(d.ctrl_mode)
+    $('s-moving').textContent = d.moving ? 'yes' : 'no'
+    $('s-gait').textContent = d.gait ?? '—'
+    $('s-batt').textContent = d.battery_pct != null ? d.battery_pct + '%' : '—'
+    $('s-last').textContent = d.last_action ?? '—'
+
+    if (d.battery_pct != null && d.battery_pct < 25) {
+      banner('warn', `Battery ${d.battery_pct}%. The robot can cut power outright when low, which drops it — and the Jetson is powered from this same battery.`)
+    }
+  } catch {
+    state.misses++
+    if (state.misses >= MISSES_BEFORE_DOWN) setLink(false, 'console server not responding')
+  } finally {
+    syncButtons()
+  }
+}
+
+function setLink(up, detail, flapping) {
+  state.link = up
+  $('link-dot').className = 'dot ' + (up ? (flapping ? 'warn' : 'ok') : 'bad')
+  $('link-text').textContent = up ? (flapping ? 'link flapping' : 'connected') : 'link down'
+  if (!up) {
+    banner('bad', `No live link to the robot — ${detail}. Controls are disabled. Nothing here can move it until this clears.`)
+    for (const k of ['s-posture','s-mode','s-moving','s-gait','s-last']) $(k).textContent = '—'
+  } else if (!flapping) {
+    banner(null)
+  }
+}
+
+function banner(kind, text) {
+  const b = $('banner')
+  if (!kind) { b.className = 'banner'; return }
+  b.className = `banner show ${kind}`
+  b.textContent = text
+}
+
+function syncButtons() {
+  const blocked = !state.link || state.busy
+  document.querySelectorAll('button').forEach(b => {
+    // STOP must always work, and so must ending a voice call - neither may be
+    // disabled by a link drop.
+    if (b.id === 'stop' || b.id === 'talk') { b.disabled = false; return }
+    const needsStand = b.classList.contains('needs-stand')
+    b.disabled = blocked || (needsStand && !state.standing && !$('autostand').checked)
+  })
+}
+
+async function send(name, args = {}, { retry = true } = {}) {
+  state.busy = true; syncButtons()
+  log(`→ ${name} ${Object.keys(args).length ? JSON.stringify(args) : ''}`, 'log-send')
+  try {
+    const r = await fetch('/api/tool', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, args }),
+    })
+    const d = await r.json()
+    const result = d.result ?? d.error ?? 'no response'
+    const refused = /not standing/i.test(result)
+    log(`   ${result}`, d.failed || refused ? 'log-err' : 'log-ok')
+
+    // The exact recovery the robot's own error message asks for.
+    if (refused && retry && $('autostand').checked && name !== 'robot_command') {
+      log('   auto stand-up, then retrying once', 'log-send')
+      await send('robot_command', { command: 'stand_up' }, { retry: false })
+      await new Promise(r => setTimeout(r, 3500))
+      state.busy = true; syncButtons()
+      return await send(name, args, { retry: false })
+    }
+    return result
+  } catch (e) {
+    log(`   request failed: ${e.message} — the robot may still be moving, press STOP`, 'log-err')
+  } finally {
+    state.busy = false; syncButtons(); poll()
+  }
+}
+
+// Gestures
+$('gestures').innerHTML = GESTURES
+  .map(g => `<button class="act needs-stand" data-tool="do_gesture" data-args='{"gesture":"${g}"}'>${g.replace('_',' ')}</button>`)
+  .join('')
+
+// Generic tool buttons
+document.addEventListener('click', e => {
+  const b = e.target.closest('button[data-tool]')
+  if (!b || b.disabled) return
+  send(b.dataset.tool, JSON.parse(b.dataset.args || '{}'))
+})
+
+// Move d-pad
+document.querySelectorAll('button[data-move]').forEach(b => {
+  b.addEventListener('click', () => {
+    if (b.disabled) return
+    send('move_robot', {
+      direction: b.dataset.move,
+      duration: Number($('dur').value),
+      speed: Number($('spd').value),
+    })
+  })
+})
+
+$('walk').addEventListener('click', () => {
+  const cm = Number($('dist').value)
+  if (!(cm >= 2 && cm <= 200)) return log('   distance must be 2–200 cm', 'log-err')
+  send('walk_distance', { distance_cm: cm, direction: $('dist-dir').value })
+})
+
+$('stop').addEventListener('click', () => send('stop_robot', {}, { retry: false }))
+
+$('dur').addEventListener('input', e => $('dur-v').textContent = Number(e.target.value).toFixed(1))
+$('spd').addEventListener('input', e => $('spd-v').textContent = Number(e.target.value).toFixed(2))
+$('autostand').addEventListener('change', syncButtons)
+
+// Spacebar = stop. A physical robot needs a reflex that is not "find the mouse".
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); $('stop').click() }
+})
+
+/* ------------------------------ VOICE ------------------------------ *
+ * The assistant already holds all 7 robot tools, each with the Jetson URL and
+ * its own auth header stored on Vapi's side. So a spoken command goes
+ *   browser mic -> Vapi -> Jetson funnel -> robot
+ * Tool calls never pass through this page or the local proxy, which is why
+ * the missing CORS headers do not matter here.
+ *
+ * KNOWN FAILURE ON THIS MACHINE - TAILSCALE BREAKS WEBRTC:
+ * measured on a tailnet Mac, Chrome's ICE gathering took 39.9s with STUN
+ * versus 133ms without, because it probes the Tailscale interfaces and they
+ * never answer. Vapi's room budget is 15s, so the join dies and the error it
+ * reports blames the microphone. That sends you hunting the wrong thing for
+ * hours. The watchdog below names the real cause instead.
+ */
+const VOICE_SDK = 'https://cdn.jsdelivr.net/npm/@vapi-ai/web@3.1.0/+esm'
+const CONNECT_TIMEOUT_MS = 25000
+const MIC_HINT_MS = 7000
+
+let vapi = null, voiceLive = false, connectTimer, hintTimer
+
+function voiceState(text, cls = '') {
+  $('voice-state').textContent = text ? '— ' + text : ''
+  $('voice-state').style.color = cls === 'err' ? 'var(--bad)' : cls === 'ok' ? 'var(--ok)' : 'var(--accent)'
+}
+
+function say(role, text) {
+  $('voice-panel').style.display = 'block'
+  const who = role === 'assistant' ? 'robot' : 'you'
+  const colour = role === 'assistant' ? 'var(--accent)' : 'var(--ink)'
+  $('transcript').innerHTML += `<div style="margin-bottom:6px"><b style="color:${colour}">${who}:</b> ${text}</div>`
+  $('transcript').scrollTop = $('transcript').scrollHeight
+}
+
+function endVoice(label, cls) {
+  clearTimeout(connectTimer); clearTimeout(hintTimer)
+  voiceLive = false
+  $('talk').textContent = '🎙 Talk to robot'
+  $('talk').classList.remove('primary')
+  voiceState(label, cls)
+  try { vapi?.stop() } catch {}
+  vapi = null
+}
+
+async function startVoice() {
+  $('voice-panel').style.display = 'block'
+  voiceState('connecting…')
+  log('→ starting voice call', 'log-send')
+
+  // Arm the watchdog BEFORE the mic probe. An unanswered permission prompt
+  // never resolves getUserMedia - it does not reject, it hangs forever.
+  connectTimer = setTimeout(() => {
+    log('   voice connect timed out', 'log-err')
+    endVoice('could not connect', 'err')
+    banner('warn', 'Voice could not connect. On this machine the usual cause is Tailscale: Chrome probes the Tailscale interfaces for STUN and ICE gathering takes ~40s against Vapi\'s 15s budget. Quit Tailscale, or relaunch Chrome with --force-webrtc-ip-handling-policy=default_public_interface. The buttons above keep working regardless.')
+  }, CONNECT_TIMEOUT_MS)
+  hintTimer = setTimeout(() => voiceState('waiting for microphone permission — choose Allow'), MIC_HINT_MS)
+
+  try {
+    const probe = await navigator.mediaDevices.getUserMedia({ audio: true })
+    probe.getTracks().forEach(t => t.stop())   // release at once, or the SDK publishes a dead track
+    clearTimeout(hintTimer)
+  } catch {
+    endVoice('microphone blocked', 'err')
+    return log('   microphone access denied — the buttons still work', 'log-err')
+  }
+
+  try {
+    const { publicKey, assistantId } = await (await fetch('/api/voice-config')).json()
+    const { default: Vapi } = await import(VOICE_SDK)
+    vapi = new Vapi(publicKey)
+
+    vapi.on('call-start', () => {
+      clearTimeout(connectTimer)
+      voiceLive = true
+      $('talk').textContent = '⏹ End call'
+      $('talk').classList.add('primary')
+      voiceState('live — speak', 'ok')
+      log('   voice call live', 'log-ok')
+      banner(null)
+    })
+    vapi.on('call-end', () => { endVoice('call ended'); log('   voice call ended', 'log-ok') })
+    vapi.on('call-start-failed', () => { endVoice('connect failed', 'err'); log('   voice connect failed', 'log-err') })
+    vapi.on('error', e => {
+      if (!voiceLive) { endVoice('connect failed', 'err') }
+      log(`   voice error: ${e?.message ?? e}`, 'log-err')
+    })
+    vapi.on('message', m => {
+      if (m?.type === 'transcript' && m.transcriptType === 'final' && m.transcript?.trim()) {
+        say(m.role === 'assistant' ? 'assistant' : 'user', m.transcript.trim())
+      }
+      // Surface what the voice agent actually did, so the activity log stays
+      // the single place that records every command the robot received.
+      const calls = m?.toolCalls ?? m?.toolCallList
+      if (Array.isArray(calls)) {
+        for (const c of calls) {
+          const name = c?.name ?? c?.function?.name
+          const args = c?.arguments ?? c?.function?.arguments
+          if (name) log(`→ [voice] ${name} ${typeof args === 'string' ? args : JSON.stringify(args ?? {})}`, 'log-send')
+        }
+      }
+    })
+
+    await vapi.start(assistantId)
+  } catch (e) {
+    endVoice('could not start', 'err')
+    log(`   voice failed to start: ${e.message}`, 'log-err')
+  }
+}
+
+$('talk').addEventListener('click', () => {
+  if (voiceLive || vapi) { endVoice('call ended'); log('   voice call ended by you', 'log-ok'); return }
+  startVoice()
+})
+
+log('console ready — spacebar is STOP', 'log-ok')
+poll()
+setInterval(poll, 2000)
+</script>
+</body>
+</html>

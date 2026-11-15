@@ -15,4 +15,20 @@
  * is how the test suite and the static demo build pin it off.
  */
 export const DEMO_VAPI_PUBLIC_KEY = '2cdfae81-9e4a-4215-a17b-7ec2b7bf6aa4'
-export const DEMO_VAPI_ASSISTANT_ID = '503c0c1a-5592-4148-af15-166811855801'
+
+/**
+ * 'ClawMetry D1 Robot (voice)' - the assistant wired to the real robot.
+ *
+ * Its 7 tools post to https://d1-jetson.tail5ec076.ts.net/vapi, so a guest
+ * saying "stand up" moves a physical machine. The tool definitions and the
+ * command that attaches them live in the Node-only admin directory, in
+ * robot-tools.mjs (not referenced by path here: the boundary test greps src/
+ * for that path as a proxy for "nothing in the bundle reaches the admin key").
+ *
+ * This REPLACED 503c0c1a-5592-4148-af15-166811855801 ('Spa Concierge
+ * (Leukerbad dev)'), which is a different person's assistant: its 5 tools all
+ * point at a trycloudflare quick tunnel that has since died, so every tool
+ * call on it fails. Do not point this app back at it, and do not edit it -
+ * it is still in use elsewhere.
+ */
+export const DEMO_VAPI_ASSISTANT_ID = '19828665-3d22-47b3-a72f-079e19b45aca'

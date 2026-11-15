@@ -12,3 +12,6 @@ test-results/
 qr-output/
 
 *.zip
+
+# Vapi PRIVATE key - must never be committed (see VOICE_SETUP.md)
+scripts/vapi/credentials.json
