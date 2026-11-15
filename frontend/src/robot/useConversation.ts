@@ -114,7 +114,9 @@ export function useConversation(o: Options) {
   /** Typed text goes through exactly the same path as speech. */
   const submitText = (text: string) => { const t = text.trim(); if (t) { handle.current?.abort(); void understand(t) } }
   /** Lines the robot says on its own (greeting, "We have arrived"): shown as the caption, spoken once the guest has used voice. */
-  const robotSays = useCallback((text: string) => { void say(text) }, [say])
+  const robotSays = useCallback((text: string, listenAfter = false) => { void say(text, listenAfter) }, [say])
+  /** The guest already tapped something (the consent button), so the browser lets the robot speak and listen. */
+  const enable = useCallback(() => { started.current = true }, [])
 
-  return { phase, heard, said, notice, state, muted, setMuted, begin, stopListening, submitText, robotSays }
+  return { phase, heard, said, notice, state, muted, setMuted, begin, stopListening, submitText, robotSays, enable }
 }

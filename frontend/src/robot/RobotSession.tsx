@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent, ReactNode } from 'react'
 import type { TaskSession } from '../tasks/contracts'
 import { EscortBar } from './EscortBar'
@@ -57,6 +57,15 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
   const talk_ = useConversation({ auth: info.authorization, voice: info.consent.voice, awaitingConfirm: !!pending?.place, lang: navigator.language || 'en',
     onPropose: name => { if (!blocked) setPending({ key: ++counter.current, text: `Take me to ${label(name)}`, proposedAction: 'GO_TO_PLACE', place: name }) },
     onYes: () => setYes(n => n + 1), onNo: () => setPending(null), onStop: () => { void stop() }, onFinish: onLeave, onExpired })
+  // The guest agreed to voice by tapping the consent button, so greet aloud and then listen.
+  const greeted = useRef(false)
+  useEffect(() => {
+    if (greeted.current || !info.consent.voice) return
+    greeted.current = true
+    talk_.enable()
+    talk_.robotSays(`Hi ${nickname || 'there'}! Where would you like to go?`, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   function send(event: FormEvent) {
     event.preventDefault()
     const text = draft.trim()
