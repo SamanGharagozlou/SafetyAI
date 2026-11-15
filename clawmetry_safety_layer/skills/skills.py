@@ -1058,7 +1058,8 @@ class Skills:
         return why
 
     def greet(self, name: str | None = None, lang: str = "en") -> SkillResult:
-        """Say hello (by name if given). The vendor shake_hand gesture runs ONLY when allow_greeting_gesture is true,
+        """Say hello (by name if given). The gesture (the team bridge's ~/shake_hand, or the configured
+        greeting_robot_cmd string on robot_cmd) runs ONLY when allow_greeting_gesture is true,
         the robot is stationary, safety is NORMAL, nobody is within 1.5 m and the battery is above 30 %; otherwise the
         greeting is voice only. Never moves the base."""
         lang = lang if lang in self.GREETINGS else "en"
@@ -1071,7 +1072,9 @@ class Skills:
             gesture = None
             if not blockers:
                 try:
-                    gesture = "shake_hand" if self.bridge.shake_hand() else None
+                    grc = getattr(self.bridge, "greeting_robot_cmd", None)
+                    label = f"robot_cmd:{grc}" if grc else "shake_hand"
+                    gesture = label if self.bridge.shake_hand() else None  # shake_hand() sends grc when configured
                     if gesture is None:
                         blockers = ["shake_hand was not acknowledged by the robot"]
                 except Exception as e:  # noqa: BLE001  (CommandRefused, service down): voice only

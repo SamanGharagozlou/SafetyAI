@@ -44,8 +44,8 @@
 
 | Port | Service | Binds | Key |
 |---|---|---|---|
-| 8765 | edge (team PC) | `BIND_HOST` = the team PC's tailnet IP | `X-Api-Key: EDGE_API_KEY` (loopback exempt) |
-| 8780 | brain (Spark) | `BIND_HOST` = `<spark tailnet IP>` | `X-Api-Key: BRAIN_API_KEY` (console: cookie after login) |
+| 8765 | edge (team PC) | `BIND_HOST` = `127.0.0.1,<edge tailnet IP>` (a comma list; each entry checked) | `X-Api-Key: EDGE_API_KEY` (loopback exempt) |
+| 8780 | brain (Spark) | `BIND_HOST` = `<spark tailnet IP>,127.0.0.1` (production since 2026-11-15, tmux `brain`, `ops/brain.env`) | `X-Api-Key: BRAIN_API_KEY` (console: cookie after login) |
 | 8000 | Cosmos vLLM (Spark) | `0.0.0.0` | `Authorization: Bearer COSMOS_API_KEY` (`--api-key`, required by `serve_reason2.sh`) |
 | 8090 | team detector | the team PC | none (their tool, on the robot LAN; our edge reads it locally) |
 | 43988/udp | D1 SDK | the team PC | the robot's own `sdk_config.yaml` `target_ip` |

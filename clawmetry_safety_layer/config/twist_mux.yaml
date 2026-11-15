@@ -10,9 +10,10 @@
 # The vendor controller and the e-stop sit under all of this in the robot and always win.
 # Lock `mux_stop` (std_msgs/Bool, true = blocks every source): ros2 topic pub --once /mux_stop std_msgs/msg/Bool "{data: true}"
 #
-# NOTE: the edge publishes only while it drives (plus 0.5 s of zeros after a stop). When it is idle, or holding, a
-# lower source gets through after its timeout. That is why, during the demo, ONLY the edge publishes velocity; the
-# dashboard drives the robot with goals (/guide_to /pause /resume /say, docs/ADAPTER-API.md).
+# NOTE: while the edge runs and the robot stands, the edge publishes at least a 5 Hz zero keepalive (every 0.2 s,
+# inside the 0.5 s timeout), so the mux never passes a lower source: to drive by hand, stop the edge. Only when the
+# robot is not standing or the edge has handed over (no robot state) does a lower source get through. During the demo
+# ONLY the edge publishes velocity; the dashboard sends goals (/guide_to /pause /resume /say, docs/ADAPTER-API.md).
 twist_mux:
   ros__parameters:
     topics:

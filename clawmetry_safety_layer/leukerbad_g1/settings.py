@@ -63,9 +63,37 @@ def key_ok(given: str | None, expected_env: str) -> bool:
     return hmac.compare_digest(given.encode(), expected.encode())
 
 
+def bind_hosts(default: str = "127.0.0.1") -> list[str]:
+    """BIND_HOST as a comma list (e.g. "<spark tailnet IP>,127.0.0.1": the tailnet for remote callers, loopback for local
+    checks). Every entry is checked like bind_host(): no wildcard, ever."""
+    raw = get("BIND_HOST", default) or default
+    return [_checked(h.strip()) for h in raw.split(",") if h.strip()] or [default]
+
+
 def bind_host(default: str = "127.0.0.1") -> str:
-    """BIND_HOST, refusing a wildcard. Wildcards would expose the service on every interface (incl. public Wi-Fi)."""
-    h = get("BIND_HOST", default) or default
+    """The first BIND_HOST entry (see bind_hosts)."""
+    return bind_hosts(default)[0]
+
+
+def serve(app, hosts: list[str], port: int) -> None:
+    """uvicorn on every host in `hosts` (one socket each, same app)."""
+    import socket
+
+    import uvicorn
+
+    socks = []
+    for h in hosts:
+        fam, _, _, _, addr = socket.getaddrinfo(h, port, type=socket.SOCK_STREAM)[0]
+        s = socket.socket(fam, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(addr)
+        s.listen(2048)
+        socks.append(s)
+    print(f"[serve] listening on {', '.join(f'{h}:{port}' for h in hosts)}")
+    uvicorn.Server(uvicorn.Config(app, log_level="info")).run(sockets=socks)
+
+
+def _checked(h: str) -> str:
     if h in ("0.0.0.0", "::", ""):
         raise ValueError(
             "BIND_HOST=0.0.0.0 is not allowed: bind to the tailnet address (tailscale ip -4) or the robot LAN address"

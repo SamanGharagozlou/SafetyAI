@@ -117,9 +117,13 @@ ros2 run agibot_d1_bridge keyboard_teleop --ros-args -r cmd_vel:=/cmd_vel_teleop
 | 10 (lowest) | keyboard teleop | `/cmd_vel_teleop` |
 | lock 255 | operator stop: `ros2 topic pub --once /mux_stop std_msgs/msg/Bool "{data: true}"` | `/mux_stop` |
 
-* **What the mux does not do:** the edge publishes only while it drives, plus 0.5 s of zeros after a stop. When it is
-  idle or holding, a lower source gets through after its 0.5 s timeout. That is why the rule above stays: nobody else
-  publishes during the demo.
+* **The edge holds the mux while the robot stands:** it sends 20 Hz while driving and a zero keepalive at 5 Hz while
+  idle or in HOLD, inside the mux's 0.5 s timeout. So no lower source gets through while the edge runs. To drive by
+  hand, stop the edge first.
+* **What the mux does not do:** when the robot is not standing, or the edge has handed over (no robot state), the edge
+  is silent and a lower source can get through. That is why the rule above stays: nobody else publishes during the
+  demo.
+* **Gait:** the edge publishes `move` on `/gait` once at connect (logged, journal event `gait.set`) and never again.
 * **The human still outranks software:** the vendor controller and the e-stop act inside the robot, under the mux.
 * **Without the mux:** don't run the mux, leave `D1W_CMD_VEL` unset (the edge publishes `/cmd_vel`), and run no other
   source.

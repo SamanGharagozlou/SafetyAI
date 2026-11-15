@@ -393,3 +393,50 @@ def test_cmd_vel_topic_behind_twist_mux(monkeypatch):
     monkeypatch.setenv("D1W_CMD_VEL", "/robot_cmd")
     with pytest.raises(CommandRefused):
         AgibotD1WBridge(cfg(transport="ros2"), ros=FakeRos()).connect("", 0)
+
+
+def test_gait_move_once_on_connect_is_logged(d1w):
+    b, ros, _, ev = d1w
+    assert [m.data for m in ros.node.pubs["/gait"].sent] == ["move"]
+    assert ("gait.set", {"topic": "/gait", "gait": "move", "once": True}) in ev
+
+
+def test_zero_keepalive_5hz_only_while_owned_and_standing(d1w):
+    b, ros, team, _ = d1w
+    time.sleep(0.3)
+    n0 = len(twists(ros))
+    time.sleep(1.0)
+    ka = twists(ros)[n0:]
+    assert 4 <= len(ka) <= 7 and all(t == (0.0, 0.0, 0.0) for t in ka), ka  # standing + idle: ~5 Hz zeros
+    team.mode = 51  # lying (the operator put it down): no keepalive
+    time.sleep(0.3)
+    n1 = len(twists(ros))
+    time.sleep(0.6)
+    assert len(twists(ros)) == n1
+    team.mode = 1
+    team.alive = False  # no state for 1 s: handover (1 s of zeros), then we don't own it -> silence
+    time.sleep(2.4)
+    n2 = len(twists(ros))
+    time.sleep(0.6)
+    assert len(twists(ros)) == n2
+
+
+def test_greeting_robot_cmd_string_and_posture_refused():
+    from bridge.agibot_d1w_bridge import gesture_cmd_ok
+
+    assert gesture_cmd_ok("shake_hand") and gesture_cmd_ok("wave_hello")
+    for bad in ("lie_down", "damp", "passive", "stand_up", "cancel_crawl", "climb", "", "shake hand; damp", None):
+        assert not gesture_cmd_ok(bad), bad
+    with pytest.raises(CommandRefused):
+        AgibotD1WBridge(cfg(transport="ros2", greeting_robot_cmd="lie_down"), ros=FakeRos())
+    ros = FakeRos()
+    team = TeamNode(ros)
+    b = AgibotD1WBridge(cfg(transport="ros2", allow_greeting_gesture=True, greeting_robot_cmd="shake_hand"), ros=ros)
+    b.connect("", 0)
+    time.sleep(0.15)
+    assert "/robot_cmd" not in ros.node.pubs  # nothing until greet() asks
+    assert b.shake_hand() is True
+    assert [m.data for m in ros.node.pubs["/robot_cmd"].sent] == ["shake_hand"]
+    assert ros.node.clients == {}  # the configured string replaces the ~/shake_hand service
+    b.close()
+    team.close()

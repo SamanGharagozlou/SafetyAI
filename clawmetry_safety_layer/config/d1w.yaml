@@ -21,6 +21,9 @@ venue_file: venue/leukerbad_therme.yaml
 auto_stand: false
 allow_damp: false
 allow_greeting_gesture: false
+#   greeting_robot_cmd: none -> the gesture (when allowed) is the team bridge's ~/shake_hand service. A string, e.g.
+#     shake_hand, publishes that ONE string on /robot_cmd instead; posture / locomotion words are refused at startup.
+greeting_robot_cmd: none
 d1w:
   rate_hz: 20.0
   caps: {vx: 0.4, vy: 0.15, wz: 0.6}   # hard maxima; lower here if needed (guide pace 0.3 = behaviour policy)

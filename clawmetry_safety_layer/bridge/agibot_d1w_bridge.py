@@ -2,8 +2,10 @@
 
 Three transports, selected by cfg["transport"] (env D1W_TRANSPORT overrides):
   * ros2 (default): through the SafetyAI team's ROS 2 node `d1_cmd_vel_bridge` (SafetyAI repo, branch develop,
-    ros2_ws/src/agibot_d1_bridge). We publish `cmd_vel` (Twist) at 20 Hz and, once at connect, `gait` = "move". We
-    subscribe odom / imu / battery / ctrl_mode / connected (all 10 Hz). Their node owns the ONE SDK connection.
+    ros2_ws/src/agibot_d1_bridge). We publish `cmd_vel` (Twist) at 20 Hz while driving, a zero Twist at 5 Hz as a
+    keepalive while we own the robot and it stands (idle or HOLD; so a bridge-side silence watchdog never damps it),
+    and, once at connect, `gait` = "move" (logged, event gait.set). We subscribe odom / imu / battery / ctrl_mode /
+    connected (all 10 Hz). Their node owns the ONE SDK connection.
   * sdk: the vendor Python binding mc_sdk_zsl_1w_py directly (Python 3.10 only, lib/zsl-1w/<arch>), with a 10 Hz
     keepalive move(0,0,0) while idle (no SDK traffic for 3 s -> the robot damps and lies down). Only when the
     operator sets D1W_TRANSPORT=sdk AND the SDK port is free on this host (nobody else owns the SDK).
@@ -19,7 +21,8 @@ Hard rules (tests/test_agibot_d1w_bridge.py):
   * stand() calls ~/stand_up only with auto_stand: true (literal); otherwise it only confirms the robot is standing
     (the operator stands it with the controller).
   * shake_hand() (greeting gesture) only with allow_greeting_gesture: true (literal), default false, only while
-    stationary; through the team bridge's ~/shake_hand service (SDK shakeHand()), never a robot_cmd publisher.
+    stationary; through the team bridge's ~/shake_hand service (SDK shakeHand()), or, when greeting_robot_cmd is set
+    (default none), that ONE string on robot_cmd (publisher created on first use; posture / locomotion words refused).
     skills.greet() adds safety NORMAL, nobody within 1.5 m, battery > 30 %. D1W_CMD_VEL renames the cmd_vel topic
     (behind twist_mux: /cmd_vel_edge, config/twist_mux.yaml).
   * gait locked to "move" (never crawl / climb).
@@ -35,6 +38,7 @@ from __future__ import annotations
 import math
 import os
 import platform
+import re
 import socket
 import sys
 import threading
@@ -59,12 +63,24 @@ MIN_BATTERY_PCT = 25.0  # the SDK refuses under 20 %; we stop asking before that
 CTRL_MODE = {0: "damped", 1: "standing", 3: "move", 51: "lying"}  # as observed by the SafetyAI team
 UPRIGHT_MODES = (1, 3)
 FORBIDDEN_SERVICES = ("lie_down", "passive")  # never created, under any flag
-FORBIDDEN_TOPICS = ("robot_cmd", "attitude_cmd")  # never published
+FORBIDDEN_TOPICS = ("robot_cmd", "attitude_cmd")  # never a target for cmd_vel / gait / say
+# robot_cmd carries ONE thing from us: the configured greeting gesture string (greeting_robot_cmd, default none),
+# published by greet() only. Anything that changes posture or locomotion is refused, whatever the config says.
+GESTURE_DENY = (
+    "lie", "damp", "passive", "stand", "sit", "crawl", "climb", "jump", "walk", "move", "run", "gait", "cancel",
+    "stop", "recover", "roll", "flip", "dance", "spin", "trot", "attitude", "estop",
+)  # fmt: skip
+
+
+def gesture_cmd_ok(cmd: str | None) -> bool:
+    c = str(cmd or "").strip().lower()
+    return bool(re.fullmatch(r"[a-z][a-z_]{1,31}", c)) and not any(d in c for d in GESTURE_DENY)
+
 
 DEFAULTS: dict[str, Any] = {
     "rate_hz": 20.0,
     "cmd_timeout_s": 0.3,  # our deadman: no move_velocity for this long -> zeros
-    "zero_hold_s": 1.0,  # keep sending zeros this long after a stop, then go quiet (their node stops on silence)
+    "zero_hold_s": 1.0,  # keep sending zeros this long after a stop, then the 5 Hz keepalive (ros2) takes over
     "odom_to_zone": [0.0, 0.0, 0.0],  # zone-frame pose of the odom origin  # VERIFY: calibrate on site
     "caps": {"vx": MAX_VX, "vy": MAX_VY, "wz": MAX_WZ},
     "confirm_timeout_s": 30.0,  # pick/place: wait this long for a person to confirm the load / hand-off
@@ -72,6 +88,8 @@ DEFAULTS: dict[str, Any] = {
         "node_name": "leukerbad_d1w_edge",
         "cmd_vel": "/cmd_vel",
         "gait": "/gait",
+        "robot_cmd": "/robot_cmd",  # only the configured greeting gesture (greeting_robot_cmd), never a posture
+        "keepalive_hz": 5.0,  # zero Twist while standing and idle / held, so no bridge silence watchdog ever damps it
         "odom": "/odom",
         "imu": "/imu",
         "battery": "/battery",
@@ -151,6 +169,9 @@ class Ros2Transport:
         self.ros = ros
         self.raw = Raw()
         self.lock = threading.Lock()
+        self.pub_robot_cmd: Any = None  # created only when greet() sends a configured gesture
+        self.gait_sent: tuple[str, str] | None = None
+        self.keepalive_hz = 0.0
         self.node: Any = None
         self.clients: dict[str, Any] = {}
 
@@ -202,8 +223,11 @@ class Ros2Transport:
         n.create_subscription(r.Bool, t["connected"], self._on_conn, r.qos)
         threading.Thread(target=r.rclpy.spin, args=(n,), daemon=True, name="d1w-ros2").start()
         g = r.String()
-        g.data = "move"  # the only gait we ever send
+        g.data = "move"  # the only gait we ever send, once, here
         self.pub_gait.publish(g)
+        self.gait_sent = (t["gait"], "move")
+        print(f"[d1w] gait: published 'move' once on {t['gait']}")
+        self.keepalive_hz = float(t.get("keepalive_hz") or 0.0)
 
     # --- callbacks
     def _on_odom(self, m):
@@ -273,8 +297,19 @@ class Ros2Transport:
     def damp(self) -> bool:
         return self._trigger("damp")
 
-    def shake_hand(self) -> bool:  # the team bridge's ~/shake_hand Trigger; never a generic robot_cmd publisher
+    def shake_hand(self) -> bool:  # the team bridge's ~/shake_hand Trigger
         return self._trigger("shake_hand")
+
+    def gesture(self, cmd: str) -> bool:
+        """Publish ONE gesture string on robot_cmd (greet() only). The publisher is created on first use."""
+        if not gesture_cmd_ok(cmd):
+            raise CommandRefused(f"robot_cmd {cmd!r} refused: only a greeting gesture, never posture or locomotion")
+        if self.pub_robot_cmd is None:
+            self.pub_robot_cmd = self.node.create_publisher(self.ros.String, self.c["ros2"]["robot_cmd"], self.ros.qos)
+        m = self.ros.String()
+        m.data = str(cmd).strip().lower()
+        self.pub_robot_cmd.publish(m)
+        return True
 
     def close(self):
         try:
@@ -391,6 +426,11 @@ class SdkTransport:
     def shake_hand(self) -> bool:
         return self.robot.shakeHand() == 0
 
+    def gesture(self, cmd: str) -> bool:  # the SDK has no robot_cmd topic; only its shakeHand() maps
+        if str(cmd).strip().lower() in ("shake_hand", "shakehand"):
+            return self.shake_hand()
+        raise CommandRefused(f"gesture {cmd!r}: the SDK transport has no robot_cmd; only shake_hand")
+
     def close(self):
         self._run = False
         try:
@@ -472,6 +512,12 @@ class MockTransport:
         self.gestures.append("shake_hand")
         return True
 
+    def gesture(self, cmd: str) -> bool:
+        if not gesture_cmd_ok(cmd):
+            raise CommandRefused(f"robot_cmd {cmd!r} refused: only a greeting gesture, never posture or locomotion")
+        self.gestures.append(f"robot_cmd:{str(cmd).strip().lower()}")
+        return True
+
     # --- test / demo hooks
     def set_tilt(self, roll_deg: float = 0.0, pitch_deg: float = 0.0):
         with self.lock:
@@ -515,6 +561,10 @@ class AgibotD1WBridge(RobotBridge):
         self.auto_stand = cfg_flag(cfg, "auto_stand")
         self.allow_damp = cfg_flag(cfg, "allow_damp")
         self.allow_greeting_gesture = cfg_flag(cfg, "allow_greeting_gesture")
+        grc = cfg.get("greeting_robot_cmd")
+        self.greeting_robot_cmd = None if grc in (None, "", "none", False) else str(grc).strip().lower()
+        if self.greeting_robot_cmd is not None and not gesture_cmd_ok(self.greeting_robot_cmd):
+            raise CommandRefused(f"greeting_robot_cmd {grc!r} refused: posture / locomotion commands are never sent")
         self.t = transport or make_transport(cfg, self.c, ros, sdk)
         if self.t.name == "mock":
             self.body = "agibot_d1w_mock"  # simulation on the Physical AI page, not hardware
@@ -544,6 +594,9 @@ class AgibotD1WBridge(RobotBridge):
     # ------------------------------------------------------------ lifecycle
     def connect(self, iface: str, domain: int) -> None:
         self.t.start()
+        gs = getattr(self.t, "gait_sent", None)
+        if gs:
+            self._event("gait.set", topic=gs[0], gait=gs[1], once=True)
         threading.Thread(target=self._stream, daemon=True, name="d1w-stream").start()
 
     def close(self) -> None:
@@ -641,7 +694,6 @@ class AgibotD1WBridge(RobotBridge):
     # ------------------------------------------------------------ stream (20 Hz) + watchdogs
     def _stream(self):
         period = 1.0 / float(self.c["rate_hz"])
-        keep = 1.0 / float(self.c["sdk"]["keepalive_hz"])
         last_send = 0.0
         while self._run:
             t0 = time.time()
@@ -682,6 +734,15 @@ class AgibotD1WBridge(RobotBridge):
                 target = self._target
             active = any(target) or t0 - self._t_stop < float(self.c["zero_hold_s"])
             always = getattr(self.t, "always_send", False)
+            # ros2 keepalive: while we own the robot (fresh state, no handover) and it stands (idle or HOLD), zero
+            # Twist at keepalive_hz, so a bridge-side silence watchdog never damps a standing robot.
+            ka = float(getattr(self.t, "keepalive_hz", 0.0) or 0.0)
+            owned_standing = fresh and not self._handover_sent and r.ctrl_mode in UPRIGHT_MODES
+            if ka > 0 and owned_standing and not any(target) and t0 - last_send >= 1.0 / ka:
+                always = True
+                keep = 0.0
+            else:
+                keep = 1.0 / float(self.c["sdk"]["keepalive_hz"])
             if active or (always and t0 - last_send >= keep):
                 try:
                     self.t.send(*target)
@@ -761,6 +822,9 @@ class AgibotD1WBridge(RobotBridge):
             raise CommandRefused("allow_greeting_gesture is false: greet by voice only")
         if not self.is_stationary():
             raise CommandRefused("the robot is moving (or has no fresh state): no gesture")
+        if self.greeting_robot_cmd:  # the configured robot_cmd gesture string instead of ~/shake_hand
+            self._event("gesture.robot_cmd", cmd=self.greeting_robot_cmd, transport=self.t.name)
+            return self.t.gesture(self.greeting_robot_cmd) is True
         self._event("gesture.shake_hand", transport=self.t.name)
         return self.t.shake_hand() is True
 

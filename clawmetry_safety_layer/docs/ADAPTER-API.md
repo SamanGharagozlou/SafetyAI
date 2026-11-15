@@ -141,7 +141,9 @@ The gesture runs only when **all** of these hold:
 * nobody is within 1.5 m, and people detection is working;
 * the battery is above 30 %.
 
-Otherwise the greeting is voice only. It never moves the base. The MCP tool `greet` is the same.
+Otherwise the greeting is voice only. It never moves the base. The MCP tool `greet` is the same. The gesture is the
+team bridge's `~/shake_hand`, or, with `greeting_robot_cmd` set in the config, that one string on `/robot_cmd`
+(`gesture: "robot_cmd:<string>"`); posture and locomotion commands are refused.
 
 ### `POST /say`
 Request `{"text": "..."}`. The robot says it on `/say` (`std_msgs/String`, for the team's voice stack) and through local

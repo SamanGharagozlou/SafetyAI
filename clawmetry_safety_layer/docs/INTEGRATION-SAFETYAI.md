@@ -46,8 +46,9 @@ that commands the robot except our own `cmd_vel` publisher, which is capped, exa
   3. Nav2 (`/cmd_vel_nav`);
   4. `keyboard_teleop` (`/cmd_vel_teleop`), lowest.
 
-  The vendor controller and the e-stop act inside the robot and outrank all of it. The edge publishes only while it
-  drives, so an idle or holding edge lets a lower source through after 0.5 s: the "nobody else publishes" rule stays.
+  The vendor controller and the e-stop act inside the robot and outrank all of it. While the robot stands, the edge
+  publishes at least a 5 Hz zero keepalive, so it holds the mux; when the robot is down or the edge has handed over,
+  it is silent and a lower source can get through. So the "nobody else publishes" rule stays.
   The cleaner future step: Nav2 plans and our edge executes, i.e. Nav2 goals go through our policy.
 * **New perception:** `d1_camera` (RTSP to an image topic), `d1_depth` (monocular metric depth, floor calibration)
   and RTAB-Map localisation. These are good `PoseSource` / boundary inputs for later. A map-frame pose on `/amcl_pose`

@@ -510,13 +510,11 @@ def mock_stage_breach(request: Request, b: dict):
 
 
 def main():
-    import uvicorn
-
-    host = settings.bind_host()
+    hosts = settings.bind_hosts()
     port = int(settings.get("EDGE_PORT", "8765"))
-    if not settings.get("EDGE_API_KEY") and not _is_local(host):
+    if not settings.get("EDGE_API_KEY") and not all(_is_local(h) for h in hosts):
         raise SystemExit("EDGE_API_KEY is not set (.env): refusing to serve on a non-loopback address without a key")
-    uvicorn.run("skills.api:app", host=host, port=port, log_level="info")
+    settings.serve("skills.api:app", hosts, port)
 
 
 if __name__ == "__main__":

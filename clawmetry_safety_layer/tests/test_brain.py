@@ -121,3 +121,14 @@ def test_console_login_and_allow_list(brain, monkeypatch):
     assert c.post("/api/edge/guide_to", json={"poi": "kasse"}).json() == {"ok": True}
     assert c.post("/api/edge/approve", json={}).status_code == 200
     assert calls == [("guide_to", {"poi": "kasse"}), ("approve", {"by": "mission-control"})]
+
+
+def test_bind_hosts_list_never_wildcard(monkeypatch):
+    from leukerbad_g1 import settings
+
+    monkeypatch.setenv("BIND_HOST", "<spark tailnet IP>, 127.0.0.1")
+    assert settings.bind_hosts() == ["<spark tailnet IP>", "127.0.0.1"] and settings.bind_host() == "<spark tailnet IP>"
+    for bad in ("0.0.0.0", "127.0.0.1,0.0.0.0", "::"):
+        monkeypatch.setenv("BIND_HOST", bad)
+        with pytest.raises(ValueError):
+            settings.bind_hosts()
