@@ -8,8 +8,11 @@ Current map: `maps/metacam_lite_2026-11-14/` (see its README for frame/origin an
 - `initial_pose_localizer` publishes `map -> odom` from the pose you give it (launch args `x y yaw`, or RViz
   "2D Pose Estimate" any time). The robot then moves through the map by odometry. **No drift correction**
   (the D1 has no lidar topic here): re-place it when it has drifted.
-- `ekf_node` (robot_localization) fuses `/odom` + `/imu` from the bridge into `odom -> base_link`,
-  because the bridge publishes no TF. Disable with `use_ekf:=false` if another node publishes it.
+- The bridge (develop) already broadcasts `odom -> base_link` and `odom -> base_footprint` from its integrated
+  body-velocity + IMU-yaw odometry, so the EKF is **off by default** (`use_ekf:=false`).
+  Optional: `use_ekf:=true` fuses `/odom` + `/imu` with robot_localization instead; then start the bridge with
+  `publish_tf:=false publish_footprint_tf:=false`, otherwise two nodes publish `odom -> base_link`
+  (and `base_footprint`, which Nav2 uses, is no longer broadcast).
 
 ## Setup (once)
 ```bash

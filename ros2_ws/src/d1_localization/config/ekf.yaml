@@ -3,7 +3,7 @@ ekf_filter_node:
   ros__parameters:
     frequency: 30.0
     two_d_mode: true
-    publish_tf: true          # publishes odom->base_link. Set false if the D1 driver already does.
+    publish_tf: true          # publishes odom->base_link. Only with the bridge's publish_tf:=false (bridge on develop publishes it itself)
     map_frame: map
     odom_frame: odom
     base_link_frame: base_link
