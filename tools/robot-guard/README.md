@@ -1,5 +1,40 @@
 # Camera people-guard
 
+> ## Not yet reconciled with `d1_follow` / `human_perception`
+>
+> This package was built in parallel with the perception stack in
+> `ros2_ws/src/human_perception` and `ros2_ws/src/d1_follow`, and the two have
+> not been merged. Before anyone deploys this, three real conflicts need a
+> decision:
+>
+> **1. Two detectors.** This runs its own YOLO on the RTSP stream;
+> `human_perception` publishes `/perception/humans/detections` from the same
+> camera. Running both is wasteful and, on a Jetson with no torch installed,
+> currently impossible. The right shape is for this guard to **consume those
+> detections** instead of inferring its own.
+>
+> **2. `perception.md` says inference never runs on the robot** - it runs on a
+> laptop or companion machine. That is a reasonable call (the Jetson has no
+> torch and no CUDA wheels set up), but it means a guard hosted off-board
+> inherits the wifi hop, and a stop that arrives a second late is close to
+> useless. Either inference moves onto the Jetson (opencv-dnn with an ONNX
+> model avoids torch entirely; OpenCV 4.8 is already there), or the override
+> loop has to live wherever the inference does.
+>
+> **3. `perception.md` explicitly says "do not use it to gate robot motion or
+> any safety function" - and gating motion is exactly what this does.** The
+> positions are not as far apart as they look: this README says the same thing
+> about not being a safety system, and argues a best-effort gate still reduces
+> how often a handler has to be quick. But it is a documented project rule and
+> crossing it is the owner's decision to make, not this package's.
+>
+> Also overlapping, though less directly: `d1_follow` makes the robot **follow a
+> guest**, with proper OSNet re-ID. `escort_core.py` here does the opposite -
+> the robot **leads** and checks the guest is still behind. Different
+> behaviours, but the identity machinery is duplicated, and theirs is better.
+> This one should borrow their embedder rather than keep a colour histogram.
+
+
 Stops the greeter walking into guests, and stops it offering a paw to a
 toddler, using the camera the robot already has.
 
