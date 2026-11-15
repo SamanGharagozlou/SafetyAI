@@ -31,6 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # noqa: E40
 from urllib.parse import parse_qs, urlparse  # noqa: E402
 
 import numpy as np  # noqa: E402
+import yaml  # noqa: E402
 import rclpy  # noqa: E402
 import tf2_ros  # noqa: E402
 from action_msgs.msg import GoalStatus  # noqa: E402
@@ -136,6 +137,8 @@ class Dashboard(Node):
         self.current_map = None                              # id of the loaded map
         self.current_entry = None                            # its list entry (dict)
         self.start_pose, self.pose_confirmed = None, False   # robot pose in the map set by the operator (lidar maps have no live localization)
+        self.pois = {}                                       # points of interest of the loaded map: name -> {x, y, yaw, label, aliases, description}
+        self.pois_file = None
 
         qos_latched = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1, reliability=ReliabilityPolicy.RELIABLE,
                                  durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -444,8 +447,9 @@ class Dashboard(Node):
             for g in ('map', 'global', 'local'):
                 self.grids.pop(g, None)
             self.plan = []
-            self.current_map, self.ui_mode = name, 'mapping'
+            self.current_map, self.current_entry, self.ui_mode = name, None, 'mapping'
             self.trail = []
+        self._load_pois()
         self.start('mapping', db=os.path.join(self.maps_dir, name + '.db'))
         bag = None
         if record:
@@ -494,6 +498,8 @@ class Dashboard(Node):
                 json.dump(meta, f, indent=1)
             with self.lock:
                 self.ui_mode, self.current_map = 'idle', name
+            if self.pois:
+                self._write_pois(os.path.join(self.maps_dir, name + '.places.yaml'))
             self._job('save_map', 'done', f'saved "{name}"')
         except Exception as e:  # noqa: BLE001
             self._job('save_map', 'error', str(e))
@@ -531,6 +537,95 @@ class Dashboard(Node):
                             'created': created, 'start': meta.get('start_pose')})
         return out
 
+    # ------------------------------------------------------------------ points of interest (named places on the map)
+    # One places.yaml per map, the same file d1_gateway (`places_file:=`) and d1_companion (`--places`) read: name -> {x, y, yaw, label, aliases, description}.
+    #   lidar map : <map folder>/places.yaml          mono (RTAB-Map) map : <maps_dir>/<name>.places.yaml
+    def _places_path(self, name=None):
+        e = self.current_entry
+        if name is None and e and e.get('kind') == 'lidar' and e.get('yaml'):
+            return os.path.join(os.path.dirname(e['yaml']), 'places.yaml')
+        name = name or self.current_map
+        return os.path.join(self.maps_dir, name + '.places.yaml') if name else None
+
+    def _load_pois(self):
+        """Read the places file of the loaded map (empty when there is none yet)."""
+        path = self._places_path()
+        pois = {}
+        try:
+            if path and os.path.exists(path):
+                raw = yaml.safe_load(open(path)) or {}
+                for k, p in raw.items():
+                    if isinstance(p, dict) and 'x' in p and 'y' in p:
+                        q = dict(p)
+                        q.update(x=float(p['x']), y=float(p['y']), yaw=float(p.get('yaw', 0.0)), label=p.get('label') or str(k),
+                                 aliases=list(p.get('aliases') or []), description=p.get('description') or '')
+                        pois[str(k)] = q
+        except Exception as ex:  # noqa: BLE001
+            self.get_logger().warning(f'could not read {path}: {ex}')
+        with self.lock:
+            self.pois, self.pois_file = pois, path
+
+    def _write_pois(self, path=None):
+        path = path or self._places_path()
+        if not path:
+            return {'ok': False, 'error': 'no map loaded: load or start a map first'}
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with self.lock:
+                data = {k: dict(v) for k, v in self.pois.items()}
+            head = ('# Named places (points of interest) of this map, frame `map`, metres / rad. Written by the D1 dashboard.\n'
+                    '# Same format as d1_gateway `places_file:=` / d1_companion `--places` (label, aliases, description are for the guest app).\n')
+            tmp = path + '.tmp'
+            with open(tmp, 'w') as f:
+                f.write(head + yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+            os.replace(tmp, path)
+            self.pois_file = path
+            return {'ok': True, 'file': path, 'count': len(data)}
+        except OSError as ex:
+            return {'ok': False, 'error': f'could not save places: {ex}'}
+
+    def poi_edit(self, b):
+        """b: {action: add|update|delete|save|clear, name, x, y, yaw, label, aliases, description}. Every change is written to the places file at once."""
+        act = b.get('action', 'add')
+        if not self.current_map:
+            return {'ok': False, 'error': 'load or start a map first (places belong to a map)'}
+        if act == 'save':
+            return self._write_pois()
+        name = re.sub(r'[^a-z0-9_]+', '_', str(b.get('name') or b.get('label') or '').strip().lower()).strip('_')
+        if act == 'clear':
+            with self.lock:
+                self.pois = {}
+            return self._write_pois()
+        if not name:
+            return {'ok': False, 'error': 'give the place a name'}
+        if act == 'delete':
+            with self.lock:
+                if name not in self.pois:
+                    return {'ok': False, 'error': f'no place "{name}"'}
+                del self.pois[name]
+            return self._write_pois()
+        try:
+            x, y, yaw = float(b['x']), float(b['y']), float(b.get('yaw', 0.0))
+        except (KeyError, TypeError, ValueError):
+            return {'ok': False, 'error': 'x and y are required'}
+        if not all(math.isfinite(v) for v in (x, y, yaw)):
+            return {'ok': False, 'error': 'x, y, yaw must be finite numbers'}
+        if act == 'add' and name in self.pois and not b.get('overwrite'):
+            return {'ok': False, 'error': f'place "{name}" already exists (use update)'}
+        al = b.get('aliases') or []
+        if isinstance(al, str):
+            al = [a.strip() for a in al.split(',')]
+        al = [a for a in (str(a).strip() for a in al) if a]
+        label = str(b.get('label') or '').strip() or name.replace('_', ' ').title()
+        with self.lock:
+            old = self.pois.get(name, {})
+            self.pois[name] = {**old, 'x': round(x, 3), 'y': round(y, 3), 'yaw': round(yaw, 4), 'label': label,
+                               'aliases': al or old.get('aliases') or [name.replace('_', ' '), label.lower()],
+                               'description': str(b.get('description') if b.get('description') is not None else old.get('description', ''))}
+        r = self._write_pois()
+        r['name'] = name
+        return r
+
     def list_maps(self):
         out = self._static_maps()
         if self.mono:
@@ -563,8 +658,9 @@ class Dashboard(Node):
             self.start_pose = tuple(m['start']) if m.get('start') else None
             self.pose_confirmed = bool(self.start_pose)       # a saved start pose counts as placed
             self.localized = False
+        self._load_pois()
         self.start('static_nav', db=m['yaml'])
-        return {'ok': True, 'name': m['name'], 'start_pose': self.start_pose, 'placed': self.pose_confirmed}
+        return {'ok': True, 'name': m['name'], 'start_pose': self.start_pose, 'placed': self.pose_confirmed, 'places': len(self.pois)}
 
     def set_pose(self, x, y, yaw):
         """Tell the robot where it is in the map (like RViz '2D Pose Estimate'); the localizer sets map->odom."""
@@ -598,6 +694,8 @@ class Dashboard(Node):
             img = re.search(r'^image:\s*(\S+)', y, re.M).group(1)
             shutil.copy(os.path.join(src, img), os.path.join(dst, img))
             shutil.copy(e['yaml'], os.path.join(dst, 'map.yaml'))
+            if self.pois:
+                self._write_pois(os.path.join(dst, 'places.yaml'))
             json.dump({'name': name, 'source_map': e['id'], 'start_pose': list(self.start_pose) if self.pose_confirmed else None,
                        'created': time.strftime('%F %T')}, open(os.path.join(dst, 'meta.json'), 'w'))
         except Exception as ex:  # noqa: BLE001
@@ -635,11 +733,12 @@ class Dashboard(Node):
             for g in ('map', 'global', 'local'):
                 self.grids.pop(g, None)
             self.plan = []
-            self.current_map, self.ui_mode = name, 'navigation'
+            self.current_map, self.current_entry, self.ui_mode = name, None, 'navigation'
             self.trail = []
+        self._load_pois()
         self.start('localization', db=db)
         threading.Timer(4.0, lambda: self.start('nav2')).start()
-        return {'ok': True, 'name': name}
+        return {'ok': True, 'name': name, 'places': len(self.pois)}
 
     def clear_all(self, stop_robot=False):
         self.cancel_goal('clear all')
@@ -657,6 +756,7 @@ class Dashboard(Node):
             self.plan = []
             self.nav.update(status='idle', goal=None, distance_remaining=None, goal_handle=None)
             self.ui_mode, self.current_map, self.current_entry = 'idle', None, None
+            self.pois, self.pois_file = {}, None
             self.start_pose, self.pose_confirmed = None, False
             self.trail = []
             self.job = {'name': None, 'status': 'idle', 'message': ''}
@@ -686,6 +786,7 @@ class Dashboard(Node):
                 'job': self.job,
                 'grids': {n: g['version'] for n, g in self.grids.items()},
                 'features': {'mono_slam': self.mono, 'lidar_nav': True}, 'localization': self.loc(), 'start_pose': self.start_pose, 'pose_confirmed': self.pose_confirmed,
+                'pois': self.pois,
             }
 
     def grid_payload(self, name):
@@ -734,6 +835,8 @@ def make_handler(dash):
                 return self._send(200 if g else 404, g or {'error': 'no such grid'})
             if u.path == '/api/maps':
                 return self._send(200, dash.list_maps())
+            if u.path == '/api/pois':
+                return self._send(200, {'map': dash.current_map, 'file': dash.pois_file, 'pois': dash.pois})
             if u.path == '/api/log':
                 name = (q.get('name') or [''])[0]
                 p = dash.procs.get(name)
@@ -807,6 +910,8 @@ def make_handler(dash):
                     return self._send(400, {'ok': False, 'error': 'unknown action'})
                 if u == '/api/pose':
                     return self._send(200, dash.set_pose(float(b['x']), float(b['y']), float(b.get('yaw', 0))))
+                if u == '/api/poi':
+                    return self._send(200, dash.poi_edit(b))
                 if u == '/api/goal':
                     ok, msg = dash.send_goal(float(b['x']), float(b['y']), float(b.get('yaw', 0)))
                     return self._send(200, {'ok': ok, 'message': msg})
