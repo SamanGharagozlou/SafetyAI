@@ -176,14 +176,39 @@ async function api(path, { method = 'GET', body } = {}) {
   return data
 }
 
+/**
+ * TWO BACKENDS, ONE ASSISTANT.
+ *
+ * Vapi lets every tool carry its own server, which is what makes a real
+ * deployment possible at all: the Jetson serves ONLY the seven robot tools
+ * (move, walk, stop, posture, gait, gesture, status). It has never heard of
+ * list_offerings or book_treatment. Point everything at it and the whole
+ * sales half of the concierge returns "unknown tool".
+ *
+ *   robot tools  -> REAL_ROBOT (the Jetson funnel, bearer auth)
+ *   info/sales   -> INFO_URL   (the concierge data server)
+ *
+ * With REAL_ROBOT unset, both go to the simulator and nothing moves.
+ */
+const REAL_ROBOT = process.env.REAL_ROBOT          // e.g. https://d1-jetson.tail5ec076.ts.net/vapi
+const ROBOT_TOKEN = process.env.D1_ROBOT_TOKEN
+
 function tools(url) {
-  if (!url) throw new Error('SIM_URL is not set (the public URL of the simulator)')
-  const server = { url }
-  const t = (name, description, props = {}, required = [], timeoutSeconds) => ({
-    type: 'function',
-    function: { name, description, parameters: { type: 'object', properties: props, required } },
-    server: timeoutSeconds ? { ...server, timeoutSeconds } : server,
-  })
+  if (!url) throw new Error('SIM_URL is not set (the public URL of the info server)')
+  const server = { url }                                   // info + sales
+  const robotServer = REAL_ROBOT                           // physical robot
+    ? { url: REAL_ROBOT, headers: { Authorization: `Bearer ${ROBOT_TOKEN}` } }
+    : server
+  const ROBOT_TOOLS = new Set(['move_robot', 'walk_distance', 'stop_robot', 'robot_command', 'set_gait', 'do_gesture', 'robot_status'])
+
+  const t = (name, description, props = {}, required = [], timeoutSeconds) => {
+    const s = ROBOT_TOOLS.has(name) ? robotServer : server
+    return {
+      type: 'function',
+      function: { name, description, parameters: { type: 'object', properties: props, required } },
+      server: timeoutSeconds ? { ...s, timeoutSeconds } : s,
+    }
+  }
 
   return [
     t('list_offerings', 'Everything the spa sells, with prices and durations. Call this before recommending anything, rather than relying on memory.'),
@@ -222,7 +247,26 @@ function tools(url) {
     }, ['distance_cm'], 40),
     t('stop_robot', 'Stop all motion immediately. Use the moment anyone says stop, wait or hold on.'),
   ]
+  // guide_to only exists in simulation. The real robot has NO navigation -
+  // no map, no path planning, no "walk to the pools". Leaving it in would let
+  // the assistant announce a journey while the machine stands still, which is
+  // the most damaging kind of wrong: confidently narrated, physically false.
+  .filter(x => !(REAL_ROBOT && x.function.name === 'guide_to'))
 }
+
+/** Appended to the prompt only when a real robot is attached. */
+const REAL_ROBOT_RULES = `
+
+YOU ARE ATTACHED TO A REAL ROBOT RIGHT NOW. THIS IS NOT A SIMULATION.
+Every move you command happens to a physical machine standing in front of a real person, outdoors, near a fountain and a glass door.
+
+You CANNOT navigate. There is no map and no "walk me to the pools" - you have no such ability, so never offer to take anyone anywhere. Give directions in words instead: the desk is straight through the doors, the changing rooms are down the stairs, the lift is there for anyone who needs it.
+
+What you CAN do physically: stand up, sit down, offer a paw, the ten gestures, turn on the spot, and walk a SHORT measured distance. Keep walks under one metre unless someone has clearly asked for more, and never walk towards a person.
+
+Check the floor is clear before any walk, and if you are unsure, do not walk - talk instead. Stop the moment anyone says stop, before you reply.
+
+The battery is shared with the computer that runs you. If someone asks for endless tricks, do a couple and then suggest they go in and enjoy the water.`
 
 const BASE = url => ({
   name: 'Leukerbad Therme greeter (simulator)',
@@ -315,7 +359,7 @@ const CANDIDATES = url => {
             provider: 'anthropic',
             model,
             temperature: 0.4,
-            messages: [{ role: 'system', content: CONCIERGE_PROMPT }],
+            messages: [{ role: 'system', content: CONCIERGE_PROMPT + (REAL_ROBOT ? REAL_ROBOT_RULES : '') }],
             tools: tools(url),
           },
           voice: v.voice,
