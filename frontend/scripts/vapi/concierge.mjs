@@ -81,10 +81,12 @@ export const CONCIERGE_PROMPT = `You are a four-legged robot dog standing OUTSID
 
 You are not behind a desk. You are out front, in the cold, being charming at strangers.
 
-ONE SENTENCE. THIS IS THE RULE YOU BREAK MOST OFTEN.
-Say ONE short sentence, then STOP and wait. Not two, not four. You have been producing five sentences in a row - "Just a sec." "Nice." "Quick question so I point you to the good stuff." "Are you here for the day?" - and that is a monologue, not a conversation.
-It is also actively breaking things: while you are still talking, the guest starts answering, their speech lands on top of yours, and it gets lost. Every extra sentence you add makes the robot more likely to MISS what they say next.
-Never say filler like "just a sec", "one moment", "let me check" or "nice" as a sentence of its own. If you need a tool, call it silently and speak once when you have the answer.
+BE CALM. LISTEN FIRST, THEN ANSWER ONCE.
+Let the person finish. If they pause mid-thought, wait - a pause is not an invitation. You are not racing anyone and silence is fine.
+Then answer ONCE, in one or two short sentences. Not five. An earlier version of you produced "Just a sec." "Nice." "Quick question so I point you to the good stuff." "Are you here for the day?" back to back, and that is a monologue, not a conversation.
+This is not only style. While you are still talking the guest starts answering, their speech lands on top of yours, and it gets lost - so every extra sentence makes you more likely to MISS what they say next. Saying less means hearing more.
+Never say filler as a sentence of its own: no "just a sec", "one moment", "let me check", "nice". If you need a tool, call it silently and speak once when you have the answer.
+Answer what was actually asked, not what you wish had been asked. If you did not catch something, say so plainly and ask them to repeat it - shorter and slower, never louder.
 Say prices as "thirty-nine francs" - never abbreviate or mangle the word francs.
 
 WHO YOU ARE
@@ -249,71 +251,81 @@ const BASE = url => ({
  * kiosk. Realtime models take audio in and emit audio out, so they need NO
  * transcriber block and no separate TTS voice.
  */
-const CANDIDATES = url => [
-  {
-    label: 'OpenAI Realtime (speech-to-speech)',
-    body: {
-      ...BASE(url),
-      model: {
-        provider: 'openai',
-        model: 'gpt-realtime-2',
-        temperature: 0.4,
-        messages: [{ role: 'system', content: CONCIERGE_PROMPT }],
-        tools: tools(url),
-      },
-      voice: { provider: 'openai', voiceId: 'marin' },
-    },
-  },
-  {
-    label: 'OpenAI Realtime (dated id)',
-    body: {
-      ...BASE(url),
-      model: {
-        provider: 'openai',
-        model: 'gpt-realtime-2025-08-28',
-        temperature: 0.4,
-        messages: [{ role: 'system', content: CONCIERGE_PROMPT }],
-        tools: tools(url),
-      },
-      voice: { provider: 'openai', voiceId: 'alloy' },
-    },
-  },
-  {
-    // Warmth over raw speed. Hume's Octave is the most expressive TTS on the
-    // list, which matters for a greeter whose job is to make someone feel
-    // welcome - but it is a PIPELINE, so it cannot match realtime's latency.
-    // If this is the one that lands, we are trading a few hundred ms for a
-    // voice that sounds like it means it.
-    label: 'Hume Octave voice + Haiku (expressive pipeline)',
-    body: {
-      ...BASE(url),
-      model: {
-        provider: 'anthropic',
-        model: 'claude-haiku-5-5',
-        temperature: 0.4,
-        messages: [{ role: 'system', content: CONCIERGE_PROMPT }],
-        tools: tools(url),
-      },
-      voice: { provider: 'hume', model: 'octave', voiceId: 'ITO' },
-      transcriber: { provider: 'deepgram', model: 'nova-3', language: 'en' },
-    },
-  },
-  {
-    label: 'Pipeline fallback (Haiku + Deepgram + Elliot)',
-    body: {
-      ...BASE(url),
-      model: {
-        provider: 'anthropic',
-        model: 'claude-haiku-5-5',
-        temperature: 0.4,
-        messages: [{ role: 'system', content: CONCIERGE_PROMPT }],
-        tools: tools(url),
-      },
-      voice: { provider: 'vapi', voiceId: 'Elliot', speed: 1.0 },
-      transcriber: { provider: 'deepgram', model: 'nova-3', language: 'en' },
-    },
-  },
+/**
+ * STT -> LLM -> TTS, deliberately, after trying speech-to-speech.
+ *
+ * Realtime (gpt-realtime-2) was genuinely fast - sub-second tool calls - but
+ * it is EAGER by construction: it decides when you have finished talking and
+ * starts answering, which produced a robot that monologued over the guest and
+ * then missed their reply. A greeter standing in front of a person needs the
+ * opposite temperament: wait, hear the whole thing, then answer once.
+ *
+ * A pipeline gives back the controls that matters for that - an explicit
+ * endpointing budget, a real transcript to reason over, and a separate model
+ * choice - at the cost of a few hundred ms. That is the right trade here.
+ *
+ * MODEL CHOICE: Sonnet is first, not Opus, and that is deliberate. This job is
+ * short conversational turns and tool dispatch, not hard reasoning, and every
+ * extra second of thinking is a second a stranger stands in the cold watching
+ * a robot say nothing. Opus is in the list right behind it - swap the order if
+ * you want the stronger model and will accept the latency.
+ */
+/**
+ * These ids are what VAPI accepts, which lags the API: it rejected
+ * claude-sonnet-5-5 and claude-opus-5-5 outright and printed its allow-list,
+ * on which the newest are claude-sonnet-5, claude-opus-4-6 and
+ * claude-haiku-5-5. Do not "upgrade" these to newer names without checking
+ * that error message again - a 400 here takes the whole assistant down.
+ */
+const LLM = process.env.LLM            // override: LLM=claude-opus-4-6
+const MODELS = LLM ? [LLM] : ['claude-sonnet-5', 'claude-opus-4-6', 'claude-haiku-5-5']
+
+/** Best-sounding first. Several need a provider key on the Vapi account, so
+ *  they are tried in order and the first your account accepts wins. */
+const VOICES = [
+  { label: '11labs Turbo',  voice: { provider: '11labs', voiceId: 'burt', model: 'eleven_turbo_v2_5', stability: 0.5, similarityBoost: 0.75 } },
+  { label: 'Hume Octave',   voice: { provider: 'hume', model: 'octave', voiceId: 'ITO' } },
+  { label: 'Vapi Elliot',   voice: { provider: 'vapi', voiceId: 'Elliot', speed: 1.0 } },
 ]
+
+/**
+ * CALM, not twitchy. These numbers are the whole point of moving off realtime:
+ *  - waitSeconds 0.8: let someone finish a thought, including the pause in
+ *    the middle of "I'm here with... two kids". 0.1 was cutting people off.
+ *  - smart endpointing on top, so a clearly finished sentence still goes early.
+ *  - numWords 3 / backoff 1.0: it still yields when interrupted, but a single
+ *    stray syllable no longer makes it stop mid-sentence and restart, which
+ *    was a large part of why it felt frantic.
+ */
+const TIMING = {
+  startSpeakingPlan: { waitSeconds: 0.8, smartEndpointingPlan: { provider: 'livekit' } },
+  stopSpeakingPlan: { numWords: 3, voiceSeconds: 0.2, backoffSeconds: 1.0 },
+}
+
+const CANDIDATES = url => {
+  const out = []
+  for (const model of MODELS) {
+    for (const v of VOICES) {
+      out.push({
+        label: `${model} + Deepgram nova-3 + ${v.label}`,
+        body: {
+          ...BASE(url),
+          ...TIMING,
+          model: {
+            provider: 'anthropic',
+            model,
+            temperature: 0.4,
+            messages: [{ role: 'system', content: CONCIERGE_PROMPT }],
+            tools: tools(url),
+          },
+          voice: v.voice,
+          transcriber: { provider: 'deepgram', model: 'nova-3', language: 'en', smartFormat: true },
+        },
+      })
+    }
+  }
+  return out
+}
 
 async function apply(path, method, url) {
   for (const { label, body } of CANDIDATES(url)) {
