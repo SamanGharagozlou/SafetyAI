@@ -62,7 +62,10 @@ class RtspCamera(Node):
         p('camera_info_file', '')      # ROS calibration YAML (overrides placeholder)
         p('stale_timeout', 1.0)        # s without a new frame -> warn, stop publishing
         p('reconnect_s', 2.0)
-        p('stamp_offset_s', 0.0)       # subtract estimated pipeline latency from stamps
+        # Video latency (encode + Wi-Fi + decode) measured by cross-correlating camera yaw-rate with the IMU gyro on a
+        # recorded run: ~1.35 s (peak at 1.3-1.4 s). Frames are stamped with capture time = receive time - this offset, so the
+        # robot pose used for each frame is the pose when it was captured, not 1.4 s later (which smeared maps while moving).
+        p('stamp_offset_s', 1.35)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.url = str(g('url'))
         self.frame_id = g('frame_id')

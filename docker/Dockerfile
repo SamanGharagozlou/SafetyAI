@@ -35,15 +35,27 @@ RUN pip3 install ${TORCH_PACKAGES} --index-url "${TORCH_INDEX_URL}" ${TORCH_PIP_
 # "canonicalize_version() got an unexpected keyword argument 'strip_trailing_zero'".
 RUN pip3 install "packaging>=24.2"
 
+# d1_follow re-ID (OSNet). The numpy<2 constraint stops boxmot from upgrading numpy,
+# which would break Humble's binary packages (cv_bridge, ...).
+RUN echo 'numpy<2' > /tmp/np.txt \
+    && pip3 install --default-timeout=120 -c /tmp/np.txt "boxmot==19.0.0"
+# boxmot pulls a recent anyio whose pytest plugin needs pytest>=7 (apt has 6.2.5) and
+# would crash every pytest run.
+ENV PYTEST_ADDOPTS="-p no:anyio"
+
 WORKDIR /ws
 COPY ros2_ws/src/human_perception/ src/human_perception/
 COPY ros2_ws/src/d1_camera/ src/d1_camera/
+COPY ros2_ws/src/d1_follow/ src/d1_follow/
 RUN . /opt/ros/humble/setup.sh && colcon build --event-handlers console_direct- \
     && rm -rf build log
 
 RUN mkdir -p /root/.cache/human_perception/models && for m in ${PRELOAD_MODELS}; do \
         python3 -c "from ultralytics import YOLO; YOLO('/root/.cache/human_perception/models/$m')" \
         || exit 1; done
+
+# OSNet re-ID weights baked in too: the robot PC needs no internet at runtime.
+RUN python3 -c "from boxmot.reid.core.reid import ReID; ReID(device='cpu')"
 
 COPY docker/fastdds_profile.xml /etc/fastdds_profile.xml
 ENV FASTRTPS_DEFAULT_PROFILES_FILE=/etc/fastdds_profile.xml

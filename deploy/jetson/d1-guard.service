@@ -1,0 +1,58 @@
+[Unit]
+# The camera people-guard. Watches the robot's own wide-angle camera over RTSP
+# and interrupts motion when somebody is close.
+#
+# This is NOT a safety system. It is a monocular camera, a person detector and
+# a timer, and it CANNOT see the floor nearer than ~0.4 m - a toddler who walks
+# right up to the robot is out of frame. The robot stays a 16 kg machine with
+# 48 N.m joints. A human handler with a hand on the remote remains the actual
+# protection; this reduces how often that handler has to be quick.
+Description=D1 camera people-guard (stops the robot walking into guests)
+After=network-online.target d1-bridge.service
+Wants=network-online.target
+
+# Ordered after the bridge, but NOT BindsTo: when the bridge is down the robot
+# cannot move, so an idle guard is harmless. The reverse matters far more - a
+# bridge that comes back while the guard is dead is a robot that can walk with
+# nothing watching - and Restart=always below covers that.
+
+[Service]
+Type=simple
+User=sepa
+Group=sepa
+WorkingDirectory=/home/sepa/SafetyAI/tools/robot-guard
+
+# The token drives a physical robot. It lives in an EnvironmentFile with 0600
+# perms, never in this unit - unit files are world-readable, and this repo has
+# already leaked one key into git history.
+EnvironmentFile=/etc/d1-guard.env
+
+# Wired link, per vendor doc 5.1. On wifi it is rtsp://192.168.234.1:8554/test.
+Environment=D1_RTSP=rtsp://192.168.168.168:8554/test
+Environment=ROBOT_URL=http://127.0.0.1:8090
+
+# --calibrated is DELIBERATELY ABSENT until calibrate.py has been run on this
+# robot and the numbers below replaced. Without it the guard caps the robot to
+# slow, because an uncalibrated ground plane does not produce noisy distances -
+# it produces confident ones that are wrong by a constant factor.
+ExecStart=/usr/bin/python3 guard.py \
+  --rtsp ${D1_RTSP} \
+  --robot ${ROBOT_URL} \
+  --port 8092 \
+  --host 127.0.0.1 \
+  --hz 10 \
+  --cam-height 0.40 \
+  --cam-tilt 12.0
+
+Restart=always
+RestartSec=3
+
+# No watchdog needed here, unlike the bridge: the guard's own failure mode is
+# to report FREEZE, and the console refuses motion when it cannot be reached.
+# It fails towards a stopped robot, so a dead guard is loud, not quiet.
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

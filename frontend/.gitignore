@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.local
+.env
+.env.*
+!.env.example
+.DS_Store
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+qr-output/
+
+*.zip
+
+# Vapi PRIVATE key - must never be committed (see VOICE_SETUP.md)
+scripts/vapi/credentials.json

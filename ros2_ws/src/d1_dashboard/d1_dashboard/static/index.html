@@ -15,7 +15,7 @@
   .chip { padding:4px 10px; border-radius:99px; background:var(--panel2); border:1px solid var(--line); font-size:12px; white-space:nowrap; }
   .chip b { font-weight:600; }
   .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .dim { color:var(--dim); }
-  aside { background:var(--panel); border-right:1px solid var(--line); overflow:auto; padding:12px; display:flex; flex-direction:column; gap:12px; }
+  aside { scrollbar-width:thin; scrollbar-color:#3a4350 transparent; background:var(--panel); border-right:1px solid var(--line); overflow:auto; padding:12px; display:flex; flex-direction:column; gap:12px; }
   .card { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:10px; }
   .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--dim); margin:0 0 8px; }
   button { background:#2f3742; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 12px; font:inherit; cursor:pointer; }
@@ -38,6 +38,7 @@
   #msg { min-height:20px; color:var(--dim); font-size:13px; }
   #logbox { display:none; background:#0f1216; border:1px solid var(--line); border-radius:8px; padding:8px; font:11px/1.3 ui-monospace, monospace; max-height:200px; overflow:auto; white-space:pre-wrap; margin-top:6px; }
   main { position:relative; overflow:hidden; background:#0c0f13; }
+  ::-webkit-scrollbar { width:8px; } ::-webkit-scrollbar-thumb { background:#3a4350; border-radius:4px; } ::-webkit-scrollbar-track { background:transparent; }
   canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
   .tools { position:absolute; left:12px; top:12px; display:flex; flex-direction:column; gap:8px; background:rgba(29,34,41,.92); border:1px solid var(--line); border-radius:10px; padding:10px; }
   .tools label { display:flex; gap:6px; align-items:center; color:var(--text); font-size:13px; cursor:pointer; }
@@ -52,6 +53,15 @@
   .slider { display:flex; gap:8px; align-items:center; font-size:12px; color:var(--dim); }
   .slider input { flex:1; }
   #goalinfo { position:absolute; left:12px; bottom:14px; background:rgba(29,34,41,.92); border:1px solid var(--line); border-radius:10px; padding:8px 12px; max-width:420px; }
+  .legend { font-size:11px; color:var(--dim); display:flex; flex-direction:column; gap:3px; border-top:1px solid var(--line); padding-top:6px; }
+  .legend i { display:inline-block; width:12px; height:10px; border-radius:2px; vertical-align:-1px; margin-right:4px; }
+  .collapse { background:none; border:0; color:var(--dim); padding:0 4px; font-size:16px; line-height:1; cursor:pointer; }
+  .collapsed .body { display:none !important; }
+  @media (max-height: 820px) {
+    #ctl { width:218px; padding:8px; } .pad button { padding:6px 0; font-size:15px; } .pad button small { display:none; }
+    .posture button { padding:6px 4px; } .tools { padding:8px; gap:5px; } .tools label { font-size:12px; }
+    aside { padding:8px; gap:8px; } .card { padding:8px; } .wf button { padding:6px 10px; margin-bottom:4px; }
+  }
   #hint { position:absolute; left:50%; transform:translateX(-50%); bottom:14px; color:var(--dim); font-size:12px; background:rgba(0,0,0,.35); padding:4px 10px; border-radius:99px; }
 </style>
 </head>
@@ -62,6 +72,7 @@
     <span class="chip" id="cLink">Robot link: <b>?</b></span>
     <span class="chip" id="cMode">Mode: <b>?</b></span>
     <span class="chip" id="cBatt">Battery: <b>?</b></span>
+    <span class="chip bad" id="cRec" style="display:none">&#9679; REC <b>rosbag</b></span>
     <span class="chip" id="cUi">Workflow: <b>idle</b></span>
     <span class="chip" id="cLoc">Localized: <b>no</b></span>
     <span class="chip" id="cNav">Nav: <b>idle</b></span>
@@ -74,6 +85,7 @@
       <h2>Workflow</h2>
       <button id="bStart" class="primary"><span>1&nbsp;&nbsp;Start process</span><span class="n">robot + camera + depth</span></button>
       <input type="text" id="mapName" placeholder="map name (optional)">
+      <label class="dim" style="font-size:12px;display:flex;gap:6px;margin:0 0 6px"><input type="checkbox" id="rec" checked> record a rosbag of the run (~300 MB/min)</label>
       <button id="bMap" class="go"><span>2&nbsp;&nbsp;Start map</span><span class="n">RTAB-Map</span></button>
       <button id="bSave"><span>3&nbsp;&nbsp;Save map</span><span class="n">grid + database</span></button>
       <select id="mapSel"></select>
@@ -95,22 +107,36 @@
 
   <main id="stage">
     <canvas id="cv"></canvas>
-    <div class="tools">
-      <label><input type="checkbox" id="lMap" checked> Map</label>
+    <div class="tools" id="tools">
+      <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:12px;color:var(--dim);letter-spacing:.8px">LAYERS</b><button class="collapse" id="toolsToggle" title="collapse / expand">&#x25BE;</button></div>
+      <div class="body" style="display:flex;flex-direction:column;gap:8px">
+      <label><input type="checkbox" id="lMap" checked> Map <span class="dim">(remembered)</span></label>
+      <label><input type="checkbox" id="lClean" checked> Hide stray dots</label>
+      <label><input type="checkbox" id="lTrail" checked> Robot trail</label>
+      <label><input type="checkbox" id="lLive" checked> Camera view <span class="dim">(now)</span></label>
+      <label><input type="checkbox" id="lHalo"> Safety margin (halo)</label>
       <label><input type="checkbox" id="lGlobal"> Global costmap</label>
-      <label><input type="checkbox" id="lLocal" checked> Local costmap</label>
+      <label><input type="checkbox" id="lLocal"> Local costmap</label>
       <label><input type="checkbox" id="lPlan" checked> Plan</label>
       <hr style="border:0;border-top:1px solid var(--line);width:100%">
       <label><input type="checkbox" id="navMode"> <b>Nav mode</b> (click = goal)</label>
       <label><input type="checkbox" id="follow" checked> Follow robot</label>
-      <div class="row"><button id="zin">+</button><button id="zout">&minus;</button><button id="center">Center</button></div>
+      <div class="legend">
+        <div><i style="background:#ff5a3c"></i> <b>obstacle</b> &mdash; avoid (box, wall, person)</div>
+        <div><i style="background:#24303f;border:1px solid #556"></i> free floor</div>
+        <div><i style="background:transparent;border:1px dashed #556"></i> empty = not seen yet</div>
+        <div><i style="background:#59b8ff"></i> trail &nbsp;<i style="background:#3ecf8e"></i> plan &nbsp;<i style="background:#ffd24c"></i> goal</div>
+      </div>
+      <div class="row"><button id="zin">+</button><button id="zout">&minus;</button><button id="fit">Fit</button><button id="center">Center</button></div>
+      </div>
     </div>
     <div class="banner" id="banner"></div>
     <button id="estop">E-STOP</button>
     <div id="goalinfo" style="display:none"></div>
     <div id="hint"></div>
     <div id="ctl">
-      <h2><span>Robot control</span><span id="ctlState" class="dim"></span></h2>
+      <h2><span>Robot control</span><span><span id="ctlState" class="dim"></span> <button class="collapse" id="ctlToggle" title="collapse / expand">&#x25BE;</button></span></h2>
+      <div class="body">
       <div class="posture">
         <button id="pStand" class="go">Stand</button>
         <button id="pLie">Lie</button>
@@ -129,6 +155,7 @@
       </div>
       <div class="slider">speed <input type="range" id="spd" min="0.1" max="0.4" step="0.05" value="0.2"><span id="spdv">0.20 m/s</span></div>
       <label class="dim" style="display:flex;gap:6px;margin-top:6px;font-size:12px"><input type="checkbox" id="keys" checked> keyboard drive (WASD / QE)</label>
+      </div>
     </div>
   </main>
 </div>
@@ -153,33 +180,56 @@ function connect() {
   es.addEventListener('gridclear', e => { delete grids[JSON.parse(e.data).name]; });
 }
 function addGrid(g) {
-  const bin = atob(g.data), n = bin.length, cv = document.createElement('canvas');
-  cv.width = g.w; cv.height = g.h;
-  const ctx = cv.getContext('2d'), img = ctx.createImageData(g.w, g.h), d = img.data;
-  const isMap = g.name === 'map';
-  for (let j = 0; j < g.h; j++) {
-    for (let i = 0; i < g.w; i++) {
-      let v = bin.charCodeAt(j * g.w + i); if (v > 127) v -= 256;          // int8
-      const o = ((g.h - 1 - j) * g.w + i) * 4;                               // flip: row 0 = south
-      let r, gg, b, a;
-      if (isMap) { if (v < 0) { r = gg = b = 62; a = 255; } else if (v < 50) { r = gg = b = 232; a = 255; } else { r = gg = b = 18; a = 255; } }
-      else if (v <= 0) { a = 0; r = gg = b = 0; }
+  const bin = atob(g.data), n = bin.length, raw = new Int8Array(n);
+  for (let k = 0; k < n; k++) { let v = bin.charCodeAt(k); raw[k] = v > 127 ? v - 256 : v; }       // int8
+  grids[g.name] = {w:g.w, h:g.h, res:g.res, ox:g.ox, oy:g.oy, raw:raw, canvas:(grids[g.name] && grids[g.name].canvas) || document.createElement('canvas'), version:g.version};
+  renderGrid(g.name);
+}
+// Map look: walls = bright, free = dark slate, unknown = empty (no grey box). Costmaps: blue->orange gradient, lethal = red.
+function renderGrid(name) {
+  const g = grids[name]; if (!g) return;
+  const w = g.w, h = g.h, raw = g.raw, cv = g.canvas; cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(w, h), d = img.data;
+  const isMap = name === 'map', isLive = name === 'live';
+  let keep = null;
+  if (isMap && $('lClean') && $('lClean').checked) {            // display-only despeckle: an occupied cell needs >= 2 occupied neighbours
+    keep = new Uint8Array(w * h);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      if (raw[j * w + i] < 50) continue; let c = 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const jj = j + dj, ii = i + di; if (jj >= 0 && jj < h && ii >= 0 && ii < w && raw[jj * w + ii] >= 50) c++; }
+      keep[j * w + i] = c >= 2 ? 1 : 0; }
+  }
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      const v = raw[j * w + i], o = ((h - 1 - j) * w + i) * 4;      // flip: row 0 = south
+      let r = 0, gg = 0, b = 0, a = 0;
+      if (isLive) { if (v >= 99) { r = 255; gg = 90; b = 60; a = 255; } else if (v > 0 && $('lHalo').checked) { r = 255; gg = 90; b = 60; a = 70; } }
+      else if (isMap) {
+        if (v < 0) { a = 0; }                                                        // unknown: transparent
+        else if (v >= 50 && (!keep || keep[j * w + i])) { r = 255; gg = 90; b = 60; a = 255; }        // obstacle (same colour as live)
+        else { r = 36; gg = 47; b = 63; a = 255; }                                   // free (also despeckled cells)
+      }
+      else if (v <= 0) { a = 0; }
       else if (v >= 99) { r = 255; gg = 40; b = 90; a = 200; }
       else { const t = v / 98; r = Math.round(40 + 215 * t); gg = Math.round(120 + 100 * t); b = Math.round(255 - 215 * t); a = 70 + Math.round(110 * t); }
-      d[o] = r; d[o+1] = gg; d[o+2] = b; d[o+3] = a;
+      d[o] = r; d[o + 1] = gg; d[o + 2] = b; d[o + 3] = a;
     }
   }
   ctx.putImageData(img, 0, 0);
-  grids[g.name] = {w:g.w, h:g.h, res:g.res, ox:g.ox, oy:g.oy, canvas:cv, version:g.version};
 }
 
 // ---------------------------------------------------------------- state -> UI
-const PROCS = ['robot','perception','mapping','localization','nav2'];
+const PROCS = ['robot','perception','mapping','bag','localization','nav2'];
 function renderState() {
+  var mono = !S.features || S.features.mono_slam;
+  ['bMap', 'bSave', 'mapName', 'rec'].forEach(function (id) { var e = document.getElementById(id); var t = (e && e.tagName == 'INPUT' && e.type == 'checkbox') ? e.parentNode : e; if (t) t.style.display = mono ? '' : 'none'; });
+  var lv = document.getElementById('lLive'); if (lv) lv.parentNode.style.display = mono ? '' : 'none';
+  var bs = document.getElementById('bStart'); if (bs) bs.innerHTML = mono ? '<span>1&nbsp;&nbsp;Start process</span><span class="n">robot + camera + depth</span>' : '<span>1&nbsp;&nbsp;Start process</span><span class="n">robot link</span>';
   const r = S.robot, el = (id, html, cls) => { const e = $(id); e.innerHTML = html; if (cls !== undefined) e.className = 'chip ' + cls; };
   el('cLink', 'Robot link: <b>' + (r.connected === null ? 'no data' : r.connected ? 'connected' : 'DOWN') + '</b>', r.connected ? 'ok' : (r.connected === null ? 'dim' : 'bad'));
   el('cMode', 'Mode: <b>' + (r.mode === null ? '?' : r.mode_name) + '</b>', r.standing ? 'warn' : '');
   el('cBatt', 'Battery: <b>' + (r.battery === null ? '?' : r.battery + '%') + '</b>', r.battery !== null && r.battery < 25 ? 'bad' : (r.battery !== null && r.battery < 40 ? 'warn' : ''));
+  $('cRec').style.display = (S.procs.bag && S.procs.bag.running) ? '' : 'none';
   el('cUi', 'Workflow: <b>' + S.ui_mode + (S.current_map ? ' · ' + S.current_map : '') + '</b>', '');
   el('cLoc', 'Localized: <b>' + (S.localized ? 'yes' : 'no') + '</b>', S.localized ? 'ok' : 'dim');
   const ns = S.nav.status + (S.nav.distance_remaining != null && S.nav.status === 'navigating' ? ' · ' + S.nav.distance_remaining + ' m' : '');
@@ -225,7 +275,7 @@ function refreshMaps() { fetch('/api/maps').then(r => r.json()).then(list => { c
 
 // ---------------------------------------------------------------- workflow buttons
 $('bStart').onclick = async () => { toast('starting robot link + perception…'); const r = await post('/api/workflow', {action:'start_process'}); toast(r.ok ? 'started: ' + (r.started.join(', ') || 'already running') : r.error, !r.ok); };
-$('bMap').onclick = async () => { toast('starting map…'); const r = await post('/api/workflow', {action:'start_map', name:$('mapName').value.trim()}); toast(r.ok ? 'mapping "' + r.name + '" — drive the robot around, then Save map' : r.error, !r.ok); };
+$('bMap').onclick = async () => { toast('starting map…'); const r = await post('/api/workflow', {action:'start_map', name:$('mapName').value.trim(), record:$('rec').checked}); toast(r.ok ? 'mapping "' + r.name + '"' + (r.bag ? ' · recording a rosbag' : '') + ' — drive the robot around, then Save map' : r.error, !r.ok); };
 $('bSave').onclick = async () => { const r = await post('/api/workflow', {action:'save_map', name:$('mapName').value.trim()}); toast(r.ok ? 'saving "' + r.name + '"…' : r.error, !r.ok); };
 $('bLoad').onclick = async () => { const n = $('mapSel').value; if (!n) return; toast('loading "' + n + '"…'); const r = await post('/api/workflow', {action:'load_map', name:n}); toast(r.ok ? 'localizing in "' + n + '" and starting Nav2 (drive a little if it does not localize)' : r.error, !r.ok); };
 $('bClear').onclick = async () => { if (!confirm('Stop all processes and clear the view?' + ($('stopRobot').checked ? '\n(the robot link is stopped too if the robot is lying)' : ''))) return; const r = await post('/api/workflow', {action:'clear_all', stop_robot:$('stopRobot').checked}); toast(r.message || r.error, !r.ok); };
@@ -233,6 +283,8 @@ $('estop').onclick = () => post('/api/estop');
 $('pStand').onclick = () => post('/api/robot', {cmd:'stand_up'});
 $('pLie').onclick = () => post('/api/robot', {cmd:'lie_down'});
 $('pDamp').onclick = () => { if (confirm('DAMP: the robot goes limp and drops. Continue?')) post('/api/robot', {cmd:'damp'}); };
+$('lClean').onchange = () => renderGrid('map');
+$('lHalo').onchange = () => renderGrid('live');
 $('mapSel').onchange = () => { $('bLoad').disabled = !$('mapSel').value; };
 
 // ---------------------------------------------------------------- teleop (deadman: the server stops 0.5 s after the last message)
@@ -269,14 +321,18 @@ function draw() {
   if ($('lMap').checked && grids.map) drawGrid(grids.map, 1);
   if ($('lGlobal').checked && grids.global) drawGrid(grids.global, .8);
   if ($('lLocal').checked && grids.local) drawGrid(grids.local, .8);
+  if ($('lLive').checked && grids.live) drawGrid(grids.live, 1);
   if (S) {
     if ($('lPlan').checked && S.plan && S.plan.length > 1) { ctx.beginPath(); S.plan.forEach((p, i) => { const [sx, sy] = W2S(p[0], p[1]); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); ctx.strokeStyle = '#3ecf8e'; ctx.lineWidth = 3; ctx.stroke(); }
+    if ($('lTrail').checked && S.trail && S.trail.length > 1) { ctx.beginPath(); S.trail.forEach((p, i) => { const [sx, sy] = W2S(p[0], p[1]); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); ctx.strokeStyle = 'rgba(89,184,255,.85)'; ctx.lineWidth = 2; ctx.stroke();
+      const [x0, y0] = W2S(S.trail[0][0], S.trail[0][1]); ctx.beginPath(); ctx.arc(x0, y0, 6, 0, 7); ctx.fillStyle = '#3ecf8e'; ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui'; ctx.fillText('START', x0 + 9, y0 + 4); }
     if (S.nav.goal) arrow(S.nav.goal[0], S.nav.goal[1], S.nav.goal[2], 16, '#ffd24c', 'rgba(255,210,76,.35)');
     if (S.pose) {   // robot footprint 0.63 x 0.36 m + heading arrow
       const [sx, sy] = W2S(S.pose[0], S.pose[1]); ctx.save(); ctx.translate(sx, sy); ctx.rotate(-S.pose[2]);
       ctx.fillStyle = 'rgba(76,154,255,.25)'; ctx.strokeStyle = '#4c9aff'; ctx.lineWidth = 2; const L = .63 * view.scale, Wd = .36 * view.scale; ctx.fillRect(-L / 2, -Wd / 2, L, Wd); ctx.strokeRect(-L / 2, -Wd / 2, L, Wd);
       ctx.beginPath(); ctx.moveTo(L / 2, 0); ctx.lineTo(L / 2 - 10, 6); ctx.lineTo(L / 2 - 10, -6); ctx.closePath(); ctx.fillStyle = '#4c9aff'; ctx.fill(); ctx.restore(); }
   }
+  { const m = 1 * view.scale, bx = 20, by = r.height - 74; ctx.strokeStyle = '#cfd6e0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + m, by); ctx.stroke(); ctx.fillStyle = '#cfd6e0'; ctx.font = '12px system-ui'; ctx.fillText('1 m', bx, by - 7); }
   if (nav.down) { arrow(nav.x0, nav.y0, Math.atan2(nav.y1 - nav.y0, nav.x1 - nav.x0), 16, '#ffd24c', 'rgba(255,210,76,.5)'); }
   requestAnimationFrame(draw);
 }
@@ -299,6 +355,10 @@ $('zout').onclick = () => { view.scale = Math.max(8, view.scale / 1.3); };
 $('center').onclick = () => { $('follow').checked = true; };
 
 window.DBG = {grids, view, get state() { return S; }};   // handle for debugging / automated UI checks
+$('ctlToggle').onclick = () => { const c = $('ctl'); c.classList.toggle('collapsed'); $('ctlToggle').innerHTML = c.classList.contains('collapsed') ? '&#x25B4;' : '&#x25BE;'; };
+$('toolsToggle').onclick = () => { const c = $('tools'); c.classList.toggle('collapsed'); $('toolsToggle').innerHTML = c.classList.contains('collapsed') ? '&#x25B4;' : '&#x25BE;'; };
+$('fit').onclick = () => { const g = grids.map || grids.global; if (!g) return; const r = cv.getBoundingClientRect(); $('follow').checked = false;
+  view.cx = g.ox + g.w * g.res / 2; view.cy = g.oy + g.h * g.res / 2; view.scale = Math.max(8, Math.min(400, 0.9 * Math.min(r.width / (g.w * g.res), r.height / (g.h * g.res)))); };
 connect(); refreshMaps(); setInterval(refreshMaps, 15000);
 </script>
 </body>
