@@ -6,7 +6,7 @@ d1_follow:
     device: cpu
     auto_lock: false           # true: lock onto the first confirmed person by itself
     stale_s: 0.5               # publish zero velocity when detections are older
-    image_buffer: 30           # frames kept to pair with (slow) detections by stamp
+    image_buffer: 15           # frames kept to pair with (slow) detections by stamp
 
     # IoU tracker
     iou_min: 0.3

@@ -27,7 +27,7 @@ PERCEPTION_ARGS = [
     ('source_params', '', 'Extra source YAML layered over video_source.yaml'),
     ('detector_params', 'detector_cpu.yaml', 'Detector YAML (file in human_perception config/)'),
     ('model_name', '', 'Override detector model, e.g. yolo26s.pt'),
-    ('device', '', 'Detector device: cpu | cuda:0 ... (empty = from YAML)'),
+    ('device', '', 'Device for detector and OSNet embedder: cpu | cuda:0 ... (empty = from YAML)'),
 ]
 
 ARGS = [
@@ -59,10 +59,12 @@ def _setup(context):
 
     params = a['params'] if os.path.isabs(a['params']) else os.path.join(
         share, 'config', a['params'])
+    overrides = {'auto_lock': _bool(a['auto_lock']), 'embedder': a['embedder']}
+    if a['device']:
+        overrides['device'] = a['device']
     actions.append(Node(
         package=PKG, executable='target_follower', name='d1_follow', output='screen',
-        emulate_tty=True,
-        parameters=[params, {'auto_lock': _bool(a['auto_lock']), 'embedder': a['embedder']}]))
+        emulate_tty=True, parameters=[params, overrides]))
 
     if _bool(a['rviz']):
         actions.append(Node(package='rviz2', executable='rviz2', name='rviz2', output='log',

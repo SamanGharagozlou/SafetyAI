@@ -20,7 +20,6 @@ from human_perception.image_codec import fill_image_msg, image_msg_to_bgr
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
@@ -29,26 +28,11 @@ from vision_msgs.msg import Detection2D, Detection2DArray
 from . import annotate
 from .embedder import make_embedder
 from .follow_controller import FollowController, FollowParams
+from .params import clamp_follow_params
+from .ros_io import (ANNOTATED_QOS, DETECTIONS_QOS, IMAGE_QOS, OUT_QOS, detections_to_arrays,
+                     stamp_ns, target_msg)
 from .target_lock import LockParams, State, TargetLock
 from .tracker import IouTracker
-
-# global safety caps, applied no matter what the parameters say
-VX_CAP = 0.5
-WZ_CAP = 0.8
-EMBED_LOG_PERIOD_S = 10.0
-
-IMAGE_QOS = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT,
-                       history=HistoryPolicy.KEEP_LAST, depth=5)
-DETECTIONS_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
-                            history=HistoryPolicy.KEEP_LAST, depth=10)
-OUT_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
-                     history=HistoryPolicy.KEEP_LAST, depth=10)
-ANNOTATED_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
-                           history=HistoryPolicy.KEEP_LAST, depth=1)
-
-
-def _stamp_ns(stamp) -> int:
-    return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
 
 
 class TargetFollower(Node):
@@ -69,26 +53,23 @@ class TargetFollower(Node):
         device = self.declare_parameter('device', 'cpu').value
         auto_lock = self.declare_parameter('auto_lock', False).value
         self._stale_s = self.declare_parameter('stale_s', 0.5).value
-        self._image_buffer = max(1, self.declare_parameter('image_buffer', 30).value)
+        self._image_buffer = max(1, self.declare_parameter('image_buffer', 15).value)
 
-        if self._follow_p.max_vx > VX_CAP or self._follow_p.max_wz > WZ_CAP:
-            log.warn(f'speed limits clamped to vx<={VX_CAP} m/s, wz<={WZ_CAP} rad/s')
-        self._follow_p.max_vx = min(self._follow_p.max_vx, VX_CAP)
-        self._follow_p.max_wz = min(self._follow_p.max_wz, WZ_CAP)
+        self._follow_p, clamp_warnings = clamp_follow_params(self._follow_p)
+        for w in clamp_warnings:
+            log.warning(f'speed limit {w}')
         self._controller = FollowController(self._follow_p)
 
         if kind not in ('osnet', 'histogram'):
-            log.warn(f'unknown embedder {kind!r}; using histogram')
-        self._embedder = make_embedder(kind, device, log=log.warn)
+            log.warning(f'unknown embedder {kind!r}; using histogram')
+        self._embedder = make_embedder(kind, device, log=log.warning)
         self._lock = TargetLock(self._lock_p, auto_lock=auto_lock)
 
-        self._mx = threading.Lock()  # guards self._lock (callbacks + services)
-        self._lock_evt = threading.Event()
-        self._lock_result = None
+        self._mx = threading.Lock()  # guards self._lock and self._lock_waiter
+        self._lock_waiter = None  # {'evt': Event, 'result': tuple|None} of the active lock call
         self._images = OrderedDict()  # stamp_ns -> Image
         self._size = (0, 0)
         self._last_det = None
-        self._embed_log_t = -1e9
         self._snap = {'similarity': None, 'n_people': 0, 'event': None, 'reason': None}
 
         cb = MutuallyExclusiveCallbackGroup()
@@ -122,23 +103,15 @@ class TargetFollower(Node):
 
     # -- inputs ---------------------------------------------------------------
     def _on_image(self, msg: Image) -> None:
-        self._images[_stamp_ns(msg.header.stamp)] = msg
+        self._images[stamp_ns(msg.header.stamp)] = msg
         while len(self._images) > self._image_buffer:
             self._images.popitem(last=False)
 
     def _on_detections(self, msg: Detection2DArray) -> None:
         now = self._now()
-        boxes, scores = [], []
-        for d in msg.detections:
-            b = d.bbox
-            cx, cy = b.center.position.x, b.center.position.y
-            hw, hh = b.size_x / 2, b.size_y / 2
-            boxes.append([cx - hw, cy - hh, cx + hw, cy + hh])
-            scores.append(d.results[0].hypothesis.score if d.results else 0.0)
-        tracks = self._tracker.update(np.array(boxes, np.float32).reshape(-1, 4),
-                                      np.array(scores, np.float32))
+        tracks = self._tracker.update(*detections_to_arrays(msg))
 
-        img_msg = self._images.get(_stamp_ns(msg.header.stamp))
+        img_msg = self._images.get(stamp_ns(msg.header.stamp))
         if img_msg is not None:
             self._size = (int(img_msg.width), int(img_msg.height))
         w, h = self._size
@@ -154,34 +127,36 @@ class TargetFollower(Node):
                 return None
             try:
                 return self._embedder.embed(decode(), np.array([t.box for t in ts]))
-            except Exception as exc:  # noqa: B902 - never let re-ID kill the node
-                if now - self._embed_log_t > EMBED_LOG_PERIOD_S:
-                    self._embed_log_t = now
-                    self.get_logger().warn(f'embedding failed: {type(exc).__name__}: {exc}')
+            except Exception as exc:  # never let re-ID kill the node
+                self.get_logger().warning(f'embedding failed: {type(exc).__name__}: {exc}',
+                                          throttle_duration_sec=10.0)
                 return None
 
         with self._mx:
             out = self._lock.update(now, tracks, w, h, embed)
+            target = out.target if out.state == State.TRACKING else None
+            target_id = self._lock.target_id
+            waiter = self._lock_waiter
+            if out.event in ('locked', 'lock_failed') and waiter is not None:
+                waiter['result'] = (out.event, out.reason, target.id if target else None)
+                waiter['evt'].set()
+                self._lock_waiter = None
         self._last_det = now
 
-        target = out.target if out.state == State.TRACKING else None
         # no frame size yet (no paired image so far): hold still
         vx, wz = (0.0, 0.0)
         if w and h:
             vx, wz = self._controller.compute(target.box if target else None, w, h)
         self._publish_cmd(vx, wz)
         if target is not None:
-            self._publish_target(msg.header, target)
+            self._pub_target.publish(target_msg(msg.header, target))
 
         self._snap = {
             'similarity': None if out.similarity is None else round(out.similarity, 3),
             'n_people': sum(1 for t in tracks if t.visible),
             'event': out.event, 'reason': out.reason}
         if out.event:
-            self._log_event(out)
-            if out.event in ('locked', 'lock_failed'):
-                self._lock_result = (out.event, out.reason, target.id if target else None)
-                self._lock_evt.set()
+            self._log_event(out, target_id)
             self._publish_state(out.event)
 
         if img_msg is not None and self._pub_annot.get_subscription_count() > 0:
@@ -190,24 +165,15 @@ class TargetFollower(Node):
                 res = fill_image_msg(Image(), ann)
                 res.header = img_msg.header
                 self._pub_annot.publish(res)
-            except Exception as exc:  # noqa: B902
-                self.get_logger().warn(f'annotation failed: {type(exc).__name__}',
-                                       throttle_duration_sec=10.0)
+            except Exception as exc:
+                self.get_logger().warning(f'annotation failed: {type(exc).__name__}',
+                                          throttle_duration_sec=10.0)
 
     # -- outputs --------------------------------------------------------------
     def _publish_cmd(self, vx: float, wz: float) -> None:
         cmd = Twist()
         cmd.linear.x, cmd.angular.z = float(vx), float(wz)
         self._pub_cmd.publish(cmd)
-
-    def _publish_target(self, header, track) -> None:
-        x1, y1, x2, y2 = (float(v) for v in track.box)
-        det = Detection2D()
-        det.header = header
-        det.id = str(track.id)
-        det.bbox.center.position.x, det.bbox.center.position.y = (x1 + x2) / 2, (y1 + y2) / 2
-        det.bbox.size_x, det.bbox.size_y = x2 - x1, y2 - y1
-        self._pub_target.publish(det)
 
     def _publish_state(self, event) -> None:
         with self._mx:
@@ -218,9 +184,9 @@ class TargetFollower(Node):
             'n_people': s['n_people'], 'event': event,
             'reason': s['reason'], 'embedder': self._embedder.name})))
 
-    def _log_event(self, out) -> None:
+    def _log_event(self, out, target_id) -> None:
         if out.event in ('locked', 'reacquired'):
-            text = f'{out.event} target #{self._lock.target_id}'
+            text = f'{out.event} target #{target_id}'
         else:
             text = out.event
             if out.reason and out.reason != out.event:
@@ -234,14 +200,23 @@ class TargetFollower(Node):
 
     # -- services -------------------------------------------------------------
     def _srv_lock(self, request, response):
-        self._lock_evt.clear()
-        self._lock_result = None
+        waiter = {'evt': threading.Event(), 'result': None}
         with self._mx:
+            old = self._lock_waiter
+            if old is not None:  # a newer request supersedes the older caller
+                old['result'] = ('superseded', 'superseded by a newer lock request', None)
+                old['evt'].set()
+            self._lock_waiter = waiter
             self._lock.request_lock(self._now())
-        if not self._lock_evt.wait(self._lock_p.lock_timeout_s + 1.0):
+        waiter['evt'].wait(self._lock_p.lock_timeout_s + 1.0)
+        with self._mx:
+            if self._lock_waiter is waiter:
+                self._lock_waiter = None
+            result = waiter['result']
+        if result is None:
             response.success, response.message = False, 'timeout: no detections'
             return response
-        event, reason, target_id = self._lock_result
+        event, reason, target_id = result
         response.success = event == 'locked'
         response.message = f'locked target #{target_id}' if response.success else str(reason)
         return response
@@ -258,7 +233,8 @@ def main(args=None) -> int:
     node = None
     try:
         node = TargetFollower()
-        executor = MultiThreadedExecutor(num_threads=3)
+        # blocking lock calls each hold a thread; spare ones keep subs/timers running
+        executor = MultiThreadedExecutor(num_threads=6)
         executor.add_node(node)
         executor.spin()
     except (KeyboardInterrupt, ExternalShutdownException):
