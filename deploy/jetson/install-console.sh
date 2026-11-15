@@ -49,11 +49,19 @@ if ss -ltn | grep -E "0\.0\.0\.0:5174|\*:5174" >/dev/null; then
 fi
 
 echo "==> publishing on the tailnet (Serve, NOT Funnel)"
-# A SEPARATE HTTPS PORT, deliberately. Funnel already owns 443 / -> 8090, and
-# layering a tailnet-only path under a public prefix on the same listener is
-# exactly the kind of overlap that silently resolves the wrong way. Port 8443
-# has no funnel on it, so there is no prefix to get wrong.
+# A SEPARATE HTTPS PORT, and this is load-bearing. FUNNEL IS A PORT-LEVEL
+# PROPERTY, NOT A PATH-LEVEL ONE: port 443 is funnel-enabled as a whole
+# (443 / -> 8090), so a tailnet-only path mounted beneath it would have
+# inherited PUBLIC reachability. Verified on this box - serve status and funnel
+# status print the identical tree.
+#
+# NEVER `tailscale funnel $SERVE_PORT`. 8443 is one of the three ports Funnel is
+# allowed to use, so funnelling it would silently publish this console to the
+# internet with no login in front of a physical robot. Serve only.
 tailscale serve --bg --https=$SERVE_PORT http://127.0.0.1:5174
+
+echo "==> confirming 443's existing funnel was not disturbed"
+tailscale funnel status || true
 
 echo
 echo "==> serve/funnel state"

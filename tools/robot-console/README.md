@@ -84,10 +84,18 @@ the tailnet *is* the authentication, so there is no password to leak, guess or
 share, and the URL cannot be probed by bots. A public login in front of a physical
 robot is a much weaker position.
 
-It is published on **port 8443, not a path under 443**, deliberately: Funnel
-already owns `443 / → 8090`, and layering a tailnet-only path beneath a public
-prefix on the same listener is exactly the kind of overlap that silently resolves
-the wrong way. A separate port has no prefix to get wrong.
+It is published on **port 8443, not a path under 443**, and this is not a
+stylistic choice. **Funnel is a port-level property, not a path-level one.** Port
+443 is funnel-enabled as a whole (`443 / → 8090`), so anything mounted beneath it —
+`/console` included — would inherit *public* reachability. Confirmed on the box:
+`tailscale serve status` and `tailscale funnel status` print the identical tree. A
+path would not have been tidier; it would have put an unauthenticated
+robot-driving page on the public internet.
+
+> ⚠️ **Never run `tailscale funnel 8443`.** 8443 is one of the three ports Funnel
+> is allowed to use, so funnelling it would silently make the console public, with
+> no login in front of a physical robot. The console must only ever be published
+> with `tailscale serve`.
 
 The server **binds to `127.0.0.1` only**, and that default is load-bearing — it is
 what keeps the console off the venue wifi, where it would otherwise be an
