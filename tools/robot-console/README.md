@@ -63,6 +63,45 @@ The console's connect watchdog gives up at 25 s and names this cause explicitly
 rather than repeating Vapi's misleading one. **The buttons keep working either
 way** — voice is additive, never a dependency.
 
+## Remote access — running it on the Jetson
+
+Install with `deploy/jetson/install-console.sh`. The console then runs on the
+Jetson and is published with **Tailscale Serve** at
+`https://d1-jetson.tail5ec076.ts.net:8443/` — reachable from any device signed
+into the tailnet, on any network, including a phone on cellular.
+
+Two reasons this is better than running it on a laptop:
+
+- **It is faster.** The proxy→robot leg becomes loopback (~3ms to the Python
+  agent, ~49ms through the Node edge) instead of the ~1s wifi hop. Only the
+  unavoidable you→Jetson leg remains.
+- **It survives your laptop.** The console is up whenever the Jetson is.
+
+### Serve, not Funnel — and loopback binding
+
+**Tailscale Serve is tailnet-only; Funnel is public.** This uses Serve. Being on
+the tailnet *is* the authentication, so there is no password to leak, guess or
+share, and the URL cannot be probed by bots. A public login in front of a physical
+robot is a much weaker position.
+
+It is published on **port 8443, not a path under 443**, deliberately: Funnel
+already owns `443 / → 8090`, and layering a tailnet-only path beneath a public
+prefix on the same listener is exactly the kind of overlap that silently resolves
+the wrong way. A separate port has no prefix to get wrong.
+
+The server **binds to `127.0.0.1` only**, and that default is load-bearing — it is
+what keeps the console off the venue wifi, where it would otherwise be an
+unauthenticated robot-driving page in a room full of strangers. Tailscale reaches
+it over localhost. If it seems unreachable, fix the Serve mapping; do not set
+`HOST=0.0.0.0`. The server prints a warning if you do.
+
+The token goes in `/etc/d1-console.env` (mode 0600), not in the unit file — unit
+files are world-readable and `systemctl cat` would print it.
+
+**Verify it is not public after installing.** The install script prints the three
+checks; the important one is loading the URL from a phone with Tailscale *off* and
+confirming it fails.
+
 ## Safety decisions
 
 - **`damp` is not reachable.** The proxy allowlists seven tools and three posture

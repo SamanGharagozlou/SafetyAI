@@ -49,8 +49,36 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const ROBOT = 'https://d1-jetson.tail5ec076.ts.net'
+
+/**
+ * Where the robot is. Two deployments:
+ *
+ *   laptop  ROBOT_URL unset -> the public funnel. Every call crosses the wifi
+ *           hop to the Jetson, which measured ~1s.
+ *   Jetson  ROBOT_URL=http://127.0.0.1:8090 -> loopback. The on-box Node hop
+ *           measured ~49ms and the Python agent ~3ms, so running the console
+ *           ON the Jetson removes the slow leg entirely. Only the unavoidable
+ *           you -> Jetson leg remains.
+ */
+const ROBOT = (process.env.ROBOT_URL ?? 'https://d1-jetson.tail5ec076.ts.net').replace(/\/$/, '')
+
 const PORT = Number(process.env.PORT ?? 5174)
+
+/**
+ * Binds to LOOPBACK ONLY by default, and that default is load-bearing.
+ *
+ * On the Jetson this process holds a token that drives a physical robot and
+ * has no login of its own. Tailscale Serve is what makes it reachable, and it
+ * connects over localhost - so binding to 127.0.0.1 means the ONLY way in is
+ * through Tailscale, authenticated as a device on the tailnet. Binding
+ * 0.0.0.0 would additionally expose it to anyone on the venue wifi, with no
+ * password, which at a hackathon is a room full of strangers.
+ *
+ * Do not set HOST=0.0.0.0 to "make it reachable". If it is not reachable,
+ * the Tailscale Serve mapping is what needs fixing.
+ */
+const HOST = process.env.HOST ?? '127.0.0.1'
+
 const TOKEN = process.env.D1_ROBOT_TOKEN
 
 /**
@@ -187,8 +215,12 @@ createServer(async (req, res) => {
   } catch (error) {
     json(res, 500, { error: String(error.message ?? error) })
   }
-}).listen(PORT, () => {
-  console.log(`Robot console  ->  http://localhost:${PORT}`)
+}).listen(PORT, HOST, () => {
+  console.log(`Robot console  ->  http://${HOST}:${PORT}`)
   console.log(`Proxying       ->  ${ROBOT}`)
   console.log('Token is held in this process and never sent to the browser.')
+  if (HOST !== '127.0.0.1' && HOST !== 'localhost') {
+    console.warn(`\n!! WARNING: bound to ${HOST}, not loopback.`)
+    console.warn('!! This console has no login. Anyone who can reach this port can drive the robot.')
+  }
 })
