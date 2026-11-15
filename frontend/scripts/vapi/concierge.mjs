@@ -370,10 +370,26 @@ const MODELS = LLM ? [LLM] : ['claude-sonnet-5', 'claude-opus-4-6', 'claude-haik
 
 /** Best-sounding first. Several need a provider key on the Vapi account, so
  *  they are tried in order and the first your account accepts wins. */
+/**
+ * VOICE. Pick by ear with VOICE=<id>; this list is only the fallback order.
+ *
+ * Honest limit: no text-to-speech voice beeps like R2-D2. Droid and dog
+ * noises are synthesised in the console instead. What a TTS CAN do is sound
+ * cartoonish rather than natural, and these settings push it that way:
+ *   speed 1.12      - slightly hurried, like an eager animal
+ *   stability 0.25  - low stability makes delivery swing about, which reads
+ *                     as excitable instead of newsreader-calm
+ *   style 0.6       - exaggerated rather than neutral
+ * Raise stability towards 0.7 if it becomes too unhinged to understand.
+ */
+const VOICE_ID = process.env.VOICE
+const CHARACTER = { model: 'eleven_turbo_v2_5', stability: 0.25, similarityBoost: 0.75, style: 0.6, useSpeakerBoost: true, speed: 1.12 }
 const VOICES = [
-  { label: '11labs Turbo',  voice: { provider: '11labs', voiceId: 'burt', model: 'eleven_turbo_v2_5', stability: 0.5, similarityBoost: 0.75 } },
+  ...(VOICE_ID ? [{ label: `11labs ${VOICE_ID}`, voice: { provider: '11labs', voiceId: VOICE_ID, ...CHARACTER } }] : []),
+  { label: '11labs matilda (bright, cartoonish)', voice: { provider: '11labs', voiceId: 'matilda', ...CHARACTER } },
+  { label: '11labs burt',   voice: { provider: '11labs', voiceId: 'burt', ...CHARACTER } },
   { label: 'Hume Octave',   voice: { provider: 'hume', model: 'octave', voiceId: 'ITO' } },
-  { label: 'Vapi Elliot',   voice: { provider: 'vapi', voiceId: 'Elliot', speed: 1.0 } },
+  { label: 'Vapi Elliot',   voice: { provider: 'vapi', voiceId: 'Elliot', speed: 1.1 } },
 ]
 
 /**

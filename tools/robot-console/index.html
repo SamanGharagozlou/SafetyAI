@@ -284,6 +284,8 @@
   </div>
 
   <div id="moments"></div>
+  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:600;margin:4px 0 8px">Droid mode — sound plays from this laptop</div>
+  <div id="fun"></div>
   <div id="transcript"></div>
   <div id="analysis" style="display:none"></div>
   <div class="note">Every tool the assistant invokes appears above <b>as it is chosen</b>, with the delay measured from the moment you stopped speaking — <span class="lat fast">green</span> is snappy, <span class="lat mid">amber</span> is noticeable, <span class="lat slow">red</span> feels broken. <b>Analyse last call</b> pulls Vapi's own server-side timings, which show where the time really went.</div>
@@ -1044,6 +1046,177 @@ async function playMoment(i) {
 document.addEventListener('click', e => {
   const b = e.target.closest('button.moment')
   if (b) playMoment(Number(b.dataset.i))
+})
+
+/* ------------------------- DROID MODE -------------------------
+ *
+ * Beeps and tunes synthesised here with oscillators rather than shipped as
+ * audio files: nothing to download, nothing to license, and it works offline
+ * on a laptop outside a spa. The melody is "We Wish You a Merry Christmas",
+ * which is traditional and public domain - deliberately not a modern
+ * recorded song.
+ *
+ * This is a layer ON TOP of the voice agent, not a replacement for it. A
+ * text-to-speech voice cannot actually beep like R2-D2, so the droid noises
+ * come from here while the assistant keeps its spoken voice.
+ */
+let droidCtx = null
+const audio = () => (droidCtx ??= new AudioContext())
+
+/** One warbling droid note: a pitch that slides, which is what sells it. */
+function chirp(f0, f1, dur, type = 'square', vol = 0.18, delay = 0) {
+  const ctx = audio()
+  const t = ctx.currentTime + delay
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+  osc.type = type
+  osc.frequency.setValueAtTime(f0, t)
+  osc.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur)
+  // A short fade at each end: a square wave switched on hard clicks.
+  gain.gain.setValueAtTime(0.0001, t)
+  gain.gain.exponentialRampToValueAtTime(vol, t + 0.012)
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  osc.connect(gain); gain.connect(ctx.destination)
+  osc.start(t); osc.stop(t + dur + 0.02)
+}
+
+/** A burst of excited droid chatter. Randomised so it never repeats exactly. */
+function r2d2(n = 7) {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  let at = 0
+  for (let i = 0; i < n; i++) {
+    const f0 = 420 + Math.random() * 1500
+    const f1 = f0 * (Math.random() < 0.5 ? 0.35 + Math.random() * 0.4 : 1.6 + Math.random())
+    const dur = 0.07 + Math.random() * 0.14
+    chirp(f0, f1, dur, Math.random() < 0.25 ? 'sawtooth' : 'square', 0.16, at)
+    at += dur + 0.03 + Math.random() * 0.06
+  }
+  return at
+}
+
+const NOTE = { G3: 196, C4: 261.6, D4: 293.7, E4: 329.6, F4: 349.2, G4: 392, A4: 440, B4: 493.9, C5: 523.3, D5: 587.3, E5: 659.3 }
+
+/** "We Wish You a Merry Christmas" - traditional, public domain. */
+const CAROL = [
+  ['C4',.5],['F4',.5],['F4',.25],['G4',.25],['F4',.25],['E4',.25],['D4',.5],['D4',.5],
+  ['D4',.5],['G4',.5],['G4',.25],['A4',.25],['G4',.25],['F4',.25],['E4',.5],['C4',.5],
+  ['C4',.5],['A4',.5],['A4',.25],['B4',.25],['A4',.25],['G4',.25],['F4',.5],['D4',.5],
+  ['C4',.25],['C4',.25],['D4',.5],['G4',.5],['E4',.5],['F4',1.0],
+]
+
+/** Plays it in droid voice - square waves, so it sounds like a beeping robot. */
+function playCarol(bpm = 150) {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  const beat = 60 / bpm
+  let at = 0
+  for (const [note, beats] of CAROL) {
+    const d = beats * beat
+    chirp(NOTE[note], NOTE[note], d * 0.85, 'square', 0.13, at)
+    at += d
+  }
+  return at
+}
+
+/** Run gestures one after another, so the robot dances in time. */
+async function choreograph(steps) {
+  for (const [gesture, waitMs] of steps) {
+    send('do_gesture', { gesture }, { retry: false })
+    await new Promise(r => setTimeout(r, waitMs))
+  }
+}
+
+/* ----------------------- DOG NOISES -----------------------
+ * Synthesised, not sampled. A bark is a very short noise burst through a
+ * band-pass filter; a whine is a slow pitch bend on a triangle wave; a pant
+ * is repeated tiny noise puffs. None of it is a recording, so there is
+ * nothing to download and nothing to license.
+ */
+function noiseBurst(dur, freq, q, vol = 0.25, delay = 0, sweepTo = null) {
+  const ctx = audio()
+  const t = ctx.currentTime + delay
+  const n = Math.max(1, Math.floor(ctx.sampleRate * dur))
+  const buf = ctx.createBuffer(1, n, ctx.sampleRate)
+  const data = buf.getChannelData(0)
+  for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n)   // decaying noise
+  const src = ctx.createBufferSource(); src.buffer = buf
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(freq, t); bp.Q.value = q
+  if (sweepTo) bp.frequency.exponentialRampToValueAtTime(sweepTo, t + dur)
+  const g = ctx.createGain()
+  g.gain.setValueAtTime(vol, t)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  src.connect(bp); bp.connect(g); g.connect(ctx.destination)
+  src.start(t); src.stop(t + dur + 0.02)
+}
+
+/** "WOOF" - a low burst with a quick downward sweep, twice. */
+function bark(times = 2) {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  for (let i = 0; i < times; i++) {
+    const at = i * 0.26
+    noiseBurst(0.13, 480, 7, 0.3, at, 180)          // the bite of the bark
+    chirp(260, 90, 0.16, 'sawtooth', 0.22, at)      // the growl under it
+  }
+}
+
+/** A rising-then-falling whine, the "please?" noise. */
+function whine() {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  chirp(520, 1150, 0.42, 'triangle', 0.17, 0)
+  chirp(1150, 620, 0.5, 'triangle', 0.15, 0.42)
+}
+
+/** Happy panting: small puffs of breath. */
+function pant(n = 7) {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  for (let i = 0; i < n; i++) noiseBurst(0.09, 1300, 1.2, 0.12, i * 0.17)
+}
+
+/** A howl: long, wobbling, slowly falling. */
+function howl() {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  chirp(330, 620, 0.5, 'triangle', 0.2, 0)
+  chirp(620, 560, 0.8, 'triangle', 0.2, 0.5)
+  chirp(560, 240, 0.9, 'triangle', 0.18, 1.3)
+}
+
+const FUN = [
+  { label: '🐶 Woof!', run: async () => { bark(2); await choreograph([['nod', 1400]]) } },
+  { label: '🥺 Whine', run: async () => { whine(); await choreograph([['tilt', 1600]]) } },
+  { label: '😛 Happy pant', run: async () => { pant(8); await choreograph([['wiggle', 2600]]) } },
+  { label: '🐺 Howl', run: async () => { howl(); await choreograph([['look_around', 2600]]) } },
+  { label: '🎄 Christmas song', run: async () => {
+      const secs = playCarol()
+      log(`   ♪ We Wish You a Merry Christmas (${secs.toFixed(1)}s), dancing along`, 'log-ok')
+      await choreograph([['sway_circle', 4000], ['wiggle', 3500], ['nod', 3000], ['bow', 2000]])
+    } },
+  { label: '🤖 R2-D2 chatter', run: async () => {
+      r2d2(9); log('   ♪ beep boop', 'log-ok')
+      await choreograph([['tilt', 1200], ['wiggle', 1200]])
+    } },
+  { label: '🕺 Little dance', run: () => choreograph([['sway_circle', 3800], ['wiggle', 3000], ['squat', 2500], ['wiggle', 2500]]) },
+  { label: '😵 Confused droid', run: async () => {
+      chirp(900, 260, .45, 'square', .18); chirp(500, 180, .5, 'sawtooth', .14, .5)
+      await choreograph([['tilt', 1500], ['look_around', 2500]])
+    } },
+  { label: '🎉 Excited yes!', run: async () => {
+      chirp(520, 1200, .12); chirp(760, 1500, .12, 'square', .18, .14); chirp(1000, 1900, .18, 'square', .18, .28)
+      await choreograph([['wiggle', 2600], ['nod', 2000]])
+    } },
+  { label: '😴 Play dead', run: async () => {
+      chirp(700, 120, .9, 'sawtooth', .16)
+      send('robot_command', { command: 'lie_down' }, { retry: false })
+    } },
+]
+
+$('fun').innerHTML = '<div class="btn-grid">' + FUN.map((f, i) =>
+  `<button class="fun" data-i="${i}" style="font-size:12.5px;padding:9px 10px;text-align:left">${f.label}</button>`).join('') + '</div>'
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button.fun')
+  if (!b) return
+  const f = FUN[Number(b.dataset.i)]
+  log(`→ ${f.label}`, 'log-send')
+  Promise.resolve(f.run()).catch(err => log(`   ${err.message}`, 'log-err'))
 })
 
 $('analyse').addEventListener('click', analyseLastCall)
