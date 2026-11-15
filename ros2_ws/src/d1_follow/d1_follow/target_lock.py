@@ -18,10 +18,12 @@ class LockParams:
     lock_margin: float = 1.3
     lock_timeout_s: float = 5.0
     seed_size: int = 3
-    gallery_size: int = 10
-    verify_period_s: float = 1.0
+    gallery_size: int = 30
+    verify_period_s: float = 0.5
     sim_accept: float = 0.70
     sim_reject: float = 0.50
+    sim_learn: float = 0.60
+    learn_max_sim: float = 0.95
     reject_checks: int = 2
     reacquire_period_s: float = 0.5
     reacquire_max_candidates: int = 3
@@ -75,6 +77,7 @@ class TargetLock:
         self.p = params or LockParams()
         self._state = State.IDLE
         self._target_id = None
+        self._auto_lock = auto_lock
         self._auto_pending = auto_lock
         self._reason = None
         self._pending_event = None
@@ -160,12 +163,11 @@ class TargetLock:
                           self._reason, self._check)
 
     # -- similarity -----------------------------------------------------------
-    def _sims(self, rows, seeds_only):
-        """Max cosine similarity of each row against the seeds (or the whole gallery)."""
-        g = self._gallery[:self._n_seeds] if seeds_only else self._gallery
-        if not g:
+    def _sims(self, rows):
+        """Max cosine similarity of each row against the gallery (seeds + learned views)."""
+        if not self._gallery:
             return np.zeros(len(rows), np.float32)
-        return (np.asarray(rows, np.float32) @ np.stack(g).T).max(axis=1)
+        return (np.asarray(rows, np.float32) @ np.stack(self._gallery).T).max(axis=1)
 
     def _learn(self, e):
         self._gallery.append(e)
@@ -216,6 +218,9 @@ class TargetLock:
         if target is None:
             return self._to_lost(now, 'track_lost')
         if not target.visible:
+            # a gap lets someone else inherit the track at the same spot: re-check on return
+            if not self._suspect:
+                self._suspect, self._last_suspect_check = True, None
             return None
         others = [t for t in visible if t.id != target.id]
         overlapping = {t.id for t in others if iou(t.box, target.box) > p.overlap_iou}
@@ -233,7 +238,7 @@ class TargetLock:
         return self._verify_periodic(now, target, embed)
 
     def _verify_suspect(self, now, target, embed):
-        """After an overlap only the seeds can tell the guest from the occluder."""
+        """After an overlap or a gap the track must match the guest again before it counts."""
         p = self.p
         if (self._last_suspect_check is not None
                 and now - self._last_suspect_check < p.reacquire_period_s):
@@ -242,12 +247,10 @@ class TargetLock:
         if rows is None:
             return None
         self._last_suspect_check, self._check = now, 'suspect'
-        e = rows[0]
-        self._sim = sim = float(self._sims(e[None], True)[0])
+        self._sim = sim = float(self._sims(rows)[0])
         if sim >= p.sim_accept:
             self._suspect, self._suspect_fails, self._reject_count = False, 0, 0
             self._last_verify = now
-            self._learn(e)
             return None
         self._suspect_fails += 1
         if self._suspect_fails >= p.reject_checks:
@@ -261,18 +264,16 @@ class TargetLock:
             return None
         self._last_verify, self._check = now, 'verify'
         e = rows[0]
-        # keep/reject may use the gallery (tolerates pose change); learning may not drift
-        self._sim = sim = float(self._sims(e[None], False)[0])
-        if sim >= p.sim_accept:
-            self._reject_count = 0
-            if float(self._sims(e[None], True)[0]) >= p.sim_accept:
-                self._learn(e)
-        elif sim < p.sim_reject:
+        self._sim = sim = float(self._sims(e[None])[0])
+        if sim < p.sim_reject:
             self._reject_count += 1
             if self._reject_count >= p.reject_checks:
                 return self._to_lost(now, 'appearance_mismatch')
-        else:
-            self._reject_count = 0
+            return None
+        self._reject_count = 0
+        # an unbroken, unoccluded track is the guest: learn new distances/poses as they come
+        if p.sim_learn <= sim < p.learn_max_sim:
+            self._learn(e)
         return None
 
     def _to_lost(self, now, reason):
@@ -291,6 +292,7 @@ class TargetLock:
             self._state, self._reason = State.IDLE, 'lost_timeout'
             self._target_id, self._gallery, self._n_seeds = None, [], 0
             self._not_target_ids = set()
+            self._auto_pending = self._auto_lock
             return 'lost_timeout'
         if (self._last_reacquire is not None
                 and now - self._last_reacquire < p.reacquire_period_s):
@@ -306,7 +308,7 @@ class TargetLock:
         if rows is None:
             return None
         self._last_reacquire, self._check = now, 'reacquire'
-        sims = self._sims(rows, True)  # granting identity always decides on the seeds
+        sims = self._sims(rows)
         self._hits = {t.id: self._hits.get(t.id, 0) + 1 if s >= p.sim_accept else 0
                       for t, s in zip(cands, sims)}
         order = np.argsort(-sims)

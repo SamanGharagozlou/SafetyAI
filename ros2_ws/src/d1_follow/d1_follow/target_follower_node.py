@@ -55,6 +55,7 @@ class TargetFollower(Node):
             self._image_rel = 'reliable'
         kind = self.declare_parameter('embedder', 'osnet').value
         device = self.declare_parameter('device', 'cpu').value
+        embed_threads = self.declare_parameter('embed_threads', 2).value
         auto_lock = self.declare_parameter('auto_lock', False).value
         self._stale_s = self.declare_parameter('stale_s', 0.8).value
         self._image_buffer = max(1, self.declare_parameter('image_buffer', 15).value)
@@ -66,7 +67,7 @@ class TargetFollower(Node):
 
         if kind not in ('osnet', 'histogram'):
             log.warning(f'unknown embedder {kind!r}; using histogram')
-        self._embedder = make_embedder(kind, device, log=log.warning)
+        self._embedder = make_embedder(kind, device, log=log.warning, threads=embed_threads)
         self._lock = TargetLock(self._lock_p, auto_lock=auto_lock)
 
         self._mx = threading.Lock()  # guards self._lock and self._lock_waiter

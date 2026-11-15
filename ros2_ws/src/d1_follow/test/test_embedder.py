@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from d1_follow.embedder import HistogramEmbedder, make_embedder
 
 
@@ -38,6 +39,13 @@ def test_degenerate_and_empty():
     assert e.embed(img, np.zeros((0, 4), np.float32)).shape[0] == 0
     f = e.embed(img, np.array([[500, 500, 600, 600]], np.float32))   # fully outside
     assert np.allclose(f, 0)
+
+
+def test_osnet_limits_torch_threads():
+    pytest.importorskip('boxmot')
+    import torch
+    e = make_embedder('osnet', 'cpu', threads=2)
+    assert e.name == 'osnet' and torch.get_num_threads() == 2
 
 
 def test_make_embedder_falls_back():

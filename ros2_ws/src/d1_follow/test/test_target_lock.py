@@ -8,7 +8,13 @@ ID_B = np.eye(8, dtype=np.float32)[1]          # a bystander
 LOOKALIKE = (0.55 * ID_A + 0.835 * ID_B)        # cos(A, lookalike) ~0.55 < sim_accept
 LOOKALIKE /= np.linalg.norm(LOOKALIKE)
 NEAR = 0.75 * ID_A + 0.6614 * ID_B              # cos(A, near) 0.75: passes sim_accept
-DRIFT = 0.6 * ID_A + 0.8 * ID_B                 # 0.60 to the seeds, 0.98 to NEAR
+ID_C = np.eye(8, dtype=np.float32)[2]          # what the guest's far-away view adds
+
+
+def walk(n, end_deg):
+    """The guest's appearance drifting from the close-up seeds to a far, full-body view."""
+    return [np.cos(np.radians(d)) * ID_A + np.sin(np.radians(d)) * ID_C
+            for d in np.linspace(0, end_deg, n)]
 
 
 def T(tid, box, misses=0, hits=5):
@@ -151,15 +157,41 @@ def test_crossing_without_an_id_swap_stays_tracking():
     assert out.labels == {1: 'target', 2: 'unknown'}
 
 
-def test_gallery_entry_cannot_grant_identity_to_a_drifted_lookalike():
+def test_gallery_never_learns_while_overlapping():
     lock, _, t = locked_lock()
-    out, t = run(lock, [[T(1, CENTER)]] * 30, FakeEmbed({1: NEAR}), t0=t)
-    assert out.state == State.TRACKING and len(lock._gallery) > lock._n_seeds
-    lock.update(t, [], W, H, FakeEmbed({}))                  # target track dropped -> LOST
-    out, t = run(lock, [[T(7, CENTER)]] * 50, FakeEmbed({7: DRIFT}), t0=t + 0.1)
-    assert out.state == State.LOST
-    out, _ = run(lock, [[T(8, CENTER)]] * 30, FakeEmbed({8: ID_A}), t0=t)
-    assert out.state == State.TRACKING and lock.target_id == 8
+    n = len(lock._gallery)
+    run(lock, [[T(1, CENTER), T(2, OVERLAP)]] * 20, FakeEmbed({1: NEAR, 2: ID_B}), t0=t)
+    assert len(lock._gallery) == n
+
+
+def test_guest_walking_back_is_learned_and_reacquired_from_far():
+    lock, _, t = locked_lock()
+    for e in walk(40, 55):                  # ends at 0.57 to the close-up seeds
+        out = lock.update(t, [T(1, CENTER)], W, H, FakeEmbed({1: e}))
+        t += 0.1
+    assert out.state == State.TRACKING
+    lock.update(t, [], W, H, FakeEmbed({}))                  # steps out of view
+    out, _ = run(lock, [[T(5, CENTER)]] * 25, FakeEmbed({5: walk(2, 55)[-1]}), t0=t + 0.1)
+    assert out.state == State.TRACKING and lock.target_id == 5
+
+
+def test_stranger_taking_over_the_track_after_a_gap_is_rejected_not_learned():
+    lock, _, t = locked_lock()
+    lock.update(t, [T(1, CENTER, misses=1)], W, H, FakeEmbed({}))   # guest missed a frame
+    stranger = FakeEmbed({1: LOOKALIKE})     # 0.55 to the guest: between reject and accept
+    out, _ = run(lock, [[T(1, CENTER)]] * 30, stranger, t0=t + 0.1)
+    assert out.state == State.LOST and out.reason == 'appearance_mismatch'
+    assert all(float(g @ LOOKALIKE) < 0.99 for g in lock._gallery)
+
+
+def test_lost_timeout_rearms_auto_lock():
+    lock = TargetLock(LockParams(), auto_lock=True)
+    out, t = run(lock, [[T(1, CENTER)]] * 10, FakeEmbed({1: ID_A}))
+    assert out.state == State.TRACKING
+    lock.update(t, [], W, H, FakeEmbed({}))
+    assert lock.update(t + 31.0, [], W, H, FakeEmbed({})).event == 'lost_timeout'
+    out, _ = run(lock, [[T(9, CENTER)]] * 10, FakeEmbed({9: ID_A}), t0=t + 31.1)
+    assert out.state == State.TRACKING and lock.target_id == 9
 
 
 def test_bystander_seen_beside_the_guest_is_never_reacquired():
@@ -248,10 +280,11 @@ def test_embed_row_count_mismatch_is_skipped():
 
 
 def test_embed_budget_while_tracking():
+    p = LockParams()
     lock, _, t = locked_lock()
     emb = FakeEmbed({1: ID_A, 2: ID_B})
     run(lock, [[T(1, CENTER), T(2, SIDE)]] * 50, emb, t0=t)     # 5 s at 10 Hz
-    assert emb.calls <= 6
+    assert emb.calls <= int(5.0 / p.verify_period_s) + 1
 
 
 def test_embed_none_is_skipped():

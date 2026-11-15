@@ -37,10 +37,13 @@ def state_json(state, target_id, snap, embedder, event) -> str:
 def event_text(out, target_id) -> str:
     """Human-readable log line for a lock event (no image data, ever)."""
     if out.event in ('locked', 'reacquired'):
-        return f'{out.event} target #{target_id}'
-    text = out.event
-    if out.reason and out.reason != out.event:
-        text += f' ({out.reason})'
+        text = f'{out.event} target #{target_id}'
+    else:
+        text = out.event
+        if out.reason and out.reason != out.event:
+            text += f' ({out.reason})'
+    if out.similarity is not None and out.event in ('reacquired', 'lost'):
+        text += f' sim={out.similarity:.3f}'  # the value that decided it, never throttled
     return text
 
 

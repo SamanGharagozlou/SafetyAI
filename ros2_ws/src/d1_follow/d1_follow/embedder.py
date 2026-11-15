@@ -45,7 +45,11 @@ class OsnetEmbedder:
     name = 'osnet'
     dim = OSNET_DIM
 
-    def __init__(self, device='cpu'):
+    def __init__(self, device='cpu', threads=None):
+        if threads:
+            import torch
+            # all-core torch next to YOLO + RViz made one embed take ~6 s instead of ~20 ms
+            torch.set_num_threads(int(threads))
         from boxmot.reid.core.reid import ReID
         self._m = ReID(device=device)
 
@@ -57,10 +61,10 @@ class OsnetEmbedder:
         return _l2_rows(feats)
 
 
-def make_embedder(kind, device, log=print):
+def make_embedder(kind, device, log=print, threads=None):
     if kind == 'osnet':
         try:
-            return OsnetEmbedder(device=device)
+            return OsnetEmbedder(device=device, threads=threads)
         except Exception as e:  # missing boxmot, weights download, device errors
             log(f'OSNet embedder unavailable ({e!r}); falling back to histogram')
             return HistogramEmbedder()

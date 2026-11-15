@@ -161,3 +161,15 @@ call). Frame-to-frame identity is the tracker's job, never the embedder's.
 - **Freshness by header stamp**, not receipt time; arrays older than `stale_s` are dropped.
 - **Image QoS is RELIABLE by default** (`image_reliability` parameter), because this repo measured a best-effort
   subscriber receiving 0 of ~1 MB frames; `unpaired` arrays are counted, warned about and reported in the state JSON.
+
+**2026-11-15, after the first live webcam test** (supersedes the seeds-only rule above):
+
+- **Learning from track continuity.** Seeds-only failed live: the guest's own similarity to close-up seeds dropped to
+  0.54–0.75 when moving, causing false LOSTs, slow re-acquisition and finally `lost_timeout`. Now every decision uses
+  the gallery max, and the gallery learns distinct views (`sim_learn` 0.60 ≤ sim < `learn_max_sim` 0.95) only while
+  the target track is unbroken and unoccluded. A missed frame now also makes the target suspect (someone could inherit
+  the track at the same spot), like an overlap.
+- **OSNet capped at `embed_threads` (2) torch threads**: with all 20 cores next to YOLO and RViz one embed took ~6 s
+  (measured in the live container), which caused the 3.5 s detection stalls; with 2 threads ~20 ms.
+- **`auto_lock` re-arms after `lost_timeout`** (dev/test option only).
+- `verify_period_s` 1.0 → 0.5 and `gallery_size` 10 → 30 now that an embed is cheap.
