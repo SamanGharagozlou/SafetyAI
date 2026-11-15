@@ -20,7 +20,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | `ros2_ws/src/agibot_d1_bridge` | ROS 2 <-> D1 SDK: `/cmd_vel`, posture services, `/odom` (own integrated odometry), `/imu`, `/battery`, TF `odom->base_link`, `d1w_gestures` | working on robot |
 | `ros2_ws/src/d1_camera` | `rtsp_camera`: robot RTSP H.264 -> `/camera/image_raw` + `camera_info` (OpenCV/FFmpeg, CPU decode) | working; being reworked, see [docs/feature_ros2_camera.md](docs/feature_ros2_camera.md) |
 | `ros2_ws/src/human_perception` | YOLO26 person detection -> `/perception/humans/*`, diagnostics | working (PC, Docker) |
-| `ros2_ws/src/d1_follow` | Lock onto one guest (IoU tracker + OSNet re-ID), others `unknown`, dry-run `/follow/cmd_vel` | dry-run; laptop webcam test pending |
+| `ros2_ws/src/d1_follow` | Lock onto one guest (IoU tracker + OSNet re-ID), others `unknown`, dry-run `/follow/cmd_vel`, opt-in `follow_relay` -> `/cmd_vel` | relay unverified on robot |
 | `ros2_ws/src/d1_depth` | Depth Anything V2 monocular metric depth -> `/camera/depth`, `/camera/points` | experimental |
 | `ros2_ws/src/d1_slam` | RTAB-Map RGB-only / RGB-D launch files | experimental, **off by default** |
 | `ros2_ws/src/d1_localization` | `map_server` + `initial_pose_localizer` on MetaCam LiDAR maps (no drift correction) | working |

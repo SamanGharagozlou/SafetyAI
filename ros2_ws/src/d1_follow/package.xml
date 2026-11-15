@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>
     Locks onto one guest (IoU tracker + re-ID gallery) and publishes a dry-run follow
-    velocity on /follow/cmd_vel. Never publishes /cmd_vel.
+    velocity on /follow/cmd_vel. Only the opt-in follow_relay node publishes /cmd_vel.
   </description>
   <maintainer email="jayaprakashnis619@gmail.com">vivek</maintainer>
   <license>BSD-3-Clause</license>

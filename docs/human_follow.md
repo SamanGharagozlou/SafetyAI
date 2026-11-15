@@ -5,8 +5,9 @@ view is labelled `unknown` and never steers the robot. `d1_follow` consumes the 
 [human_perception](perception.md), tracks people frame to frame, identifies the locked guest by appearance (person
 re-ID), and publishes a follow velocity.
 
-> **Status: dry run, unverified on the robot.** `/follow/cmd_vel` is **not** wired to `/cmd_vel`; nothing in this
-> package publishes `/cmd_vel`. It has only been developed against unit tests and the laptop webcam path (see
+> **Status: dry run by default, unverified on the robot.** `target_follower` never publishes `/cmd_vel`. The separate,
+> opt-in [`follow_relay`](#driving-the-robot-follow_relay) can forward `/follow/cmd_vel` to `/cmd_vel`; it is *unverified*
+> on the robot. It has only been developed against unit tests and the laptop webcam path (see
 > [Run on the laptop](#run-on-the-laptop-wsl-webcam)); the live laptop test is still pending. Design:
 > [superpowers/specs/2026-11-15-human-follow-design.md](superpowers/specs/2026-11-15-human-follow-design.md).
 > Not a safety system (same caveats as [perception.md](perception.md)).
@@ -245,9 +246,38 @@ Frames, crops and embeddings live in memory only: nothing is written to disk or 
 topic produced only while subscribed, never recorded. Do not record it or `/camera/image_raw` rosbags of real guests
 (see [feature_privacy_anonymization.md](feature_privacy_anonymization.md)).
 
+## Driving the robot: `follow_relay`
+
+`follow_relay` is a separate, torch-free node (`d1_follow/follow_relay_node.py`, logic in `relay_core.py`). It is **off at
+startup** and is a deliberate extra `/cmd_vel` writer until `twist_mux` exists, so it stays silent unless armed.
+
+```bash
+# robot standing, clear floor, someone at the remote / E-STOP
+docker exec -it human_perception bash -lc 'ros2 run d1_follow follow_relay'    # starts DISARMED; Ctrl-C = stop
+docker exec -it human_perception bash -lc 'ros2 run d1_follow lock'
+docker exec -it human_perception bash -lc 'ros2 run d1_follow drive on'        # arm (drive off = disarm)
+```
+
+It publishes on `/cmd_vel` (10 Hz) only while **all** hold: armed, a fresh `/follow/state` (`state_timeout_s` 1.5 s) with
+`state == TRACKING`, and a fresh `/follow/cmd_vel` (`cmd_timeout_s` 0.5 s). Otherwise it sends one zero and goes silent
+(so it does not fight Nav2/teleop while idle); the bridge's `cmd_timeout` watchdog is the backstop.
+
+| Safety property | Value |
+|---|---|
+| Armed at startup | no; `drive on` refused while no fresh `/follow/state` |
+| Arm expiry | `arm_timeout_s` 120 s (0 = never); re-arm to continue |
+| Limits | `max_vx` 0.3 m/s, `max_wz` 0.5 rad/s, forward only, `vy` = 0; hard ceilings 0.5 / 0.8 |
+| Process exit | publishes zero |
+| Services | `/d1_follow/drive_enable`, `/d1_follow/drive_disable` (`std_srvs/Trigger`); never exposed via the gateway/voice |
+
+Parameters (`ros2 run d1_follow follow_relay --ros-args -p max_vx:=0.2`): `max_vx`, `max_wz`, `cmd_timeout_s`,
+`state_timeout_s`, `arm_timeout_s`, `cmd_vel_topic`. The relay and the bridge must share `ROS_DOMAIN_ID`. Tests:
+`test_relay_core.py` (ROS-free), `test_relay_node.py`. **Unverified on the robot.**
+
 ## Limitations and next steps
 
-- Dry run: `/follow/cmd_vel` -> `/cmd_vel` needs the `/cmd_vel` arbitration from [system_architecture.md](system_architecture.md#safety-architecture) first; there is no arbiter yet.
+- `follow_relay` is a stopgap writer; the proper fix is `twist_mux` priorities from [system_architecture.md](system_architecture.md#safety-architecture). Do not arm it while Nav2, the dashboard pad or teleop are also publishing `/cmd_vel`.
+- No obstacle/depth check: the robot follows a bbox-height proxy and will walk into anything between it and the guest.
 - Not yet integrated with the spa state machine (greet / chat / escort / refuse), and not driven by the frontend beyond the two intents.
 - `source=d1-camera` + `follow=true` is not supported by `make up` yet (the entrypoint starts without `d1_follow`).
 - OSNet takes about 300 ms per call on CPU (measured in WSL Docker, 3 crops), hence the 1 Hz verify and, in LOST, one
