@@ -1,0 +1,13 @@
+[Unit]
+Description=Static IP on eth0 for the robot-Jetson cable link
+After=systemd-networkd.service
+Before=robot-launch.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/robot-link-up.sh
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target

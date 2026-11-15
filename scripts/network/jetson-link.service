@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep the robot-Jetson cable link (robot-link) up
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+# Plain "exec" (not oneshot) so the Jetson's boot never waits for the robot.
+Type=exec
+ExecStart=/usr/local/sbin/jetson-link-up.sh
+
+[Install]
+WantedBy=multi-user.target

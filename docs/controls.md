@@ -25,7 +25,7 @@ act when they appear.
 
 | File | Setting | Previous value (in `*.bak`) |
 |---|---|---|
-| `/etc/netplan/01-netcfg.yaml` | `eth0`: `dhcp4: false`, `addresses: [192.168.168.168/24]` | `eth0`: `dhcp4: true` |
+| `/etc/netplan/01-netcfg.yaml` | `eth0`: `dhcp4: false`, `ignore-carrier: true`, `addresses: [192.168.168.168/24]` | `eth0`: `dhcp4: true` |
 | `/opt/app_launch/start_motion_control_xgw.sh` | `export SDK_CLIENT_IP="192.168.168.168"` | `"172.24.1.41"` |
 | `/opt/export/config/sdk_config.yaml` | `target_ip: "192.168.168.10"` | `"172.24.1.20"` |
 
@@ -41,6 +41,30 @@ sudo nmcli con up robot-link
 
 To apply netplan changes on the robot, reload only `eth0`; `netplan apply` would also touch Wi-Fi:
 `sudo netplan generate && sudo networkctl reload && sudo networkctl reconfigure eth0`.
+
+### Link at boot
+
+All the settings above are saved on disk, so they survive a reboot. On the robot, `/` is an
+overlay saved under `/userdata/rootfs_overlay`. The catch is timing: the cable only gets carrier
+once both sides are up (about 2.5 min after robot boot in testing). `mc_ctrl` starts earlier and
+fails to bind `SDK_CLIENT_IP` if `eth0` has no address yet. Two layers handle this:
+
+- **Netplan `ignore-carrier: true`:** networkd assigns `192.168.168.168` without waiting for carrier.
+- **Boot services in `scripts/network/`:**
+
+| Machine | Service | What it does |
+|---|---|---|
+| Robot | `robot-link.service` → `robot-link-up.sh` | Runs **before `robot-launch`**. Brings `eth0` up and makes sure it has `192.168.168.168/24`, with or without carrier. |
+| Jetson | `jetson-link.service` → `jetson-link-up.sh` | Retries `nmcli con up robot-link` for up to 10 min until `enP8p1s0` has `192.168.168.10`. Doesn't hold up the Jetson's boot. |
+
+Both only touch the cable interface (not Wi-Fi), are safe to re-run, and never reboot.
+To install, copy `scripts/network/` to the machine and run:
+```bash
+sudo ./install.sh robot     # on the robot (installed 2026-11-15)
+sudo ./install.sh jetson    # on the Jetson
+```
+To check: `systemctl status robot-link` / `journalctl -b -u jetson-link`.
+To remove: `sudo systemctl disable --now <name>-link` and delete the unit and script.
 
 ### Applying SDK IP changes: restart only the motion program
 
