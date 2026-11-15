@@ -121,6 +121,23 @@
   .cmd-res { font-size: 13px; color: var(--muted); margin-top: 5px; }
   @media (max-width: 560px) { .cmd-main { font-size: 21px; } }
 
+  /* The camera guard. Sits directly under the command bar because the two
+     answer the same question from opposite ends: what did we just ask for,
+     and will the robot be allowed to do it. */
+  .guardbar { margin-bottom: 14px; border-left: 4px solid var(--line); }
+  .guardbar.go     { border-left-color: var(--ok); }
+  .guardbar.slow   { border-left-color: #c8a33a; }
+  .guardbar.hold   { border-left-color: #d8862a; background: #241a10; }
+  .guardbar.freeze { border-left-color: var(--bad); background: #2a1416; }
+  .g-row { display: flex; align-items: baseline; gap: 10px; margin: 5px 0 3px; }
+  .g-state { font-size: 23px; font-weight: 700; letter-spacing: -0.01em; }
+  .g-dist { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #8fb6dd; }
+  .g-child {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: #0b0d10; background: var(--bad);
+    padding: 2px 6px; border-radius: 3px;
+  }
+
   #meter {
     height: 12px; background: #0a0d12; border: 1px solid var(--line);
     border-radius: 6px; overflow: hidden;
@@ -187,6 +204,16 @@
   <div class="cmd-main" id="cmd-main">— idle —</div>
   <div class="cmd-raw" id="cmd-raw"></div>
   <div class="cmd-res" id="cmd-res"></div>
+</div>
+
+<div class="panel guardbar" id="guardbar" hidden>
+  <div class="cmd-k" id="g-k">Camera guard</div>
+  <div class="g-row">
+    <span class="g-state" id="g-state">—</span>
+    <span class="g-dist" id="g-dist"></span>
+    <span class="g-child" id="g-child" hidden>child</span>
+  </div>
+  <div class="cmd-res" id="g-reason"></div>
 </div>
 
 <div class="panel" style="margin-bottom:14px">
@@ -1228,6 +1255,53 @@ $('talk').addEventListener('click', () => {
 
 log('console ready — spacebar is STOP', 'log-ok')
 poll()
+// The camera guard, polled faster than the status block: it is the thing that
+// changes when a person steps in front of the robot, and an operator watching
+// the dog needs it to already be on screen when they look down.
+async function pollGuard() {
+  const bar = $('guardbar')
+  try {
+    const g = await (await fetch('/api/guard')).json()
+    if (!g.configured) { bar.hidden = true; return }     // no guard, no strip
+    bar.hidden = false
+
+    const state = g.state ?? 'UNKNOWN'
+    bar.className = 'panel guardbar ' + ({
+      GO: 'go', SLOW: 'slow', HOLD: 'hold', FREEZE: 'freeze',
+    }[state] ?? 'freeze')
+
+    $('g-state').textContent = {
+      GO: 'Clear to move',
+      SLOW: 'Moving slowly',
+      HOLD: 'Holding position',
+      FREEZE: 'Stopped',
+      UNREACHABLE: 'Guard offline',
+    }[state] ?? state
+
+    $('g-dist').textContent = g.nearest_m != null
+      ? `nearest person ${g.nearest_m} m${g.latched ? ' · presumed, out of frame' : ''}`
+      : (g.people ? `${g.people} in view` : '')
+    $('g-child').hidden = !g.child_near
+    $('g-reason').textContent = g.reason ?? ''
+
+    const label = g.stale ? 'Camera guard · no feed'
+      : g.calibrated === false ? 'Camera guard · UNCALIBRATED'
+      : 'Camera guard'
+    $('g-k').textContent = label
+  } catch {
+    // Never leave a stale green strip on screen. If we cannot read the guard,
+    // say so where the operator is already looking.
+    bar.hidden = false
+    bar.className = 'panel guardbar freeze'
+    $('g-state').textContent = 'Guard unreadable'
+    $('g-dist').textContent = ''
+    $('g-child').hidden = true
+    $('g-reason').textContent = 'The console could not reach its own guard endpoint.'
+  }
+}
+
+pollGuard()
+setInterval(pollGuard, 1000)
 setInterval(poll, 2000)
 </script>
 </body>

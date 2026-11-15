@@ -65,6 +65,63 @@ const ROBOT = (process.env.ROBOT_URL ?? 'https://d1-jetson.tail5ec076.ts.net').r
 const PORT = Number(process.env.PORT ?? 5174)
 
 /**
+ * d1-guard (tools/robot-guard) - the camera-based people gate.
+ *
+ * Unset -> no gate at all, exactly as before. Set -> every motion command is
+ * adjudicated against what the camera can see first.
+ *
+ * The gate is NOT the main protection and must not be mistaken for it. A walk
+ * is a BLOCKING call on the robot for up to 25s, so by the time a guest steps
+ * in front of the dog the command was accepted long ago and nothing is asking
+ * this server's permission any more. Refusing the NEXT command does nothing
+ * for the one already running. Interrupting that one is the guard's own job,
+ * which it does by sending stop_robot directly. This gate only stops us
+ * STARTING something that is already unsafe.
+ *
+ * If the guard is configured but unreachable, motion is REFUSED. A crashed
+ * guard reading as "all clear" is the exact failure this stack already shipped
+ * once, when the endpoint served 200s with nulls while the robot lay on the
+ * floor. The error message says how to drop the gate, which takes two seconds
+ * - far better than a silent downgrade nobody notices.
+ */
+const GUARD = (process.env.GUARD_URL ?? '').replace(/\/$/, '')
+
+// A stop is never gated, and neither is reading state. Gating a stop would be
+// an own goal of the highest order.
+const UNGATED = new Set(['stop_robot', 'robot_status'])
+
+async function askGuard(name, args) {
+  if (!GUARD || UNGATED.has(name)) return { allowed: true }
+  const action = (name === 'walk_distance' || name === 'move_robot') ? 'walk'
+    : (name === 'do_gesture') ? 'gesture'
+    : (name === 'robot_command') ? 'gesture'
+    : 'gesture'
+  const gesture = name === 'do_gesture' ? (args.gesture ?? args.name ?? '')
+    : name === 'robot_command' ? (args.command ?? '')
+    : ''
+  const url = `${GUARD}/guard?action=${action}&name=${encodeURIComponent(gesture)}`
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(1500) })
+    const v = await r.json()
+    return {
+      allowed: v.allowed !== false,
+      state: v.state,
+      reason: v.reason,
+      nearest_m: v.nearest_m,
+      child_near: v.child_near,
+    }
+  } catch (error) {
+    return {
+      allowed: false,
+      state: 'UNREACHABLE',
+      reason: `the camera guard at ${GUARD} did not answer (${error.message ?? error}). `
+        + 'Motion is refused while it is down. Restart d1-guard, or unset '
+        + 'GUARD_URL to run the robot unguarded.',
+    }
+  }
+}
+
+/**
  * Binds to LOOPBACK ONLY by default, and that default is load-bearing.
  *
  * On the Jetson this process holds a token that drives a physical robot and
@@ -292,6 +349,21 @@ createServer(async (req, res) => {
       })
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/guard') {
+      if (!GUARD) return json(res, 200, { configured: false })
+      try {
+        const r = await fetch(`${GUARD}/guard`, { signal: AbortSignal.timeout(1500) })
+        return json(res, 200, { configured: true, ...(await r.json()) })
+      } catch (error) {
+        return json(res, 200, {
+          configured: true,
+          state: 'UNREACHABLE',
+          reason: String(error.message ?? error),
+          walk_ok: false,
+        })
+      }
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/status') {
       try {
         return json(res, 200, await robotStatus())
@@ -308,6 +380,19 @@ createServer(async (req, res) => {
       if (!TOOLS.has(name)) return json(res, 400, { error: `tool not allowed: ${name}` })
       if (name === 'robot_command' && !COMMANDS.has(args.command)) {
         return json(res, 400, { error: `command not allowed: ${args.command}` })
+      }
+
+      const verdict = await askGuard(name, args)
+      if (!verdict.allowed) {
+        console.log(`[guard] REFUSED ${name} - ${verdict.state}: ${verdict.reason}`)
+        // 200, not 4xx: this is a normal, expected outcome that the operator
+        // and the voice agent both need to read as prose, not as a transport
+        // failure to retry.
+        return json(res, 200, {
+          result: `Held by the camera guard: ${verdict.reason}`,
+          refused: true,
+          guard: verdict,
+        })
       }
 
       try {
