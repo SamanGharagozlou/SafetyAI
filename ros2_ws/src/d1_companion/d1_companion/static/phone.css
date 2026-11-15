@@ -25,7 +25,7 @@ button:focus-visible { outline:3px solid #8cd3d8; outline-offset:2px; }
 .msg { max-width:88%; padding:10px 14px; border-radius:16px; background:#fff; border:1px solid var(--line); }
 .msg.robot { align-self:flex-start; border-bottom-left-radius:4px; }
 .msg.me { align-self:flex-end; background:var(--brand); color:#fff; border-color:var(--brand); border-bottom-right-radius:4px; }
-.map canvas { width:100%; display:block; border-radius:10px; background:#cdcdcd; touch-action:manipulation; }
+.map canvas { width:100%; display:block; border-radius:10px; background:#eef3f5; touch-action:manipulation; }
 .legend { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:13px; color:var(--dim); margin-top:8px; }
 .dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:4px; vertical-align:-1px; border:2px solid; background:#fff; }
 .dot.place { border-color:var(--place); background:var(--place); } .dot.target { border-color:var(--target); background:var(--target); } .dot.here { border-color:var(--here); background:var(--here); }

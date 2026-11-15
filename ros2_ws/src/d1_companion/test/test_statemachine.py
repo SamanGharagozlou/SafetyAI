@@ -336,3 +336,71 @@ def test_random_event_sequences_keep_invariants():
             assert sum(1 for f in effects if f.kind == 'send_goal') <= 1
             sm.snapshot()
             sm.options()
+
+
+# ---------------------------------------------------------------- outcomes by tag (used to report request status)
+def sel(sm, dest, tag):
+    return sm.handle(ev('select', dest=dest, tag=tag))
+
+
+def test_outcome_reached_by_tag():
+    sm, _ = make()
+    sm.handle(ev('join'))
+    g = goal(sel(sm, 'front_2m', 'r1'))
+    assert 'r1' not in sm.outcomes and sm.tag == 'r1'
+    sm.handle(ev('goal_reached', id=g['id']))
+    assert sm.outcomes['r1']['kind'] == 'reached' and 'Front' in sm.outcomes['r1']['message'] and sm.tag is None
+
+
+def test_outcome_failed_rejected_and_refused():
+    sm, _ = make()
+    sm.handle(ev('join'))
+    g = goal(sel(sm, 'front_2m', 'a'))
+    sm.handle(ev('goal_failed', id=g['id'], reason='path blocked'))
+    assert sm.outcomes['a'] == {'kind': 'failed', 'message': sm.outcomes['a']['message'], 'reason': 'execution_failed'}
+    g = goal(sel(sm, 'front_2m', 'b'))
+    sm.handle(ev('goal_rejected', id=g['id'], reason='not localized'))
+    assert sm.outcomes['b']['reason'] == 'robot_unavailable'
+    sm.handle(ev('robot_state', state={**GOOD, 'battery': 0.05}))
+    sel(sm, 'back_2m', 'c')
+    assert sm.outcomes['c']['kind'] == 'refused' and sm.outcomes['c']['reason'] == 'robot_unavailable' and 'battery' in sm.outcomes['c']['message']
+
+
+def test_outcome_already_there_unknown_and_reroute_and_stop():
+    sm, _ = make()
+    sm.handle(ev('join'))
+    sel(sm, 'home', 't1')
+    assert sm.outcomes['t1']['kind'] == 'already_there'
+    sel(sm, 'moon', 't2')
+    assert sm.outcomes['t2']['reason'] == 'unsupported_request'
+    g = goal(sel(sm, 'front_2m', 't3'))
+    sm.handle(ev('goal_accepted', id=g['id']))
+    goal(sel(sm, 'back_2m', 't4'))                                           # re-route: the first request ends, the second is current
+    assert sm.outcomes['t3']['kind'] == 'rerouted' and sm.tag == 't4'
+    sm.handle(ev('stop'))
+    assert sm.outcomes['t4']['kind'] == 'stopped' and sm.tag is None
+
+
+def test_outcome_stand_up_failure_and_hold():
+    sm, _ = make()
+    sm.handle(ev('robot_state', state={**GOOD, 'mode': 'lying'}))
+    sm.handle(ev('join'))
+    out = sel(sm, 'front_2m', 'u1')
+    iid = [e for e in out if e.kind == 'intent'][0].data['id']
+    sm.handle(ev('intent_failed', id=iid, reason='SDK refused'))
+    assert sm.outcomes['u1']['kind'] == 'failed'
+    sm.handle(ev('robot_state', state=dict(GOOD)))
+    g = goal(sel(sm, 'front_2m', 'u2'))
+    sm.handle(ev('goal_accepted', id=g['id']))
+    sm.handle(ev('gateway_down'))
+    assert sm.outcomes['u2']['kind'] == 'failed' and sm.outcomes['u2']['reason'] == 'robot_unavailable'
+
+
+def test_session_end_finishes_the_active_request():
+    sm, _ = make()
+    sm.handle(ev('join'))
+    g = goal(sel(sm, 'front_2m', 'e1'))
+    sm.handle(ev('goal_accepted', id=g['id']))
+    sm.handle(ev('end', reason='Your session has expired.'))
+    assert sm.outcomes['e1']['kind'] == 'stopped'
+    assert sm.state == S.RETURNING_HOME

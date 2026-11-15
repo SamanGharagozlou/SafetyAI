@@ -105,6 +105,8 @@ class Companion:
         self._hold_from = None
         self._stopping = set()              # goal ids we stopped on purpose; their cancel events are expected
         self._returning_goal = None
+        self.tag = None                     # caller's tag of the current 'go' (e.g. a request id), so its outcome can be reported
+        self.outcomes = {}                  # tag -> {'kind': reached|failed|stopped|rerouted|refused|already_there, 'message', 'reason'}
         self.log = deque(maxlen=200)
 
     # ------------------------------------------------------------------ helpers
@@ -134,6 +136,14 @@ class Companion:
     def _say(self, text, session=None):
         self.message = text
         return fx('say', text=text, session=session)
+
+    def _finish(self, kind, message, reason=''):
+        """Record how the current tagged 'go' ended (once)."""
+        if self.tag is not None:
+            self.outcomes[self.tag] = {'kind': kind, 'message': message, 'reason': reason}
+            while len(self.outcomes) > 100:
+                self.outcomes.pop(next(iter(self.outcomes)))
+            self.tag = None
 
     def label(self, name):
         return (self.places.get(name) or {}).get('label') or name
@@ -218,10 +228,7 @@ class Companion:
     def on_select(self, d):
         if self.session is None:
             return []
-        dest = d.get('dest')
-        if dest not in self.places:
-            return [self._say("Sorry, I don't know that place.")]
-        return self._go(dest)
+        return self._go(d.get('dest'), d.get('tag'))
 
     def on_say(self, d):
         if self.session is None:
@@ -251,6 +258,7 @@ class Companion:
                 self._stopping.add(self.goal_id)
             self.pending_dest, self.goal_id, self.goal_status, self.distance = None, None, None, None
             self._disarm('goal_receive', 'goal_accept', 'goal_total', 'prepare')
+            self._finish('stopped', 'Stopped as requested.')
             if self.state == S.RETURNING_HOME:
                 self._set(S.IDLE, 'Stopped.')
                 return [fx('stop_robot'), self._say('Stopped.')]
@@ -261,7 +269,9 @@ class Companion:
     def on_end(self, d, reason='Goodbye! It was nice to walk with you.'):
         if self.session is None:
             return []
+        reason = (d or {}).get('reason') or reason
         out = []
+        self._finish('stopped', 'The session ended.')
         if self.state in MOVING_STATES and self.goal_id:
             self._stopping.add(self.goal_id)
         sid = self.session['id']
@@ -282,25 +292,35 @@ class Companion:
         return out
 
     # ------------------------------------------------------------------ going somewhere
-    def _go(self, dest):
+    def _go(self, dest, tag=None):
         self._touch()
+
+        def refused(kind, text, reason=''):
+            if tag is not None:
+                self.outcomes[tag] = {'kind': kind, 'message': text, 'reason': reason}
+            return [self._say(text)]
         if dest not in self.places:
-            return [self._say("Sorry, I don't know that place.")]
+            return refused('refused', "Sorry, I don't know that place.", 'unsupported_request')
         if self.state == S.HOLD:
-            return [self._say(f'I cannot move right now: {self.reason}.')]
+            return refused('refused', f'I cannot move right now: {self.reason}.', 'robot_unavailable')
         if self.state in INPUT_STATES and self.at == dest and self.state != S.BLOCKED:
-            return [self._say(f"We are already at {self.label(dest)}.")]
+            return refused('already_there', f"We are already at {self.label(dest)}.")
         if self.state == S.NAVIGATING and self.dest == dest and self.goal_status in ('sending', 'received', 'moving'):
-            return [self._say(f"We are already heading to {self.label(dest)}.")]
+            return refused('already_there', f"We are already heading to {self.label(dest)}.")
         if self.state == S.PREPARING:
-            self.pending_dest = dest
+            if self.tag is not None:
+                self._finish('rerouted', 'A new destination was chosen.')
+            self.tag, self.pending_dest = tag, dest
             return [self._say(f'Okay, {self.label(dest)} next. One moment, getting up.')]
         self.last_dest = dest
         why = self.escort_refusal()
         if why:
             self.reason = why
             self._set(S.BLOCKED if self.state != S.HOLD else S.HOLD)
-            return [self._say(f"I can't start right now: {why}. A staff member can help.")]
+            return refused('refused', f"I can't start right now: {why}. A staff member can help.", 'robot_unavailable')
+        if self.tag is not None and self.state in MOVING_STATES:
+            self._finish('rerouted', 'A new destination was chosen.')
+        self.tag = tag
         if self.robot.get('mode') == 'lying':
             self.pending_dest = dest
             self._set(S.PREPARING, 'One moment, getting up.')
@@ -381,6 +401,7 @@ class Companion:
         else:
             text += ' Where next?' + (f" I can take you to {', '.join(others)}, or back to the start." if others else ' I can take you back to the start.')
         self._set(S.ARRIVED, text)
+        self._finish('reached', text)
         return [fx('say', text=text)]
 
     def _goal_lost(self, d, kind):
@@ -402,6 +423,7 @@ class Companion:
         self.at = None if kind != 'goal_rejected' else self.at
         self._set(S.BLOCKED)
         text = f"I couldn't get to {self.label(dest)}: {reason}. I can try again, take you somewhere else, or go back to the start."
+        self._finish('failed', text, 'robot_unavailable' if kind == 'goal_rejected' else 'execution_failed')
         return [self._say(text), fx('stop_robot')]
 
     def on_goal_failed(self, d):
@@ -424,7 +446,9 @@ class Companion:
             self.reason = d.get('reason') or 'the robot could not stand up'
             self._disarm('prepare')
             self._set(S.BLOCKED)
-            return [self._say(f"I could not stand up: {self.reason}. A staff member can help.")]
+            text = f"I could not stand up: {self.reason}. A staff member can help."
+            self._finish('failed', text, 'robot_unavailable')
+            return [self._say(text)]
         return []
 
     def on_robot_state(self, d):
@@ -458,6 +482,7 @@ class Companion:
         self.pending_dest, self.goal_id, self.goal_status, self.distance = None, None, None, None
         self._disarm('goal_receive', 'goal_accept', 'goal_total', 'prepare')
         self._set(S.HOLD)
+        self._finish('failed', f'I had to pause: {why}.', 'robot_unavailable')
         if self.session:
             out.append(self._say(f'I have to pause: {why}. Please wait, or ask a staff member.'))
         return out
