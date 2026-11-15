@@ -434,6 +434,94 @@ class TestPredict(unittest.TestCase):
         self.assertFalse(r["available"])
 
 
+class TestVenueGuardrails(unittest.TestCase):
+    """The operator's document is the source of truth. These pin the three
+    rules it states in prose: config can only tighten, unset is forbidden,
+    unsigned means cautious."""
+
+    @classmethod
+    def setUpClass(cls):
+        import venue
+        cls.v = venue.load(str(Path(__file__).parent / "venue" / "leukerbad_therme.yaml"))
+
+    def test_the_wet_and_undressed_areas_are_restricted_and_camera_off(self):
+        for name in ("pool_deck", "sauna_world", "relax_level"):
+            z = self.v.zones[name]
+            self.assertTrue(z.restricted, name)
+            self.assertTrue(z.camera_off, name)
+            self.assertTrue(z.reason, f"{name} must say WHY, for the operator")
+
+    def test_the_stairwell_is_never_enterable(self):
+        self.assertTrue(self.v.zones["stairs"].restricted)
+
+    def test_a_point_in_no_described_zone_is_restricted_not_allowed(self):
+        z = self.v.zone_at(500, 500)
+        self.assertEqual(z.name, "unknown")
+        self.assertTrue(z.restricted)
+        self.assertTrue(z.camera_off)
+
+    def test_no_pose_is_also_treated_as_restricted(self):
+        self.assertTrue(self.v.zone_at(None, None).restricted)
+
+    def test_zones_resolve_by_polygon(self):
+        self.assertEqual(self.v.zone_at(2, 2).name, "reception")
+        self.assertEqual(self.v.zone_at(10, 8).name, "pool_deck")
+        self.assertEqual(self.v.zone_at(16, 9).name, "sauna_world")
+
+    def test_an_unsigned_venue_refuses_to_guide_anywhere(self):
+        self.assertFalse(self.v.signed)
+        ok, why = self.v.may_guide_to("reception")
+        self.assertFalse(ok)
+        self.assertIn("not signed", why)
+
+    def test_a_restricted_zone_is_never_a_destination(self):
+        self.assertNotIn("pool_deck", self.v.destinations)
+        self.assertFalse(self.v.may_guide_to("pool_deck")[0])
+
+    def test_config_cannot_raise_a_speed_above_the_ceiling(self):
+        import venue as vm
+        z = vm.Zone(name="z", speed_cap=9.0)
+        v = vm.Venue(signed_off_by="someone", limits={"max_speed": 0.4},
+                     zones={"z": z})
+        z.polygon = [[0, 0], [1, 0], [1, 1], [0, 1]]
+        z.verified = "on_site"
+        self.assertLessEqual(v.speed_cap_at(0.5, 0.5), 0.4)
+
+    def test_unverified_zones_run_slow_whatever_they_ask_for(self):
+        """Every zone here is `verified: plan`, so none may run at its own cap."""
+        self.assertEqual(self.v.zones["reception"].speed_cap, 0.3)
+        self.assertEqual(self.v.speed_cap_at(2, 2), self.v.unverified_speed)
+
+    def test_the_child_rules_exist_and_are_the_operators_to_set(self):
+        p = self.v.person_policy()
+        self.assertEqual(p["child_height_under_m"], 1.25)
+        self.assertEqual(p["child_freeze_within_m"], 2.0)
+        self.assertTrue(p["child_forbid_limb_gestures"])
+        self.assertGreater(p["child_latch_s"], p["latch_s"])   # small people latch longer
+
+    def test_loading_reports_what_is_wrong_rather_than_hiding_it(self):
+        joined = " ".join(self.v.warnings).lower()
+        self.assertIn("not signed", joined)
+        self.assertIn("verified", joined)
+
+
+class TestChildProximity(unittest.TestCase):
+    def test_moving_near_a_child_is_critical(self):
+        c = Correlator(Policy())
+        c.feed(ev("intent", {"tool": "walk_distance"}, ts=100, corr="a"))
+        out = c.feed(ev("state", {"moving": True, "speed_mps": 0.18,
+                                  "child_near": True, "nearest_person_m": 1.4}, ts=100.5))
+        b = [x for x in out if x["rule"] == "child_proximity"]
+        self.assertTrue(b)
+        self.assertEqual(b[0]["severity"], "critical")
+
+    def test_a_still_robot_near_a_child_is_not_a_breach(self):
+        c = Correlator(Policy())
+        out = c.feed(ev("state", {"moving": False, "speed_mps": 0.0,
+                                  "child_near": True, "nearest_person_m": 0.8}, ts=100))
+        self.assertEqual([x for x in out if x["rule"] == "child_proximity"], [])
+
+
 class TestFrameGrabber(unittest.TestCase):
     def test_camera_off_zone_refuses_to_read_at_all(self):
         """pool_deck and the changing rooms are not 'blur it later' - no frame

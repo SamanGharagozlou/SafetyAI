@@ -182,10 +182,11 @@ def kinematic_predict(tool: str, args: dict, state: dict, body: str = "fake",
 
     crossed = _zones_crossed((x, y), (nx, ny), zones or [])
     pred.zones_crossed = [z["zone"] for z in crossed]
-    bad = [z for z in crossed if z.get("forbidden") or z.get("no_go")]
+    bad = [z for z in crossed if z.get("forbidden") or z.get("no_go") or z.get("restricted")]
     if bad:
         pred.predicted_breach = True
-        pred.reason = f"path enters {bad[0]['zone']}, which is forbidden"
+        why = bad[0].get("reason") or "no entry"
+        pred.reason = f"path enters {bad[0].get('label') or bad[0]['zone']}: {why}"
     return pred
 
 
@@ -193,12 +194,29 @@ def _wrap(a: float) -> float:
     return (a + math.pi) % (2 * math.pi) - math.pi
 
 
+def _in_zone(px, py, z) -> bool:
+    poly = z.get("polygon")
+    if poly:
+        inside, n = False, len(poly)
+        for i in range(n):
+            x1, y1 = poly[i]
+            x2, y2 = poly[(i + 1) % n]
+            if (y1 > py) != (y2 > py):
+                xint = (x2 - x1) * (py - y1) / ((y2 - y1) or 1e-12) + x1
+                if px <= xint:
+                    inside = not inside
+        return inside
+    return (z.get("x0", -1e9) <= px <= z.get("x1", 1e9)
+            and z.get("y0", -1e9) <= py <= z.get("y1", 1e9))
+
+
 def _zones_crossed(start, end, zones) -> list:
     """Sample the straight path; any zone containing a sample is crossed.
 
-    Sampling rather than analytic intersection on purpose: zones here are
-    axis-aligned boxes from a YAML a human edits, the paths are under a few
-    metres, and 5 cm sampling is well inside the pose error we already carry.
+    Sampling rather than analytic intersection on purpose: the venue file's
+    zones are hand-edited polygons, paths are a few metres, and 5 cm sampling
+    is well inside the pose error we already carry. Accepts both the venue
+    file's polygons and plain boxes.
     """
     out, seen = [], set()
     dx, dy = end[0] - start[0], end[1] - start[1]
@@ -210,8 +228,7 @@ def _zones_crossed(start, end, zones) -> list:
             name = z.get("zone")
             if name in seen:
                 continue
-            if (z.get("x0", -1e9) <= px <= z.get("x1", 1e9)
-                    and z.get("y0", -1e9) <= py <= z.get("y1", 1e9)):
+            if _in_zone(px, py, z):
                 seen.add(name)
                 out.append(z)
     return out

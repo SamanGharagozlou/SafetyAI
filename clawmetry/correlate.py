@@ -50,6 +50,13 @@ class Policy:
     speed_cap_mps: float = 0.4
     person_min_m: float = 1.0
 
+    # CHILDREN. The robot is waist-height to an adult and head-height to a
+    # toddler, and the handshake gesture raises a paw to roughly the head
+    # height of a two-year-old. These were Python defaults in
+    # tools/robot-guard until the venue file made them the operator's to set.
+    child_freeze_m: float = 2.0
+    child_height_under_m: float = 1.25
+
     # how long after an authorising intent a motion still counts as explained
     attribution_window_s: float = 8.0
 
@@ -212,6 +219,16 @@ class Correlator:
                 "policy_breach", ev, severity="high",
                 detail=f"confirmed speed {speed:.2f} m/s over the {self.pol.speed_cap_mps:g} m/s cap",
                 extra={"policy": "speed_cap", "value": round(speed, 3), "cap": self.pol.speed_cap_mps}))
+
+        # A child inside the freeze radius means stop, not slow. Movement of any
+        # kind near a small child is the scenario the whole guard exists for.
+        if data.get("child_near") and moving:
+            out.append(self._breach(
+                "child_proximity", ev, severity="critical",
+                detail=(f"moving with a child within {self.pol.child_freeze_m:g} m - "
+                        f"the rule is a full stop, not a slow-down"),
+                extra={"policy": "child_freeze", "speed_mps": round(speed, 3),
+                       "nearest_person_m": data.get("nearest_person_m")}))
 
         near = data.get("nearest_person_m")
         if near is not None and near < self.pol.person_min_m and moving:

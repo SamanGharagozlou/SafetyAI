@@ -39,6 +39,54 @@ python3 clawmetry/scenarios.py --url http://127.0.0.1:8901
 `scenarios.py` drives ten scenarios — one per detector — through the real tap
 and the real `/ingest` door, not a test backdoor.
 
+## The operator's guardrails
+
+`venue/leukerbad_therme.yaml` is **the spa's document**, written to be read and
+signed by whoever is responsible for guest safety. It is the one place that
+says where the robot may go, how fast, and what happens near children.
+
+```bash
+python3 clawmetry/server.py --venue clawmetry/venue/leukerbad_therme.yaml ...
+```
+
+Three rules are enforced in `venue.py`, not merely stated in the file:
+
+| rule | what it means in practice |
+|---|---|
+| **Config can only tighten** | Every cap is clamped to the hard ceiling. A file asking for 2 m/s next to guests gets 0.4 and the discrepancy is reported. |
+| **Anything unset is forbidden** | A point inside no described zone resolves to `unknown`: restricted, camera-off, approval required. Forgetting to describe the corridor does not authorise the corridor. |
+| **Unsigned means cautious** | With `signed_off_by` empty the venue runs at the unverified speed and **refuses to guide at all**. Nobody has agreed to the numbers yet, so they are proposals. |
+
+Plus: a zone marked `verified: plan` came off a floor plan and has not been
+measured on site, so it runs at `unverified_zone_speed` whatever its own cap
+says. All nine zones are currently `plan`.
+
+What the operator sets, in their own words:
+
+- **Where:** `pool_deck`, `sauna_world`, `relax_level`, `stairs` and `technik`
+  are `restricted`, each with a `reason` the robot quotes back when it refuses.
+  The wet and undressed areas are also `camera_off` - not "blur it later", no
+  frame is captured there at all, not even for the safety judge.
+- **Children:** `height_under_m: 1.25`, `freeze_within_m: 2.0`,
+  `forbid_limb_gestures: true`, `latch_s: 5.0`. A child inside the radius means
+  a full stop, not a slow-down, and gestures that raise a paw are refused -
+  `greet` and `welcome` both end in a handshake at about the head height of a
+  two-year-old. A small person who vanishes at close range has entered the
+  blind spot *under* the camera: closer, not gone, so they stay latched longer
+  than an adult.
+- **Crowds, escorts, battery, tilt, and what to do on uncertainty.**
+
+A refusal quotes the venue, not the code:
+
+```
+Refused: path enters Pool deck, behind the turnstiles: Wet floor and guest
+privacy. The robot has no ingress rating and no wet-floor traction data.
+```
+
+**Until this file, the child rules were Python defaults inside
+`tools/robot-guard/guard_core.py`** - a unit that is `inactive` on the Jetson -
+and neither venue policy in PR #1 mentions children at all.
+
 ## Why a tap and not an SDK client
 
 The D1 permits **one SDK client**, which the team bridge already holds. Anything

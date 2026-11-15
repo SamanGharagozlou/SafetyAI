@@ -42,6 +42,7 @@ from pathlib import Path
 
 from correlate import Correlator, Policy
 from ledger import Ledger
+import venue as venue_mod
 from frame import FrameGrabber
 from predict import BrainJudge, CosmosJudge, kinematic_predict, verify
 
@@ -61,16 +62,29 @@ class Hub:
         # dashboards cannot disagree about the same robot.
         self.judge = (BrainJudge(args.brain_url, args.brain_key)
                       if args.brain_url and args.brain_key else CosmosJudge())
-        self.frames = FrameGrabber(args.rtsp)
         if args.judge:
             self.frames.start()          # keep a warm frame; judge latency only
-        self.zones = self._load_zones(args.zones)
+        # The operator's guardrail file is the source of truth when present:
+        # zones, speed caps, camera-off areas and the child rules all come from
+        # the document the venue signs, not from code defaults.
+        self.frames = FrameGrabber(args.rtsp)
+        self.venue = venue_mod.load(args.venue) if args.venue else None
+        self.zones = self._venue_zones() if self.venue else self._load_zones(args.zones)
         self._call_id = ""
         self.subs: list[queue.Queue] = []
         self.last_state: dict = {}
         self.breaches: list[dict] = []
         self.sources: dict = {}
         self._n = 0
+        if self.venue:
+            pp = self.venue.person_policy()
+            self.cor.pol.speed_cap_mps = self.venue.max_speed
+            self.cor.pol.person_min_m = pp["hold_within_m"]
+            self.cor.pol.child_freeze_m = pp["child_freeze_within_m"]
+            self.cor.pol.child_height_under_m = pp["child_height_under_m"]
+            self.cor.pol.latch_s = pp["latch_s"]
+            self.cor.pol.stale_s = pp["stale_frame_s"]
+            self.frames.off = self.venue.camera_off_zones()
         self._replay()
         self.cor.expect("bridge")
         if args.guard:
@@ -78,7 +92,15 @@ class Hub:
         self.led.append("integrity", actor="system", data={
             "event": "collector_started", "body": args.body,
             "upstream": args.upstream, "guard": args.guard or None,
-            "cosmos": self.judge.configured})
+            "cosmos": self.judge.configured,
+            "venue": self.venue.name if self.venue else None,
+            "venue_signed": bool(self.venue and self.venue.signed)})
+        # The operator's own warnings go into the record, so an unsigned or
+        # unmeasured venue is on the ledger and not only on a console someone
+        # scrolled past.
+        for w in (self.venue.warnings if self.venue else []):
+            self.led.append("integrity", actor="system",
+                            data={"event": "venue_warning", "detail": w})
 
     def _replay(self):
         """Rebuild the in-memory view from an existing ledger.
@@ -99,6 +121,12 @@ class Hub:
             if src:
                 self.sources[src] = {"last_ts": ev["ts"], "kind": ev["kind"]}
         del self.breaches[200:]
+
+    def _venue_zones(self) -> list:
+        """The venue's zones in the shape the predictor wants."""
+        return [{"zone": n, "label": z.label, "polygon": z.polygon,
+                 "restricted": z.restricted, "reason": z.reason}
+                for n, z in self.venue.zones.items() if z.polygon]
 
     @staticmethod
     def _load_zones(path):
@@ -317,6 +345,11 @@ class Hub:
             "breaches": self.breaches[:40],
             "counts": self._counts(),
             "cosmos": {"configured": self.judge.configured, "enabled": bool(self.args.judge)},
+            "venue": ({"name": self.venue.name, "area": self.venue.area,
+                       "signed": self.venue.signed, "signed_by": self.venue.signed_off_by,
+                       "zones": len(self.venue.zones),
+                       "restricted": sum(1 for z in self.venue.zones.values() if z.restricted),
+                       "warnings": self.venue.warnings} if self.venue else None),
             "upstream": self.args.upstream,
         }
 
@@ -447,7 +480,11 @@ def main():
     ap.add_argument("--body", default="agibot_d1w", choices=["agibot_d1w", "unitree_g1", "fake"])
     ap.add_argument("--robot-id", default="leukerbad-d1w")
     ap.add_argument("--ledger", default="./clawmetry-ledger.jsonl")
-    ap.add_argument("--zones", default="", help="JSON list of zone boxes")
+    ap.add_argument("--zones", default="", help="JSON list of zone boxes (legacy)")
+    ap.add_argument("--venue", default="",
+                    help="the operator's guardrail file, e.g. "
+                         "clawmetry/venue/leukerbad_therme.yaml. Overrides --zones "
+                         "and supplies the speed, people and child rules.")
     ap.add_argument("--token", default="", help="bearer for the upstream robot")
     ap.add_argument("--speed-cap", type=float, default=0.4)
     ap.add_argument("--state-hz", type=float, default=2.0)
@@ -490,6 +527,11 @@ def main():
     print(f"clawmetry collector  http://{a.host}:{a.port}")
     print(f"  body={a.body}  tools->{a.upstream}  state->{a.state_url}  guard={a.guard or 'none'}")
     print(f"  cosmos={'on' if (a.judge and hub.judge.configured) else 'off'}  ledger={a.ledger}")
+    if hub.venue:
+        print(f"  venue={hub.venue.name} ({len(hub.venue.zones)} zones, "
+              f"{'SIGNED by ' + hub.venue.signed_off_by if hub.venue.signed else 'NOT SIGNED OFF'})")
+        for w in hub.venue.warnings:
+            print(f"    ! {w}")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
