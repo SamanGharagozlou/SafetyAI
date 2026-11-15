@@ -1,0 +1,136 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { interpretText, RobotApiError } from './robotApi'
+import type { RobotAuthorization } from './robotApi'
+import { listen, recognitionSupported, speak, speechDiagnostics, SpeechError, stopSpeaking, yesNo } from './speech'
+import type { ListenHandle } from './speech'
+
+export type Phase = 'idle' | 'listening' | 'thinking' | 'speaking'
+export type VoiceState = 'ready' | 'off' | 'unsupported'
+
+interface Options {
+  auth: RobotAuthorization
+  /** The guest agreed to use their voice. Without it there is no microphone at all. */
+  voice: boolean
+  /** A "Shall I take you there?" question is open: a spoken yes / no answers it. */
+  awaitingConfirm: boolean
+  /** The robot is walking: it does not listen on its own (nobody is expected to talk). A tap on the microphone still works, e.g. to say stop. */
+  moving: boolean
+  lang: string
+  onPropose(place: string): void
+  onYes(): void
+  onNo(): void
+  onStop(): void
+  onFinish(): void
+  onExpired(): void
+}
+
+const errorText = (error: unknown) => {
+  if (error instanceof SpeechError) {
+    if (error.code === 'not-allowed') return 'The microphone is blocked. You can still tap a place or type.'
+    if (error.code === 'no-speech') return 'I didn’t hear anything. Tap the microphone to try again.'
+    if (error.code === 'network') return 'The speech service could not be reached. You can tap a place or type.'
+    if (error.code === 'aborted') return ''
+  }
+  return 'I couldn’t listen just now. You can tap a place or type.'
+}
+
+/** The conversation: tap to talk, the robot answers aloud and in a caption, and it asks before it moves. Voice is optional; typing and taps always work. */
+export function useConversation(o: Options) {
+  const [phase, setPhase] = useState<Phase>('idle')
+  const [heard, setHeard] = useState('')
+  const [said, setSaid] = useState('')
+  const [notice, setNotice] = useState('')
+  const [muted, setMuted] = useState(false)
+  const state: VoiceState = !o.voice ? 'off' : recognitionSupported() ? 'ready' : 'unsupported'
+  const opts = useRef(o)
+  opts.current = o
+  const mutedRef = useRef(false)
+  mutedRef.current = muted
+  const handle = useRef<ListenHandle | null>(null)
+  const speaking = useRef<AbortController | null>(null)
+  const started = useRef(false)             // the guest has used the microphone: only then may the robot speak or listen on its own
+  const alive = useRef(true)
+  const turn = useRef(0)
+  const silent = useRef(0)                  // consecutive silent rounds: keep listening for a couple, then wait for a tap
+
+  useEffect(() => { alive.current = true; return () => { alive.current = false; handle.current?.abort(); speaking.current?.abort(); stopSpeaking() } }, [])
+
+  const say = useCallback(async (text: string, listenAfter = true) => {
+    setSaid(text)
+    if (!started.current) { setPhase('idle'); return }
+    if (mutedRef.current) { setPhase('idle'); if (listenAfter && opts.current.voice) begin(true); return }
+    speaking.current?.abort()
+    const controller = new AbortController()
+    speaking.current = controller
+    setPhase('speaking')
+    const spoke = await speak(text, opts.current.lang, controller.signal)
+    if (!alive.current || controller.signal.aborted) return
+    setPhase('idle')
+    if (!spoke) setNotice('I could not speak out loud on this phone (check the media volume and that a text-to-speech voice is installed; ' + speechDiagnostics() + '). You can read me here and tap the microphone to answer.')
+    if (listenAfter && started.current && opts.current.voice) begin(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function understand(text: string) {
+    setHeard(text)
+    setNotice('')
+    setPhase('thinking')
+    const mine = ++turn.current
+    const answer = opts.current.awaitingConfirm ? yesNo(text) : null
+    if (answer === 'yes') { opts.current.onYes(); setPhase('idle'); return }
+    if (answer === 'no') { opts.current.onNo(); await say('Okay, no problem. Where would you like to go?'); return }
+    try {
+      const r = await interpretText(opts.current.auth, text)
+      if (!alive.current || mine !== turn.current) return
+      if (r.action === 'GO_TO_PLACE' && r.place) {
+        if (r.ready === false) { await say(`I can’t start right now: ${(r.notice || 'the robot is not ready').toLowerCase()}. A staff member can help.`); return }
+        opts.current.onPropose(r.place)
+        await say(`Shall I take you to ${r.label ?? 'there'}? Say yes, or tap the button.`, true)
+      } else if (r.action === 'STOP_ROBOT') {
+        opts.current.onStop()          // the robot's own "I have stopped" line is spoken by the screen
+      } else if (r.action === 'END_SESSION') {
+        await say('Goodbye! It was nice to walk with you.', false)
+        if (alive.current) opts.current.onFinish()
+      } else {
+        await say(r.reply || 'I didn’t catch that. Where would you like to go?')
+      }
+    } catch (error) {
+      if (!alive.current) return
+      if (error instanceof RobotApiError && error.code === 'session_expired') { opts.current.onExpired(); return }
+      setPhase('idle')
+      setSaid('Sorry, I couldn’t reach the robot just now. Please try again, or tap a place.')
+    }
+  }
+
+  function begin(auto = false) {
+    if (!alive.current || !opts.current.voice || !recognitionSupported()) return
+    if (auto && opts.current.moving) { setPhase('idle'); return }
+    started.current = true
+    speaking.current?.abort()
+    stopSpeaking()
+    handle.current?.abort()
+    setNotice('')
+    autoRound.current = auto
+    setPhase('listening')
+    const mine = handle.current = listen(opts.current.lang)
+    mine.result.then(text => { if (handle.current === mine && alive.current) { silent.current = 0; void understand(text) } })
+      .catch(error => {
+        if (handle.current !== mine || !alive.current) return
+        if (error instanceof SpeechError && error.code === 'no-speech' && ++silent.current < 3 && !opts.current.moving) { begin(true); return }
+        silent.current = 0
+        setPhase('idle'); setNotice(errorText(error))
+      })
+  }
+  // when a walk starts, an automatic listening round ends: the guest is not expected to talk now
+  const autoRound = useRef(false)
+  useEffect(() => { if (o.moving && autoRound.current) { handle.current?.abort(); setPhase(p => p === 'listening' ? 'idle' : p) } }, [o.moving])
+  const stopListening = () => { handle.current?.stop() }
+  /** Typed text goes through exactly the same path as speech. */
+  const submitText = (text: string) => { const t = text.trim(); if (t) { handle.current?.abort(); void understand(t) } }
+  /** Lines the robot says on its own (greeting, "We have arrived"): shown as the caption, spoken once the guest has used voice. */
+  const robotSays = useCallback((text: string, listenAfter = true) => { void say(text, listenAfter) }, [say])
+  /** The guest already tapped something (the consent button), so the browser lets the robot speak and listen. */
+  const enable = useCallback(() => { started.current = true }, [])
+
+  return { phase, heard, said, notice, state, muted, setMuted, begin, stopListening, submitText, robotSays, enable }
+}

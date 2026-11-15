@@ -30,6 +30,8 @@ const visualState: Record<VapiStatus, CallState> = {
 
 export interface LiveCallScreenProps {
   config: VapiConfig
+  /** Robot mode: the robot can really move, but only for a destination the visitor confirms. */
+  robot?: boolean
   session: TaskSession
   nickname: string
   onExpired(): void
@@ -37,7 +39,7 @@ export interface LiveCallScreenProps {
   onPrivacy(event: MouseEvent<HTMLAnchorElement>): void
 }
 
-export function LiveCallScreen({ config, session, nickname, onExpired, onLeave, onPrivacy }: LiveCallScreenProps) {
+export function LiveCallScreen({ config, robot = false, session, nickname, onExpired, onLeave, onPrivacy }: LiveCallScreenProps) {
   const [status, setStatus] = useState<VapiStatus>('idle')
   const [detail, setDetail] = useState('')
   const [botSpeaking, setBotSpeaking] = useState(false)
@@ -138,7 +140,7 @@ export function LiveCallScreen({ config, session, nickname, onExpired, onLeave, 
       <button ref={start} type="button" className="primary-button" onClick={begin}>Start Conversation</button>
       <p className="call-fineprint">
         Speech is processed by Vapi, an external voice service, while the call is open.
-        Audio is not recorded or stored by this page. The robot does not move in this build.
+        Audio is not recorded or stored by this page. {robot ? 'The robot only walks you somewhere after you confirm a place on the Places tab.' : 'The robot does not move in this build.'}
       </p>
       <div className="call-session-links"><a href="/privacy" onClick={onPrivacy}>Privacy information</a><button type="button" onClick={onLeave}>Leave session</button></div>
     </div> : <>

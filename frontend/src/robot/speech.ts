@@ -1,0 +1,129 @@
+// Browser speech for the conversation: listening (Web Speech API) and spoken replies (speechSynthesis). Nothing is recorded or stored by this app.
+// Recognition needs a secure context (HTTPS or localhost) and a browser that offers it (Chrome, Edge, Safari); the speech service behind it belongs to the
+// browser vendor (e.g. Google or Apple). Where it is missing the app falls back to taps and typing: voice is never required.
+
+type Ctor = new () => RecognitionLike
+interface RecognitionLike {
+  lang: string; interimResults: boolean; continuous: boolean; maxAlternatives: number
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }> }) => void) | null
+  onerror: ((event: { error: string }) => void) | null
+  onend: (() => void) | null
+  start(): void; stop(): void; abort(): void
+}
+const ctor = (): Ctor | undefined => {
+  const w = window as unknown as { SpeechRecognition?: Ctor; webkitSpeechRecognition?: Ctor }
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition
+}
+
+export class SpeechError extends Error {
+  constructor(readonly code: 'not-allowed' | 'no-speech' | 'network' | 'unsupported' | 'aborted' | 'failed') { super(code); this.name = 'SpeechError' }
+}
+
+export const recognitionSupported = () => typeof window !== 'undefined' && window.isSecureContext !== false && !!ctor()
+export const speechOutputSupported = () => typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined'
+
+export interface ListenHandle { readonly result: Promise<string>; stop(): void; abort(): void }
+
+/** Listen for one sentence. Resolves with the final transcript; rejects with a SpeechError (silence, blocked microphone, ...). */
+export function listen(lang: string): ListenHandle {
+  const Recognition = ctor()
+  if (!Recognition || !recognitionSupported()) return { result: Promise.reject(new SpeechError('unsupported')), stop() { /* nothing */ }, abort() { /* nothing */ } }
+  const rec = new Recognition()
+  rec.lang = lang
+  rec.interimResults = false
+  rec.continuous = false
+  rec.maxAlternatives = 1
+  let text = ''
+  let failure: SpeechError | null = null
+  const result = new Promise<string>((resolve, reject) => {
+    rec.onresult = event => {
+      for (let i = 0; i < event.results.length; i++) { const alt = event.results[i][0]; if (alt?.transcript) text = alt.transcript }
+    }
+    rec.onerror = event => {
+      const code = event.error
+      failure = new SpeechError(code === 'not-allowed' || code === 'service-not-allowed' ? 'not-allowed' : code === 'no-speech' ? 'no-speech' : code === 'network' ? 'network' : code === 'aborted' ? 'aborted' : 'failed')
+    }
+    rec.onend = () => { if (text.trim()) resolve(text.trim()); else reject(failure ?? new SpeechError('no-speech')) }
+  })
+  try { rec.start() } catch { return { result: Promise.reject(new SpeechError('failed')), stop() { /* nothing */ }, abort() { /* nothing */ } } }
+  return { result, stop: () => { try { rec.stop() } catch { /* already stopped */ } }, abort: () => { failure = new SpeechError('aborted'); try { rec.abort() } catch { /* already stopped */ } } }
+}
+
+const alive = new Set<SpeechSynthesisUtterance>()   // Chrome can garbage-collect an utterance mid-speech and never fire onend
+const voicesReady = () => new Promise<void>(resolve => {
+  const synth = window.speechSynthesis
+  if (synth.getVoices().length) { resolve(); return }
+  const done = () => { synth.removeEventListener('voiceschanged', done); resolve() }
+  synth.addEventListener('voiceschanged', done)
+  setTimeout(done, 1500)
+})
+
+/** Snapshot for the on-screen hint when speech is silent. */
+export const speechDiagnostics = () => speechOutputSupported() ? `${window.speechSynthesis.getVoices().length} voices` : 'no speech output'
+
+function utter(text: string, lang: string | null, signal?: AbortSignal): Promise<boolean> {
+  const synth = window.speechSynthesis
+  return new Promise<boolean>(resolve => {
+    const utterance = new SpeechSynthesisUtterance(text)
+    if (lang) {
+      utterance.lang = lang
+      const voice = synth.getVoices().find(v => v.lang.toLowerCase() === lang.toLowerCase()) ?? synth.getVoices().find(v => v.lang.toLowerCase().startsWith(lang.slice(0, 2).toLowerCase()))
+      if (voice) utterance.voice = voice
+    }
+    let spoke = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const done = (ok: boolean) => { clearTimeout(timer); clearTimeout(longest); alive.delete(utterance); signal?.removeEventListener('abort', cancel); resolve(ok) }
+    const cancel = () => { try { synth.cancel() } catch { /* ignore */ } done(spoke) }
+    // some engines report start and never end: stop waiting after a generous time for this sentence
+    const longest = setTimeout(() => { try { synth.cancel() } catch { /* ignore */ } done(spoke) }, 4000 + text.length * 120)
+    utterance.onstart = () => { spoke = true; clearTimeout(timer) }
+    utterance.onend = () => done(spoke)
+    utterance.onerror = event => done(spoke || (event as SpeechSynthesisErrorEvent).error === 'canceled' || (event as SpeechSynthesisErrorEvent).error === 'interrupted')
+    signal?.addEventListener('abort', cancel)
+    // Some Android voices accept the sentence and then never start: give up after a few seconds instead of "speaking" forever.
+    timer = setTimeout(() => { if (!spoke) { try { synth.cancel() } catch { /* ignore */ } done(false) } }, 3000)
+    alive.add(utterance)
+    try {
+      if (synth.speaking || synth.pending) synth.cancel()   // cancelling an idle engine right before speak() drops the sentence on Android
+      synth.resume()
+      synth.speak(utterance)
+    } catch { done(false) }
+  })
+}
+
+/** Speak a sentence; resolves true when it was spoken, false when the browser refused or speech does not exist.
+ *  If the chosen voice stays silent it retries once with the phone's default voice. */
+export async function speak(text: string, lang: string, signal?: AbortSignal): Promise<boolean> {
+  if (!speechOutputSupported() || !text.trim()) return false
+  await voicesReady()
+  if (signal?.aborted) return false
+  if (await utter(text, lang, signal)) return true
+  if (signal?.aborted) return false
+  return utter(text, null, signal)
+}
+export const stopSpeaking = () => { try { if (speechOutputSupported()) window.speechSynthesis.cancel() } catch { /* ignore */ } }
+
+const YES = /^(yes|yeah|yep|yup|sure|ok|okay|go|go ahead|please|please do|do it|take me|let'?s go|sounds good)\b/i
+const NO = /^(no|nope|nah|not now|cancel|never ?mind|stop|don'?t)\b/i
+/** A spoken answer to "Shall I take you there?" */
+export function yesNo(text: string): 'yes' | 'no' | null {
+  const t = text.trim().replace(/[.!?,]+$/g, '')
+  return YES.test(t) ? 'yes' : NO.test(t) ? 'no' : null
+}
+
+/** Direct test from a tap: no waiting, no options, the phone's default voice. Reports what happened in plain words. */
+export function testVoice(): Promise<string> {
+  if (!speechOutputSupported()) return Promise.resolve('This browser has no speech output.')
+  return new Promise(resolve => {
+    const synth = window.speechSynthesis
+    const u = new SpeechSynthesisUtterance('Hello, can you hear me?')
+    alive.add(u)
+    let started = false
+    const end = (m: string) => { alive.delete(u); resolve(`${m} (${synth.getVoices().length} voices)`) }
+    u.onstart = () => { started = true }
+    u.onend = () => end('Finished speaking. If you heard nothing, raise the media volume.')
+    u.onerror = e => end(`Error: ${(e as SpeechSynthesisErrorEvent).error}`)
+    setTimeout(() => { if (!started) { try { synth.cancel() } catch { /* ignore */ } end('The phone never started speaking') } }, 4000)
+    synth.speak(u)
+  })
+}

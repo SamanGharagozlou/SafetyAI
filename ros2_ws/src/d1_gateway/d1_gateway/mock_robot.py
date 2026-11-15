@@ -8,8 +8,8 @@ import time
 
 
 class MockRobot:
-    def __init__(self, speed=0.5, intent_s=0.8):
-        self.speed, self.intent_s = speed, intent_s
+    def __init__(self, speed=0.5, intent_s=0.8, localized=True):
+        self.speed, self.intent_s, self.localized = speed, intent_s, localized
         self.pose = {'x': 0.0, 'y': 0.0, 'yaw': 0.0, 'frame': 'map'}
         self.mode = 'standing'
         self.battery = 0.87
@@ -22,7 +22,10 @@ class MockRobot:
         threading.Thread(target=self._run, daemon=True).start()
 
     def state(self):
-        return {'pose': dict(self.pose), 'battery': self.battery, 'mode': self.mode, 'connected': True, 'nav_ready': True}
+        loc = {'state': 'localized', 'ready': True, 'source': 'mock', 'message': 'mock robot'} if self.localized else \
+            {'state': 'need_pose', 'ready': False, 'source': 'none', 'message': 'place the robot on the map'}
+        return {'pose': dict(self.pose), 'battery': self.battery, 'mode': self.mode, 'connected': True, 'nav_ready': True,
+                'localization': loc}
 
     def navigate(self, gid, pose):
         with self._lock:
@@ -34,6 +37,9 @@ class MockRobot:
             return
         if self.mode != 'standing':
             self._emit({'type': 'goal_rejected', 'id': gid, 'reason': f'robot is {self.mode}; send intent stand_up first'})
+            return
+        if not self.localized:
+            self._emit({'type': 'goal_rejected', 'id': gid, 'reason': 'robot is not localized on the map (place the robot on the map)'})
             return
         with self._lock:
             self._goal = {'id': gid, 'pose': pose, 't0': time.time(),

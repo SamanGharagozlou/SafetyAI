@@ -128,3 +128,22 @@ def test_goal_rejected_when_lying_and_estop():
 def test_validate():
     assert P.validate({'type': 'goal', 'id': 'a', 'target': {'x': 1, 'y': float('nan')}})[0]
     assert P.validate({'type': 'goal', 'id': 'a', 'target': {'x': 1, 'y': 2}})[0] is None
+
+
+def test_goal_rejected_when_not_localized():
+    async def t(url, core):
+        async with websockets.connect(url) as ws:
+            await ws.recv()
+            first = json.loads(await ws.recv())            # first state message
+            assert first['type'] == 'state' and first['localization']['ready'] is False
+            await ws.send(json.dumps({'type': 'goal', 'id': 'n', 'target': {'x': 1, 'y': 0}}))
+            m, _ = await _until(ws, lambda m: m['type'] == 'goal_rejected')
+            assert 'not localized' in m['reason']
+    async def run_it():
+        core = GatewayCore(MockRobot(localized=False), PLACES, port=0, state_hz=20)
+        await core.serve()
+        try:
+            await t(f'ws://127.0.0.1:{core.port}', core)
+        finally:
+            await core.close()
+    run(run_it())

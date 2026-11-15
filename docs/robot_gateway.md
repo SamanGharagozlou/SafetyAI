@@ -67,9 +67,9 @@ One goal is active at a time. A new `goal` while another runs **preempts** it (t
 | `goal_reached` `{id}` | arrived |
 | `goal_failed` `{id, reason}` | Nav2 gave up (blocked, timeout) |
 | `goal_canceled` `{id, reason}` | cancel, stop, or preempted |
-| `goal_rejected` `{id, reason}` | refused up front: unknown place, robot lying/damped ("send intent stand_up first"), robot link down, Nav2 not running |
+| `goal_rejected` `{id, reason}` | refused up front: unknown place, robot not localized on the map (`localization.ready` false, when the lidar localizer is running), robot lying/damped ("send intent stand_up first"), robot link down, Nav2 not running |
 | `intent_received` / `intent_started` / `intent_done` / `intent_failed` `{id, name, reason?}` | lifecycle of an intent |
-| `state` `{pose, battery, mode, connected, nav_ready, active_goal}` | 2 Hz. `pose` `{x,y,yaw,frame}` (map frame, odom if no map, else null); `battery` 0..1; `mode` `standing/moving/lying/damping` |
+| `state` `{pose, battery, mode, connected, nav_ready, localization, active_goal}` | 2 Hz. `pose` `{x,y,yaw,frame}` (map frame, odom if no map, else null); `battery` 0..1; `mode` `standing/moving/lying/damping` |
 | `robot_event` `{kind, detail}` | `mode_changed`, `link_up`, `link_down`, `stop`, `estop` |
 | `error` `{message, id?}` | the last message was invalid; the connection stays open |
 

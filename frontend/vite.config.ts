@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
@@ -18,8 +19,13 @@ export default defineConfig(({ command, mode }) => {
       this.emitFile({ type: 'asset', fileName: 'demo-config.json', source: `${JSON.stringify(config, null, 2)}\n` })
     },
   } : null
+  // Robot mode (vite --mode robot): same-origin /api is proxied to the companion backend. Host header is kept so its same-origin check passes.
+  const proxy = mode === 'robot' ? { '/api': { target: process.env.D1_COMPANION_URL || 'http://127.0.0.1:8780', changeOrigin: false } } : undefined
   return {
     base: '/',
+    // phone_demo.sh --https: self-signed certificate so a phone treats the page as a secure context (needed for the microphone)
+    server: proxy ? { proxy, ...(process.env.D1_HTTPS_KEY && process.env.D1_HTTPS_CERT ? { https: { key: readFileSync(process.env.D1_HTTPS_KEY), cert: readFileSync(process.env.D1_HTTPS_CERT) } } : {}) } : undefined,
+    preview: proxy ? { proxy } : undefined,
     envPrefix: 'VITE_',
     build: { sourcemap: false },
     // The static demo must not ship the third-party voice client at all: no

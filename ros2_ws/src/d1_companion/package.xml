@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>d1_companion</name>
+  <version>0.1.0</version>
+  <description>Companion behaviour for the D1: guest session state machine between the visitor phone app and the robot gateway (QR join, pick a place, escort, arrival, next step)</description>
+  <maintainer email="sahilrajpurkar1998@gmail.com">sahilrajpurkar03</maintainer>
+  <license>BSD-3-Clause</license>
+  <exec_depend>python3-websockets</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>d1_gateway</exec_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
