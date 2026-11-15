@@ -48,7 +48,7 @@ describe('the session calls', () => {
     const fetchMock = vi.fn(async () => json(view))
     vi.stubGlobal('fetch', fetchMock)
     const v = await fetchRobotView(auth, 2)
-    expect(v).toMatchObject({ seq: 3, state: 'NAVIGATING', destination: 'left_2m', distanceRemaining: 1.5, robot: { x: 0, y: 0.5, available: true } })
+    expect(v).toMatchObject({ seq: 3, state: 'NAVIGATING', destination: 'left_2m', distanceRemaining: 1.5, ready: true, notice: '', robot: { x: 0, y: 0.5, available: true } })
     expect(v.lines).toEqual([{ seq: 3, text: 'Follow me.' }])
     const [path, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { headers: Record<string, string> }]
     expect(path).toBe('/api/state?after=2')
@@ -61,6 +61,10 @@ describe('the session calls', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(stopRobot({ ...auth, expiresAt: Date.now() - 1 })).rejects.toMatchObject({ code: 'session_expired' })
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+  it('reads readiness and its visitor-safe reason', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ ...view, ready: false, notice: 'The battery is too low for another escort' })))
+    expect(await fetchRobotView(auth, 0)).toMatchObject({ ready: false, notice: 'The battery is too low for another escort' })
   })
   it('rejects a malformed state', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ ...view, state: 'FLYING' })))

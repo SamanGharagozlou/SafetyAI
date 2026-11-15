@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EscortBar } from './EscortBar'
+import { PlaceCards } from './PlaceCards'
 import { PlacesMap } from './PlacesMap'
+import { Sheet } from './Sheet'
 import { RobotRequestFlow } from './RobotRequestFlow'
 import { RobotSession } from './RobotSession'
 import type { RobotPlace, RobotSessionInfo, RobotView } from './robotApi'
@@ -13,7 +15,7 @@ const places: RobotPlace[] = [
   { name: 'left_2m', label: 'Left, 2 m', description: '', x: 0, y: 2, home: false },
 ]
 const view = (over: Partial<RobotView> = {}): RobotView => ({ seq: 1, lines: [], expiresAt: Date.now() + 600_000, state: 'AWAITING_INPUT', goalStatus: null, destination: null, at: 'home',
-  distanceRemaining: null, reason: '', robot: { x: 0, y: 0, yaw: 0, available: true }, ...over })
+  distanceRemaining: null, reason: '', ready: true, notice: '', robot: { x: 0, y: 0, yaw: 0, available: true }, ...over })
 const task = (over: Partial<RobotTask> = {}): RobotTask => ({ requestId: 'req-1', clientRequestId: 'robot-request-x', status: 'processing', action: 'GO_TO_PLACE', revision: 1, ...over })
 
 
@@ -140,7 +142,7 @@ describe('RobotRequestFlow', () => {
     const submit = vi.fn()
     const p = props({ submit, status: vi.fn() } as unknown as RobotTaskClient)
     render(<RobotRequestFlow {...p}/>)
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }))
     expect(p.onCancel).toHaveBeenCalledOnce()
     expect(submit).not.toHaveBeenCalled()
   })
@@ -224,12 +226,75 @@ describe('RobotSession (the whole guest screen against a fake backend)', () => {
     await waitFor(() => expect(screen.getAllByText('the robot was stopped by staff').length).toBeGreaterThan(0))
     for (const chip of within(screen.getByRole('group', { name: 'Places' })).getAllByRole('button')) expect(chip).toBeDisabled()
   })
+  it('says the robot is not ready, with the reason, and disables the places, when it cannot start a walk', async () => {
+    stateBody = { ...stateBody, ready: false, notice: 'The robot is not placed on the map yet' }
+    mount()
+    expect(await screen.findByText('Not ready')).toBeInTheDocument()
+    expect(screen.getByText(/not placed on the map yet\. A staff member can help/)).toBeInTheDocument()
+    for (const chip of within(screen.getByRole('group', { name: 'Places' })).getAllByRole('button')) expect(chip).toBeDisabled()
+    expect(screen.queryByText('Robot ready')).toBeNull()
+  })
   it('sends a typed question only after the guest confirms it, and lets the backend decide what it means', async () => {
     mount()
     await screen.findByText('Hello Ana! Where would you like to go?')
     fireEvent.change(screen.getByLabelText('Or ask me something'), { target: { value: 'what can you do?' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true } as never))
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
     expect(await screen.findByRole('heading', { name: 'Your request is ready' })).toBeInTheDocument()
     expect(calls.some(c => c.path === '/api/requests')).toBe(false)
+  })
+})
+
+
+describe('radar layout geometry', () => {
+  const standard: RobotPlace[] = [
+    { name: 'home', label: 'Start point', description: '', x: 0, y: 0, home: true },
+    { name: 'front_2m', label: 'Front, 2 m ahead', description: '', x: 2, y: 0, home: false },
+    { name: 'back_2m', label: 'Back, 2 m behind', description: '', x: -2, y: 0, home: false },
+    { name: 'right_2m', label: 'Right, 2 m', description: '', x: 0, y: -2, home: false },
+    { name: 'left_2m', label: 'Left, 2 m', description: '', x: 0, y: 2, home: false },
+  ]
+  const rects = (container: HTMLElement) => {
+    const nodes = [...container.querySelectorAll('.place-ring')].map(c => ({ x: +c.getAttribute('cx')! - 16, y: +c.getAttribute('cy')! - 16, w: 32, h: 32 }))
+    const pills = [...container.querySelectorAll('.place-pill')].map(r => ({ x: +r.getAttribute('x')!, y: +r.getAttribute('y')!, w: +r.getAttribute('width')!, h: +r.getAttribute('height')! }))
+    return { nodes, pills }
+  }
+  const hit = (a: { x: number; y: number; w: number; h: number }, b: typeof a) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+  it.each([['four in a cross plus the start', standard], ['two places', standard.slice(0, 2)], ['clustered', standard.map((p, i) => ({ ...p, x: p.x * 0.3 + i * 0.05, y: p.y * 0.3 }))]])('no label covers another label or a node: %s', (_name, list) => {
+    const { container } = render(<PlacesMap places={list} view={null} selected={null} onSelect={() => undefined}/>)
+    const { nodes, pills } = rects(container)
+    pills.forEach((a, i) => {
+      expect(a.x).toBeGreaterThanOrEqual(0); expect(a.x + a.w).toBeLessThanOrEqual(360); expect(a.y).toBeGreaterThanOrEqual(0); expect(a.y + a.h).toBeLessThanOrEqual(330)
+      pills.forEach((b, j) => { if (i < j) expect(hit(a, b)).toBe(false) })
+      if (list === standard) nodes.forEach(n => expect(hit(a, n)).toBe(false))
+    })
+  })
+})
+
+describe('PlaceCards', () => {
+  it('shows where the robot is, where it is heading and how far each place is, and respects disabled', () => {
+    const onSelect = vi.fn()
+    const v = view({ state: 'NAVIGATING', destination: 'left_2m', at: 'home', robot: { x: 0, y: 0.5, yaw: 1.57, available: true } })
+    const { rerender } = render(<PlaceCards places={places} view={v} disabled={false} selected={null} onSelect={onSelect}/>)
+    expect(screen.getByRole('button', { name: /Left, 2 m/ })).toHaveTextContent('Heading there')
+    expect(screen.getByRole('button', { name: /Front, 2 m ahead/ })).toHaveTextContent('2.1 m away')
+    fireEvent.click(screen.getByRole('button', { name: /Front/ }))
+    expect(onSelect).toHaveBeenCalledWith('front_2m')
+    rerender(<PlaceCards places={places} view={view({ at: 'home' })} disabled selected={null} onSelect={onSelect}/>)
+    expect(screen.getByRole('button', { name: /Start point/ })).toHaveTextContent('You are here')
+    for (const b of screen.getAllByRole('button')) expect(b).toBeDisabled()
+  })
+})
+
+describe('Sheet', () => {
+  it('closes on Escape and on a tap outside, labels itself, and gives the page its scroll back', () => {
+    const onClose = vi.fn()
+    const { container, unmount } = render(<Sheet labelledBy="t" onClose={onClose}><h3 id="t">Title</h3></Sheet>)
+    expect(screen.getByRole('dialog', { name: 'Title' })).toHaveAttribute('aria-modal', 'true')
+    expect(document.body.style.overflow).toBe('hidden')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(container.querySelector('.sheet-backdrop')!)
+    expect(onClose).toHaveBeenCalledTimes(2)
+    unmount()
+    expect(document.body.style.overflow).not.toBe('hidden')
   })
 })

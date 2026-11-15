@@ -30,6 +30,8 @@ All JSON, `Authorization: Bearer <accessToken>` unless stated. Errors: `{"error"
 | `POST /api/admin/end` (header `X-Admin-Token`) | staff ends the session (only when `--admin-token` is set) |
 | `GET /healthz` | health (no secrets). The server serves no pages: the visitor frontend is the UI |
 
+`ready` (bool) says whether the robot can start an escort right now (battery, placed on the map, navigation running, link) and `notice` gives the visitor-safe reason when it cannot (e.g. "The robot is not placed on the map yet"); `robot.available` only means the robot is reachable and not paused. The app shows "Not ready" with the notice and disables the places instead of letting the guest tap and fail.
+
 `state` values: `IDLE, AWAITING_INPUT, PREPARING, NAVIGATING, ARRIVED, BLOCKED, STOPPED, RETURNING_HOME, HOLD`. `options` lists what the guest can do now (`place`, `retry`, `stop`, `end`).
 
 ## 3. Task lifecycle (what `completed` means)

@@ -19,6 +19,10 @@ export interface RobotView {
   readonly at: string | null
   readonly distanceRemaining: number | null
   readonly reason: string
+  /** True when the robot can start an escort right now (battery, placed on the map, navigation running). */
+  readonly ready: boolean
+  /** Visitor-safe reason when it cannot, e.g. "The robot is not placed on the map yet"; empty when ready. */
+  readonly notice: string
   readonly robot: { readonly x: number | null; readonly y: number | null; readonly yaw: number | null; readonly available: boolean }
 }
 export interface RobotSessionInfo { readonly authorization: RobotAuthorization; readonly robotName: string; readonly nickname: string; readonly places: readonly RobotPlace[] }
@@ -96,6 +100,7 @@ export async function fetchRobotView(auth: RobotAuthorization, after: number, si
   return {
     seq: b.seq, lines, expiresAt: b.expiresAt, state: b.state as RobotStateName, goalStatus: (b.goal_status ?? null) as RobotView['goalStatus'],
     destination: orNull(b.destination, text), at: orNull(b.at, text), distanceRemaining: orNull(b.distance_remaining, isNum), reason: b.reason,
+    ready: typeof b.ready === 'boolean' ? b.ready : robot.available, notice: typeof b.notice === 'string' ? b.notice.slice(0, 300) : '',
     robot: { x: orNull(robot.x, isNum), y: orNull(robot.y, isNum), yaw: orNull(robot.yaw, isNum), available: robot.available },
   }
 }

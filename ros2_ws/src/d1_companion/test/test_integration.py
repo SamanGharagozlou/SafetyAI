@@ -161,7 +161,8 @@ def test_escort_request_lifecycle_and_idempotency():
         assert abs(gw.robot.pose['x'] - 2.0) < 0.2                                                                # the (mock) robot really got there
         st, s, _ = await g.call('GET', '/api/state')
         assert s['state'] == 'ARRIVED' and s['at'] == 'front_2m' and any('arrived' in m['text'] for m in s['messages'])
-        assert set(s['robot']) == {'x', 'y', 'yaw', 'available'}                                                  # nothing internal leaks (battery, mode, ...)
+        assert set(s['robot']) == {'x', 'y', 'yaw', 'available'}
+        assert s['ready'] is True and s['notice'] == ''                                                  # nothing internal leaks (battery, mode, ...)
         st, s2, _ = await g.call('GET', f'/api/state?after={s["seq"]}')
         assert s2['messages'] == []
     run(with_stack(t))
@@ -224,6 +225,8 @@ def test_robot_unavailable_is_reported_not_attempted():
         st, task, _ = await g.request('take me to the front', 'GO_TO_PLACE')
         check_contract(task)
         assert task['status'] == 'failed' and task['reason'] == 'robot_unavailable' and 'not placed' in task['message'] and gw.robot.pose['x'] == 0
+        st, state, _ = await g.call('GET', '/api/state')                                                              # the guest is told before tapping
+        assert state['ready'] is False and 'not placed' in state['notice'] and state['robot']['available'] is True
     run(with_stack(t, robot=MockRobot(speed=4.0, localized=False)))
 
 

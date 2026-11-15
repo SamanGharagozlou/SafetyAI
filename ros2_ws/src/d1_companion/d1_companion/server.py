@@ -270,8 +270,10 @@ class CompanionServer:
         r = s['robot']
         pose = r.get('pose') or {}
         avail = bool(r.get('gateway_up')) and r.get('connected') is not False and r.get('mode') != 'damping'
+        why = self.sm.escort_refusal()                 # the same check that refuses a new escort: low battery, not placed on the map, no navigation, link down
         return {'state': s['state'], 'goal_status': s['goal_status'], 'destination': s['destination'], 'at': s['at'],
                 'distance_remaining': s['distance_remaining'], 'reason': s['reason'], 'options': s['options'],
+                'ready': why is None, 'notice': (why or '')[:1].upper() + (why or '')[1:],
                 'robot': {'x': pose.get('x'), 'y': pose.get('y'), 'yaw': pose.get('yaw'), 'available': avail}}
 
     def _state(self, after):
