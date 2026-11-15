@@ -584,8 +584,14 @@ async function startMeter() {
   stopMeter()
   const deviceId = $('micpick').value
   try {
+    // Echo cancellation requested explicitly: the robot's voice comes out of
+    // the speakers and straight back into a lapel mic inches away, which the
+    // barge-in detector hears as the guest talking and uses to cut the robot
+    // off mid-sentence. Browsers do not always enable EC for an external USB
+    // device the way they do for the built-in mic.
+    const tuning = { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
     meterStream = await navigator.mediaDevices.getUserMedia({
-      audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+      audio: deviceId ? { deviceId: { exact: deviceId }, ...tuning } : tuning,
     })
     meterCtx = new AudioContext()
     // Chrome starts an AudioContext SUSPENDED when it is created without a
@@ -872,7 +878,9 @@ async function startVoice() {
   // the longest one.
   const chosenMic = $('micpick').value
   const micPromise = navigator.mediaDevices
-    .getUserMedia({ audio: chosenMic ? { deviceId: { exact: chosenMic } } : true })
+    .getUserMedia({ audio: chosenMic
+      ? { deviceId: { exact: chosenMic }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      : { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
     .then(s => { s.getTracks().forEach(t => t.stop()); return true })   // release at once, or the SDK publishes a dead track
     .catch(() => false)
 

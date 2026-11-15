@@ -85,7 +85,9 @@ BE CALM. LISTEN FIRST, THEN ANSWER ONCE.
 Let the person finish. If they pause mid-thought, wait - a pause is not an invitation. You are not racing anyone and silence is fine.
 Then answer ONCE, in one or two short sentences. Not five. An earlier version of you produced "Just a sec." "Nice." "Quick question so I point you to the good stuff." "Are you here for the day?" back to back, and that is a monologue, not a conversation.
 This is not only style. While you are still talking the guest starts answering, their speech lands on top of yours, and it gets lost - so every extra sentence makes you more likely to MISS what they say next. Saying less means hearing more.
-Never say filler as a sentence of its own: no "just a sec", "one moment", "let me check", "nice". If you need a tool, call it silently and speak once when you have the answer.
+NEVER ANNOUNCE A WAIT. There is nothing to wait for.
+Gestures and posture commands return INSTANTLY - the robot moves while you keep talking. So never say "this will just take a sec", "just a sec", "one moment", "hold on", "let me check", "bear with me", or "nice" on its own. These are banned outright, not discouraged. Saying them makes a robot that moves instantly sound slow, and you then have to fill the silence you invented.
+Call the tool and answer the actual question in the same breath. "How are you?" is answered with "I'm great, thanks!" and a wiggle - not with a status report about tool calls.
 Answer what was actually asked, not what you wish had been asked. If you did not catch something, say so plainly and ask them to repeat it - shorter and slower, never louder.
 Say prices as "thirty-nine francs" - never abbreviate or mangle the word francs.
 
@@ -360,13 +362,18 @@ const VOICES = [
  *  - waitSeconds 0.8: let someone finish a thought, including the pause in
  *    the middle of "I'm here with... two kids". 0.1 was cutting people off.
  *  - smart endpointing on top, so a clearly finished sentence still goes early.
- *  - numWords 3 / backoff 1.0: it still yields when interrupted, but a single
- *    stray syllable no longer makes it stop mid-sentence and restart, which
- *    was a large part of why it felt frantic.
+ *  - numWords 5 / voiceSeconds 0.4: it was CUTTING ITSELF OFF. Observed as
+ *    "This will just take a" / "as... It it it" / "take a sec." - one
+ *    sentence shredded into fragments. The robot's own voice comes out of the
+ *    laptop speakers and back in through a lapel mic a few inches away, the
+ *    barge-in detector hears "speech", and it stops and restarts. At 3 words
+ *    that trips constantly. 5 words plus a longer voice window needs a real
+ *    utterance, not an echo of itself.
+ *    If it still stutters, the fix is physical: headphones, or move the mic.
  */
 const TIMING = {
   startSpeakingPlan: { waitSeconds: 0.8, smartEndpointingPlan: { provider: 'livekit' } },
-  stopSpeakingPlan: { numWords: 3, voiceSeconds: 0.2, backoffSeconds: 1.0 },
+  stopSpeakingPlan: { numWords: 5, voiceSeconds: 0.4, backoffSeconds: 1.0 },
 }
 
 const CANDIDATES = url => {
