@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>d1_slam</name>
+  <version>0.1.0</version>
+  <description>Launch files for mapping with the AgiBot D1: camera + SDK odometry + RTAB-Map</description>
+  <maintainer email="sahilrajpurkar1998@gmail.com">sahilrajpurkar03</maintainer>
+  <license>BSD-3-Clause</license>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>rtabmap_slam</exec_depend>
+  <exec_depend>rtabmap_viz</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>rtabmap_rviz_plugins</exec_depend>
+  <exec_depend>d1_camera</exec_depend>
+  <exec_depend>agibot_d1_bridge</exec_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,10 @@
+# Optional Intel CPU/iGPU profile via OpenVINO.  Export first (never done automatically):
+#   yolo export model=~/.cache/human_perception/models/yolo26n.pt format=openvino imgsz=640
+human_detector:
+  ros__parameters:
+    backend: openvino
+    model_path: ~/.cache/human_perception/models/yolo26n_openvino_model
+    device: intel:cpu            # or intel:gpu / intel:npu
+    image_size: 640
+    max_inference_fps: 15.0
+    input_reliability: reliable

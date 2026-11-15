@@ -18,6 +18,7 @@ setup(
             'cmd_vel_bridge = agibot_d1_bridge.cmd_vel_bridge:main',
             'test_sequence = agibot_d1_bridge.test_sequence:main',
             'keyboard_teleop = agibot_d1_bridge.keyboard_teleop:main',
+            'd1w_gestures = agibot_d1_bridge.d1w_gestures:main',
         ],
     },
 )

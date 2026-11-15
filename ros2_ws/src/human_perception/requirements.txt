@@ -1,0 +1,19 @@
+# Python dependencies for the human_perception workspace (Ubuntu 22.04 / ROS 2 Humble).
+# Install into a venv that can still see the ROS (apt) Python packages:
+#   /usr/bin/python3 -m venv --system-site-packages .venv && . .venv/bin/activate
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu   # CPU
+#   pip install -r requirements.txt
+#
+# numpy<2: ROS 2 Humble binaries (rclpy msgs, cv_bridge) were built against numpy 1.x.
+numpy>=1.23.5,<2
+ultralytics>=8.4,<9
+psutil>=5.9
+# Build/test tooling. pytest<8: Humble's launch_testing pytest plugin breaks on pytest>=8.
+colcon-common-extensions>=0.3
+pytest>=7,<8
+
+# Optional accelerated backends (install only what you use):
+#   onnxruntime>=1.16          # backend: onnx (CPU)
+#   onnxruntime-gpu>=1.16      # backend: onnx (CUDA)
+#   openvino>=2024.0           # backend: openvino (Intel CPU/iGPU/NPU)
+#   tensorrt (NVIDIA)          # backend: tensorrt - install per NVIDIA docs for your CUDA/driver

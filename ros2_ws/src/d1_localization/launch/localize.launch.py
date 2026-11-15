@@ -4,8 +4,9 @@
   ros2 launch d1_localization localize.launch.py x:=3.0 y:=1.5 yaw:=1.57
   ros2 launch d1_localization localize.launch.py map:=/path/to/other/map.yaml
 
-Needs the agibot_d1_bridge running (publishes /odom and /imu). The bridge does not publish TF,
-so the EKF here provides odom->base_link.
+Needs agibot_d1_bridge running. Since develop the bridge broadcasts odom->base_link (and odom->base_footprint)
+itself from integrated body velocity + IMU yaw, so the EKF is OFF by default. To use the EKF instead, start the
+bridge with publish_tf:=false publish_footprint_tf:=false and launch this with use_ekf:=true.
 """
 import os
 from ament_index_python.packages import get_package_share_directory
@@ -41,8 +42,8 @@ def generate_launch_description():
         DeclareLaunchArgument('x', default_value='0.0', description='start x in map frame [m]'),
         DeclareLaunchArgument('y', default_value='0.0', description='start y in map frame [m]'),
         DeclareLaunchArgument('yaw', default_value='0.0', description='start heading [rad]'),
-        DeclareLaunchArgument('use_ekf', default_value='true',
-                              description='fuse /odom + /imu to publish odom->base_link (false if another node does)'),
+        DeclareLaunchArgument('use_ekf', default_value='false',
+                              description='fuse /odom + /imu into odom->base_link; needs bridge publish_tf:=false (else two TF sources)'),
         DeclareLaunchArgument('rviz', default_value='true'),
         Node(package='nav2_map_server', executable='map_server', name='map_server',
              parameters=[{'yaml_filename': lc('map')}]),
