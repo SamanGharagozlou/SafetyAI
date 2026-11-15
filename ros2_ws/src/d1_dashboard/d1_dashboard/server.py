@@ -139,6 +139,7 @@ class Dashboard(Node):
         self.start_pose, self.pose_confirmed = None, False   # robot pose in the map set by the operator (lidar maps have no live localization)
         self.pois = {}                                       # points of interest of the loaded map: name -> {x, y, yaw, label, aliases, description}
         self.pois_file = None
+        self.mono_loc = {'state': 'off', 'source': None, 't': 0.0, 'cov': None}   # RTAB-Map localization (mono maps): off | localizing | localized
 
         qos_latched = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1, reliability=ReliabilityPolicy.RELIABLE,
                                  durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -157,6 +158,9 @@ class Dashboard(Node):
         self.loc_status = None                              # /lidar_localization/status (JSON dict) from d1_lidar
         self.loc_t = 0.0
         self.create_subscription(String, '/lidar_localization/status', self._on_loc_status, 10)
+        self.create_subscription(PoseWithCovarianceStamped, '/localization_pose', self._on_loc_pose, 10)
+        self.pub_loc_status = self.create_publisher(String, '/lidar_localization/status', 10)   # same contract the gateway reads (ready / state / message)
+        self.create_timer(0.5, self._pub_loc_status)
         self.pub_vel = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_cmd = self.create_publisher(String, '/robot_cmd', 10)
         self.pub_init = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
@@ -251,8 +255,33 @@ class Dashboard(Node):
         with self.lock:
             self.loc_status, self.loc_t = d, time.time()
 
+    def _on_loc_pose(self, m):
+        """RTAB-Map publishes /localization_pose only when it has matched the camera to the saved map (visual relocalization)."""
+        with self.lock:
+            if self.mono_loc['state'] == 'localizing':
+                self.mono_loc.update(state='localized', source='visual', t=time.time(), cov=round(float(m.pose.covariance[0]), 4))
+            elif self.mono_loc['state'] == 'localized' and self.mono_loc['source'] == 'visual':
+                self.mono_loc['t'] = time.time()
+
+    def _mono_loc_active(self):
+        return self.mono and self.mono_loc['state'] != 'off' and self.running('localization')
+
+    def _mono_status(self):
+        st = self.mono_loc['state']
+        if st == 'localized':
+            return {'state': 'localized', 'ready': True, 'source': self.mono_loc['source'],
+                    'message': 'localized on the map (' + ('camera matched the saved map' if self.mono_loc['source'] == 'visual' else 'placed by the operator') + ')'}
+        return {'state': 'need_pose', 'ready': False, 'source': None,
+                'message': 'not localized: move the robot slowly through mapped places until the camera recognises the map, or place it by hand'}
+
+    def _pub_loc_status(self):
+        if self._mono_loc_active():                       # lets d1_gateway / d1_companion refuse escorts until the robot knows where it is
+            self.pub_loc_status.publish(String(data=json.dumps(self._mono_status())))
+
     def loc(self):
         """Localization status, or None when the localizer is not running / silent for 3 s."""
+        if self._mono_loc_active():
+            return self._mono_status()
         if self.loc_status is None or time.time() - self.loc_t > 3.0 or not self.running('static_nav'):
             return None
         return self.loc_status
@@ -321,6 +350,8 @@ class Dashboard(Node):
             ls = self.loc()
             if (ls is not None and not ls.get('ready')) or (ls is None and not self.pose_confirmed):
                 return False, 'not ready: place the robot first (Place robot, or "robot is at the map origin")'
+        if self._mono_loc_active() and self.mono_loc['state'] != 'localized':
+            return False, 'not ready: move the robot until it is localized on the map (or place it by hand)'
         if not self.localized:
             return False, 'robot is not localized in the map yet'
         goal = NavigateToPose.Goal()
@@ -626,6 +657,83 @@ class Dashboard(Node):
         r['name'] = name
         return r
 
+    # ------------------------------------------------------------------ saved grid file -> 'map' layer; offline map editing
+    def _mono_grid_yaml(self, name):
+        p = os.path.join(self.maps_dir, name + '_grid.yaml')
+        try:
+            meta = json.load(open(os.path.join(self.maps_dir, name + '.json')))
+            if meta.get('grid'):
+                p = os.path.join(self.maps_dir, os.path.basename(meta['grid']))
+        except (OSError, ValueError):
+            pass
+        return p
+
+    @staticmethod
+    def _read_pgm(path):
+        with open(path, 'rb') as f:
+            raw = f.read()
+        toks, i = [], 0
+        while len(toks) < 4:                              # P5 <w> <h> <maxval>, '#' comments allowed
+            while raw[i:i + 1].isspace():
+                i += 1
+            if raw[i:i + 1] == b'#':
+                while raw[i:i + 1] not in (b'\n', b''):
+                    i += 1
+                continue
+            j = i
+            while not raw[j:j + 1].isspace():
+                j += 1
+            toks.append(raw[i:j])
+            i = j
+        if toks[0] != b'P5':
+            raise ValueError('only binary PGM (P5) maps are supported')
+        w, h, mx = int(toks[1]), int(toks[2]), int(toks[3])
+        if mx > 255:
+            raise ValueError('16-bit PGM not supported')
+        return np.frombuffer(raw, np.uint8, w * h, i + 1).reshape(h, w)
+
+    def _show_saved_grid(self, yaml_path):
+        """Load a nav2 map_server yaml + image into the 'map' layer (no ROS, no processes). Returns an error string or None."""
+        try:
+            y = yaml.safe_load(open(yaml_path))
+            img = self._read_pgm(os.path.join(os.path.dirname(yaml_path), y['image']))
+            pix = img.astype(np.float32)
+            occ = (pix / 255.0) if y.get('negate', 0) else (255.0 - pix) / 255.0
+            data = np.full(img.shape, -1, np.int8)
+            data[occ < float(y.get('free_thresh', 0.25))] = 0
+            data[occ > float(y.get('occupied_thresh', 0.65))] = 100
+            data[img == 205] = -1                          # "not scanned" grey is unknown even though 205 reads as free at free_thresh 0.25
+            data = data[::-1]                              # PGM row 0 is the top (north); the grid's row 0 is the south edge
+            ox, oy = float(y['origin'][0]), float(y['origin'][1])
+            with self.lock:
+                old = self.grids.get('map', {'version': 0})
+                self.grids['map'] = {'version': old['version'] + 1, 'w': int(img.shape[1]), 'h': int(img.shape[0]), 'res': float(y['resolution']),
+                                     'ox': ox, 'oy': oy, 'data': np.ascontiguousarray(data).tobytes()}
+            return None
+        except Exception as ex:  # noqa: BLE001
+            return f'could not read the saved map image: {ex}'
+
+    def edit_map(self, mid):
+        """Offline map editing (points of interest): no robot, camera or localization needed. Shows the saved map and its places."""
+        m = self._find_map(mid)
+        if m is None:
+            return {'ok': False, 'error': f'unknown map "{mid}"'}
+        if any(self.running(n) for n in ('mapping', 'localization', 'static_nav', 'nav2')):
+            return {'ok': False, 'error': 'stop the running workflow first (Clear all), then edit the map'}
+        yml = m.get('yaml') if m['kind'] == 'lidar' else self._mono_grid_yaml(m['name'])
+        with self.lock:
+            for g in ('map', 'global', 'local', 'live'):
+                self.grids.pop(g, None)
+            self.plan = []
+            self.current_map, self.current_entry, self.ui_mode = (m['id'] if m['kind'] == 'lidar' else m['name']), (m if m['kind'] == 'lidar' else None), 'edit'
+            self.trail = []
+            self.mono_loc = {'state': 'off', 'source': None, 't': 0.0, 'cov': None}
+        err = self._show_saved_grid(yml) if yml else 'this map has no saved grid image'
+        self._load_pois()
+        if err:
+            return {'ok': True, 'name': m['name'], 'places': len(self.pois), 'warning': err}
+        return {'ok': True, 'name': m['name'], 'places': len(self.pois)}
+
     def list_maps(self):
         out = self._static_maps()
         if self.mono:
@@ -664,7 +772,7 @@ class Dashboard(Node):
 
     def set_pose(self, x, y, yaw):
         """Tell the robot where it is in the map (like RViz '2D Pose Estimate'); the localizer sets map->odom."""
-        if not self.running('static_nav'):
+        if not self.running('static_nav') and not self._mono_loc_active():
             return {'ok': False, 'error': 'no map loaded (use Load map first)'}
         msg = PoseWithCovarianceStamped()
         msg.header.frame_id = 'map'
@@ -675,6 +783,8 @@ class Dashboard(Node):
         msg.pose.covariance[35] = 0.1
         self.pub_init.publish(msg)
         with self.lock:
+            if self._mono_loc_active():
+                self.mono_loc.update(state='localized', source='manual', t=time.time())
             self.start_pose, self.pose_confirmed = (float(x), float(y), float(yaw)), True
             self.trail, self.trail_frame = [], None
         return {'ok': True, 'pose': [x, y, yaw]}
@@ -735,7 +845,10 @@ class Dashboard(Node):
             self.plan = []
             self.current_map, self.current_entry, self.ui_mode = name, None, 'navigation'
             self.trail = []
+            self.mono_loc = {'state': 'localizing', 'source': None, 't': 0.0, 'cov': None}
+            self.pose_confirmed = False
         self._load_pois()
+        self._show_saved_grid(self._mono_grid_yaml(name))
         self.start('localization', db=db)
         threading.Timer(4.0, lambda: self.start('nav2')).start()
         return {'ok': True, 'name': name, 'places': len(self.pois)}
@@ -757,6 +870,7 @@ class Dashboard(Node):
             self.nav.update(status='idle', goal=None, distance_remaining=None, goal_handle=None)
             self.ui_mode, self.current_map, self.current_entry = 'idle', None, None
             self.pois, self.pois_file = {}, None
+            self.mono_loc = {'state': 'off', 'source': None, 't': 0.0, 'cov': None}
             self.start_pose, self.pose_confirmed = None, False
             self.trail = []
             self.job = {'name': None, 'status': 'idle', 'message': ''}
@@ -890,6 +1004,8 @@ def make_handler(dash):
                         return self._send(200, dash.start_map(b.get('name'), bool(b.get('record', True))))
                     if a == 'save_map':
                         return self._send(200, dash.save_map(b.get('name')))
+                    if a == 'edit_map':
+                        return self._send(200, dash.edit_map(b.get('name', '')))
                     if a == 'load_map':
                         return self._send(200, dash.load_map(b.get('name', '')))
                     if a == 'clear_all':
