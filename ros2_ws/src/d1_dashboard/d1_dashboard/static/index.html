@@ -127,9 +127,10 @@
       <label><input type="checkbox" id="navMode"> <b>Nav mode</b> (click = goal)</label>
       <label><input type="checkbox" id="follow" checked> Follow robot</label>
       <div class="legend">
-        <div><i style="background:#ff5a3c"></i> <b>obstacle</b> &mdash; avoid (box, wall, person)</div>
-        <div><i style="background:#24303f;border:1px solid #556"></i> free floor</div>
-        <div><i style="background:transparent;border:1px dashed #556"></i> empty = not seen yet</div>
+        <div><i style="background:#000;border:1px solid #888"></i> <b>wall / obstacle</b> (map)</div>
+        <div><i style="background:#fefefe"></i> free floor &nbsp;<i style="background:#cdcdcd"></i> not scanned</div>
+        <div><i style="background:#f0f"></i> costmap: lethal &nbsp;<i style="background:#0ff"></i> robot centre may not enter</div>
+        <div><i style="background:linear-gradient(90deg,#00f,#f00)"></i> costmap: low &rarr; high cost (Nav2 avoids)</div>
         <div><i style="background:#59b8ff"></i> trail &nbsp;<i style="background:#3ecf8e"></i> plan &nbsp;<i style="background:#ffd24c"></i> goal</div>
       </div>
       <div class="row"><button id="zin">+</button><button id="zout">&minus;</button><button id="fit">Fit</button><button id="center">Center</button></div>
@@ -190,19 +191,28 @@ function addGrid(g) {
   grids[g.name] = {w:g.w, h:g.h, res:g.res, ox:g.ox, oy:g.oy, raw:raw, canvas:(grids[g.name] && grids[g.name].canvas) || document.createElement('canvas'), version:g.version};
   renderGrid(g.name);
 }
-// Map look: walls = bright, free = dark slate, unknown = empty (no grey box). Costmaps: blue->orange gradient, lethal = red.
+// Look = RViz. Map: free white, occupied black, unknown grey. Costmap overlay: blue->red gradient, cyan = robot centre may not enter
+// (inscribed), magenta = lethal. The live camera layer (monocular SLAM only) keeps its own orange.
 function renderGrid(name) {
   const g = grids[name]; if (!g) return;
   const w = g.w, h = g.h, raw = g.raw, cv = g.canvas; cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d'), img = ctx.createImageData(w, h), d = img.data;
   const isMap = name === 'map', isLive = name === 'live';
-  let keep = null;
-  if (isMap && $('lClean') && $('lClean').checked) {            // display-only despeckle: an occupied cell needs >= 2 occupied neighbours
-    keep = new Uint8Array(w * h);
+  let keep = null, known = null;
+  if (isMap && $('lClean') && $('lClean').checked) {
+    // display-only clean-up (the map file is untouched): (1) an occupied cell needs >= 2 occupied neighbours, otherwise it is a stray dot;
+    // (2) a known cell needs >= 8 known cells in its 5x5 neighbourhood, otherwise it is a thin ray-cast spike and is shown as unknown.
+    keep = new Uint8Array(w * h); known = new Uint8Array(w * h);
     for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
       if (raw[j * w + i] < 50) continue; let c = 0;
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const jj = j + dj, ii = i + di; if (jj >= 0 && jj < h && ii >= 0 && ii < w && raw[jj * w + ii] >= 50) c++; }
       keep[j * w + i] = c >= 2 ? 1 : 0; }
+    const W = w + 1, sat = new Int32Array(W * (h + 1));                  // summed-area table of known cells
+    for (let j = 0; j < h; j++) { let row = 0; for (let i = 0; i < w; i++) { row += raw[j * w + i] >= 0 ? 1 : 0; sat[(j + 1) * W + i + 1] = sat[j * W + i + 1] + row; } }
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      if (raw[j * w + i] < 0) continue;
+      const j0 = Math.max(0, j - 2), j1 = Math.min(h, j + 3), i0 = Math.max(0, i - 2), i1 = Math.min(w, i + 3);
+      known[j * w + i] = (sat[j1 * W + i1] - sat[j0 * W + i1] - sat[j1 * W + i0] + sat[j0 * W + i0]) >= 8 ? 1 : 0; }
   }
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) {
@@ -210,13 +220,14 @@ function renderGrid(name) {
       let r = 0, gg = 0, b = 0, a = 0;
       if (isLive) { if (v >= 99) { r = 255; gg = 90; b = 60; a = 255; } else if (v > 0 && $('lHalo').checked) { r = 255; gg = 90; b = 60; a = 70; } }
       else if (isMap) {
-        if (v < 0) { a = 0; }                                                        // unknown: transparent
-        else if (v >= 50 && (!keep || keep[j * w + i])) { r = 255; gg = 90; b = 60; a = 255; }        // obstacle (same colour as live)
-        else { r = 36; gg = 47; b = 63; a = 255; }                                   // free (also despeckled cells)
+        if (v < 0 || (known && !known[j * w + i])) { r = gg = b = 205; a = 255; }                    // unknown: RViz grey
+        else if (v >= 50 && (!keep || keep[j * w + i])) { r = gg = b = 0; a = 255; }               // occupied: black
+        else { r = gg = b = 254; a = 255; }                                                        // free: white
       }
-      else if (v <= 0) { a = 0; }
-      else if (v >= 99) { r = 255; gg = 40; b = 90; a = 200; }
-      else { const t = v / 98; r = Math.round(40 + 215 * t); gg = Math.round(120 + 100 * t); b = Math.round(255 - 215 * t); a = 70 + Math.round(110 * t); }
+      else if (v <= 0) { a = 0; }                                                                  // costmap: free / unknown = transparent
+      else if (v >= 100) { r = 255; gg = 0; b = 255; a = 230; }                                    // lethal: magenta
+      else if (v === 99) { r = 0; gg = 255; b = 255; a = 220; }                                    // inscribed: cyan
+      else { const t = v / 98; r = Math.round(255 * t); gg = 0; b = Math.round(255 * (1 - t)); a = 70 + Math.round(120 * t); }   // blue -> red
       d[o] = r; d[o + 1] = gg; d[o + 2] = b; d[o + 3] = a;
     }
   }
@@ -228,6 +239,8 @@ const PROCS = ['robot','static_nav','perception','mapping','bag','localization',
 const MONO_PROCS = ['perception','mapping','bag','localization','nav2'];
 function renderState() {
   var mono = !S.features || S.features.mono_slam;
+  if (S.current_map && renderState.lastMap !== S.current_map) { var ms = document.getElementById('mapSel'); if (ms && Array.prototype.some.call(ms.options, function (o) { return o.value === S.current_map; })) { ms.value = S.current_map; renderState.lastMap = S.current_map; } }
+  if (!S.current_map) renderState.lastMap = null;
   ['bMap', 'mapName', 'rec'].forEach(function (id) { var e = document.getElementById(id); var t = (e && e.tagName == 'INPUT' && e.type == 'checkbox') ? e.parentNode : e; if (t) t.style.display = mono ? '' : 'none'; });
   var lv = document.getElementById('lLive'); if (lv) lv.parentNode.style.display = mono ? '' : 'none';
   var bs = document.getElementById('bStart'); if (bs) bs.innerHTML = mono ? '<span>1&nbsp;&nbsp;Start process</span><span class="n">robot + camera + depth</span>' : '<span>1&nbsp;&nbsp;Start process</span><span class="n">robot link</span>';

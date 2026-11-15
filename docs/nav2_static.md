@@ -40,6 +40,16 @@ ros2 launch d1_dashboard dashboard.launch.py external_robot:=true
 Verified 2026-11-15 with the sim and `maps/metacam_lite_2026-11-14`: load -> Nav2 active, goal refused before placing, placed at the origin, goal (0.94, 4.06) reached
 (final (0.91, 3.84), tolerance 0.25 m), costmaps update, save + reload with start pose.
 
+## How the map looks (RViz style)
+White = free floor, black = wall/obstacle, grey = not scanned. Costmap overlay (Layers: Global / Local costmap): blue -> red gradient = rising cost,
+cyan = robot centre may not enter, magenta = lethal. "Hide stray dots" cleans the *display* only (isolated black cells and thin ray-cast spikes); the map file is untouched.
+
+## Unknown space bug (fixed in `static_navigation.launch.py`)
+The lidar maps mark "not scanned" as pixel 205 with `free_thresh: 0.25`. map_server turns 205 into p = 0.196 < 0.25, i.e. **free**, so 43% of the first map
+(115,827 cells) loaded as free and Nav2 would plan through areas the lidar never saw. The launch now writes a patched copy (`/tmp/d1_nav_maps/<map>.yaml`,
+`free_thresh` 0.19) so those cells stay unknown (the global costmap does not plan through unknown). Verified: `/map` = 115,827 unknown / 153,699 free / 1,591 occupied.
+`d1_localization/localize.launch.py` on its own still loads such maps with the unknown area as free; set `free_thresh: 0.19` in the map's yaml there.
+
 ## Limits (be aware)
 * **No live localization.** The robot moves in the map by odometry (body velocity + IMU yaw) and drifts; re-place it when it has. Heading drifts ~9 deg/min when standing still.
 * **No live obstacles.** The costmap is the saved map: people, moved boxes and anything the scan missed are invisible. Low obstacles are weak in the first map (see `maps/README.md`).
