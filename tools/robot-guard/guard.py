@@ -39,7 +39,9 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from guard_core import Camera, Detection, Guard, Policy, State    # noqa: E402
+from awareness import FrameQuality                               # noqa: E402
+from guard_core import (Camera, Detection, Guard, Policy, State,  # noqa: E402
+                        to_person)
 
 # Vendor doc 5.1: wired link. Wireless is 192.168.234.1.
 DEFAULT_RTSP = "rtsp://192.168.168.168:8554/test"
@@ -134,6 +136,59 @@ class People:
         return out
 
 
+def frame_quality(frame, people, cam) -> FrameQuality:
+    """Whole-frame statistics, so the robot can tell "I looked and it was
+    clear" apart from "I could not see anything".
+
+    Downsampled hard before measuring: these are scene-level properties, and
+    at 10 Hz on a Jetson the cost of computing them on a full 1280x720 frame
+    is not worth paying for numbers that do not change.
+    """
+    try:
+        import cv2
+    except ImportError:
+        return FrameQuality()          # neutral: do not claim a problem we
+                                       # have no means to detect
+    small = cv2.resize(frame, (160, 90), interpolation=cv2.INTER_AREA)
+    grey = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    mean, std = grey.mean(), grey.std()
+    blur = cv2.Laplacian(grey, cv2.CV_64F).var()
+
+    # How much of the frame is taken up by bodies close enough to hide what is
+    # behind them. Someone across the forecourt occludes nothing worth seeing.
+    area = float(cam.width * cam.height)
+    near = sum(max(0.0, (d.x2 - d.x1)) * max(0.0, (d.y2 - d.y1))
+               for d, p in people if p.range_m < 2.0)
+    return FrameQuality(mean_luma=float(mean), rms_contrast=float(std),
+                        blur_var=float(blur),
+                        occluded_frac=min(1.0, near / area) if area else 0.0)
+
+
+def appearance_of(frame, d):
+    """Coarse colour signature of a detection, for telling two people apart
+    over a few seconds. Not re-identification - a 4x4x4 colour histogram of
+    the torso. It will confuse two guests in similar coats, and the escort is
+    built to wait and ask when it is unsure rather than rely on this."""
+    try:
+        import cv2
+    except ImportError:
+        return ()
+    h, w = frame.shape[:2]
+    # torso: middle of the box vertically, inset horizontally to miss the
+    # background either side of a person
+    x1 = max(0, int(d.x1 + (d.x2 - d.x1) * 0.25))
+    x2 = min(w, int(d.x2 - (d.x2 - d.x1) * 0.25))
+    y1 = max(0, int(d.y1 + (d.y2 - d.y1) * 0.15))
+    y2 = min(h, int(d.y1 + (d.y2 - d.y1) * 0.55))
+    if x2 - x1 < 4 or y2 - y1 < 4:
+        return ()
+    patch = frame[y1:y2, x1:x2]
+    hist = cv2.calcHist([patch], [0, 1, 2], None, [4, 4, 4],
+                        [0, 256, 0, 256, 0, 256])
+    total = float(hist.sum()) or 1.0
+    return tuple(float(v) / total for v in hist.flatten())
+
+
 class Robot:
     """Just enough of the robot API to shout stop."""
 
@@ -164,7 +219,7 @@ class Robot:
             return False
 
 
-def serve(guard, state, port, host):
+def serve(guard, state, port, host, flags):
     class H(BaseHTTPRequestHandler):
         def do_GET(self):
             from urllib.parse import parse_qs, urlparse
@@ -173,6 +228,8 @@ def serve(guard, state, port, host):
                 self.send_error(404)
                 return
             q = parse_qs(u.query)
+            if (q.get("appearance") or [None])[0] in ("1", "true", "yes"):
+                flags["want_appearance"] = True
             v = guard.tick(time.monotonic())
             body = dict(v.as_dict(), **state())
 
@@ -242,7 +299,13 @@ def main():
     guard = Guard(cam, Policy())
     robot = Robot(args.robot, args.token, args.dry_run)
 
-    stats = {"detect_ms": 0.0, "ticks": 0, "overrides": 0}
+    stats = {"detect_ms": 0.0, "ticks": 0, "overrides": 0,
+             "want_appearance": False}
+    # Raw observations, for whoever is navigating. The guard deliberately does
+    # NOT keep a visibility ring of its own: it is a passive safety observer
+    # and has no idea which way the body is pointing. The escort controller
+    # knows, because it issued the turns, so it owns the ring.
+    latest = {"frame": None, "people": []}
 
     def extra():
         return {"camera": {"ok": frames.ok, "error": frames.error,
@@ -254,9 +317,11 @@ def main():
                 "dry_run": args.dry_run,
                 "allow_blind": args.allow_blind,
                 "stops_sent": robot.stops,
-                "overrides": stats["overrides"]}
+                "overrides": stats["overrides"],
+                "frame": latest["frame"],
+                "people_seen": latest["people"]}
 
-    serve(guard, extra, args.port, args.host)
+    serve(guard, extra, args.port, args.host, stats)
     print("d1-guard  camera=%s  robot=%s  http=%s:%d  blind<%.2fm%s"
           % (args.rtsp, args.robot, args.host, args.port, cam.blind_radius_m,
              "  DRY RUN" if args.dry_run else ""), flush=True)
@@ -288,6 +353,31 @@ def main():
             # A thrown detector must NOT look like an empty frame. Empty means
             # "I looked and nobody is there"; a crash means "I did not look".
             v = guard.update(boxes, now) if boxes is not None else guard.tick(now)
+
+            if boxes is not None:
+                pairs = [(d, p) for d in boxes
+                         for p in (to_person(cam, d),) if p]
+                q = frame_quality(frame, pairs, cam)
+                latest["frame"] = {
+                    "usable": q.usable, "problem": q.problem,
+                    "mean_luma": round(q.mean_luma, 1),
+                    "rms_contrast": round(q.rms_contrast, 1),
+                    "blur_var": round(q.blur_var, 1),
+                    "occluded_frac": round(q.occluded_frac, 3),
+                }
+                latest["people"] = [{
+                    "range_m": round(p.range_m, 2),
+                    "bearing_deg": round(p.bearing_deg, 1),
+                    "height_m": round(p.height_m, 2),
+                    "width_deg": round((d.x2 - d.x1) / cam.width * cam.hfov_deg, 1),
+                    "is_child": p.is_child,
+                    "truncated": p.truncated,
+                    "conf": round(p.conf, 2),
+                    # Only computed when something is actually escorting, since
+                    # it is pure cost the rest of the time.
+                    "appearance": (appearance_of(frame, d)
+                                   if stats["want_appearance"] else ()),
+                } for d, p in pairs]
         else:
             v = guard.tick(now)                # no frame -> stale -> FREEZE
 

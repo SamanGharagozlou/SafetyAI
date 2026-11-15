@@ -86,6 +86,10 @@ const PORT = Number(process.env.PORT ?? 5174)
  */
 const GUARD = (process.env.GUARD_URL ?? '').replace(/\/$/, '')
 
+// d1-escort (tools/robot-guard/escort.py) - the "follow me" controller. Unset
+// means the escort controls simply do not appear.
+const ESCORT = (process.env.ESCORT_URL ?? '').replace(/\/$/, '')
+
 // A stop is never gated, and neither is reading state. Gating a stop would be
 // an own goal of the highest order.
 const UNGATED = new Set(['stop_robot', 'robot_status'])
@@ -347,6 +351,37 @@ createServer(async (req, res) => {
         startedAt: call.startedAt ?? null,
         timeline,
       })
+    }
+
+    if (url.pathname === '/api/escort') {
+      if (!ESCORT) return json(res, 200, { configured: false })
+      try {
+        if (req.method === 'POST') {
+          const body = await readBody(req)
+          const { action = 'start', ...rest } = JSON.parse(body || '{}')
+          if (action !== 'start' && action !== 'stop') {
+            return json(res, 400, { error: 'action must be start or stop' })
+          }
+          const r = await fetch(`${ESCORT}/${action}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(rest),
+            // Starting an escort is a fast bookkeeping call - the walking
+            // happens on the escort's own loop - so this does not need the
+            // long timeouts the blocking robot tools do.
+            signal: AbortSignal.timeout(5000),
+          })
+          return json(res, r.status, { configured: true, ...(await r.json()) })
+        }
+        const r = await fetch(`${ESCORT}/`, { signal: AbortSignal.timeout(2000) })
+        return json(res, 200, { configured: true, ...(await r.json()) })
+      } catch (error) {
+        return json(res, 200, {
+          configured: true,
+          phase: 'unreachable',
+          note: String(error.message ?? error),
+        })
+      }
     }
 
     if (req.method === 'GET' && url.pathname === '/api/guard') {

@@ -137,6 +137,21 @@
     letter-spacing: .06em; color: #0b0d10; background: var(--bad);
     padding: 2px 6px; border-radius: 3px;
   }
+  .g-escort { margin-top: 9px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .g-escort-row { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+  .g-escort-phase {
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--accent);
+  }
+  .g-escort-note { font-size: 12.5px; color: var(--muted); }
+  .g-escort-btns { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+  .mini {
+    font-size: 12px; padding: 5px 9px; background: #16202c;
+    color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
+    cursor: pointer;
+  }
+  .mini:hover { background: #1d2a39; }
+  .mini.bad { border-color: #6b2b30; color: #ffb3b8; }
 
   #meter {
     height: 12px; background: #0a0d12; border: 1px solid var(--line);
@@ -214,6 +229,17 @@
     <span class="g-child" id="g-child" hidden>child</span>
   </div>
   <div class="cmd-res" id="g-reason"></div>
+  <div class="g-escort" id="g-escort" hidden>
+    <div class="g-escort-row">
+      <span class="g-escort-phase" id="e-phase">idle</span>
+      <span class="g-escort-note" id="e-note"></span>
+    </div>
+    <div class="g-escort-btns">
+      <button id="e-lead-3" class="mini">Lead 3 m</button>
+      <button id="e-lead-6" class="mini">Lead 6 m</button>
+      <button id="e-stop" class="mini bad">Stop escort</button>
+    </div>
+  </div>
 </div>
 
 <div class="panel" style="margin-bottom:14px">
@@ -1300,8 +1326,51 @@ async function pollGuard() {
   }
 }
 
+// The escort runs its own loop on the Jetson; the console only starts, stops
+// and reports it. Deliberately NOT driven from the browser - a phone that
+// loses signal mid-escort must not leave the robot half way to the restaurant
+// with nothing watching the guest.
+async function pollEscort() {
+  const box = $('g-escort')
+  try {
+    const e = await (await fetch('/api/escort')).json()
+    if (!e.configured) { box.hidden = true; return }
+    box.hidden = false
+    $('e-phase').textContent = e.phase ?? '—'
+    const f = e.follower
+    const bits = []
+    if (e.target_cm) bits.push(`${e.walked_cm ?? 0}/${e.target_cm} cm`)
+    if (f) bits.push(`guest ${f.range_m} m, ${String(f.trend).replace('_', ' ')}`)
+    if (e.note) bits.push(e.note)
+    $('e-note').textContent = bits.join(' · ')
+  } catch {
+    box.hidden = false
+    $('e-phase').textContent = 'unreachable'
+    $('e-note').textContent = 'the console could not reach the escort service'
+  }
+}
+
+async function escort(action, distance_cm, destination) {
+  try {
+    await fetch('/api/escort', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, distance_cm, destination }),
+    })
+  } catch (error) {
+    banner('warn', `Could not reach the escort service: ${error.message ?? error}`)
+  }
+  pollEscort()
+}
+
+$('e-lead-3').onclick = () => escort('start', 300, 'the entrance')
+$('e-lead-6').onclick = () => escort('start', 600, 'the reception')
+$('e-stop').onclick = () => escort('stop')
+
 pollGuard()
+pollEscort()
 setInterval(pollGuard, 1000)
+setInterval(pollEscort, 1200)
 setInterval(poll, 2000)
 </script>
 </body>

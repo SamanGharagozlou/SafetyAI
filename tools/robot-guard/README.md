@@ -159,17 +159,132 @@ Useful flags: `--dry-run` decides and logs but never sends stop.
 install cannot brick a demo — **it leaves the robot unguarded and should be off
 whenever the public is present.**
 
+## Looking around, and leading people
+
+Two more pieces, both built on the same awkward fact: **the camera is bolted to
+the body.** There is no pan-tilt head — the spec lists no head servo and the
+SDK has no pan call — so "look left" means "turn the robot left".
+
+| | |
+|---|---|
+| `attitudeControl` | twist in place, yaw ±0.5 rad/s. Does not move the feet, so only a glance. |
+| `move(vx, vy, yaw)` | a real turn, yaw up to ±3.0 rad/s. At a sane 1.0 rad/s near people: 60° ≈ 1 s, 180° ≈ 3.1 s — and it must be undone. |
+
+So a left-right sweep costs ~3 s and a look behind ~6 s round trip. **Far too
+expensive to spend every metre on principle** — which is why scanning is
+triggered by not being able to see, rather than by distance travelled.
+
+### `awareness.py` — do I have visibility, and where should I look?
+
+A ring of bearing sectors, each remembering when a *usable* frame last covered
+it and how far it could see. Not a map: it holds no geometry and survives no
+movement. It answers only "how recently did I look that way, and what did I
+see" — which for a greeter working a few metres of pavement is the useful
+question. Building a metric map to answer it would be a research project
+(monocular, 122° lens, no wheel odometry) for no extra benefit.
+
+"No visibility" is made of measurable things:
+
+- **frame unusable** — blown out, too dark, too blurred, too flat. The
+  entrance is glass; backlit glass saturates a 122° lens, and a saturated
+  frame is not a view of an empty forecourt.
+- **occluded** — somebody close enough to fill the frame. Nothing behind them
+  is visible at any range.
+- **stale** — we have not pointed the camera that way recently enough to
+  believe anything about it. People move.
+
+**The rule that makes it honest: a bad frame never refreshes the map.** If a
+blown-out frame counted as "I looked and it was clear", the robot would talk
+itself into confidence it had not earned, and the staler its knowledge got the
+more certain it would become. Unusable frames mark the direction unknown and
+demand a fresh look.
+
+The sweep planner only aims at sectors that are actually stale, thins aims to
+roughly one lens-width apart, and orders them cheapest-turn-first — so a 240°
+arc costs two to four looks, not sixteen.
+
+### `escort_core.py` + `escort.py` — "follow me"
+
+The problem, stated plainly: **the camera faces forward and the follower is
+behind.** While the robot leads, the person it is leading is in the one place
+it cannot see. That is geometry, not model quality.
+
+Three ways out:
+
+1. **Look back at checkpoints** — implemented. Walk a leg, stop, turn,
+   confirm, turn back. A full 180° is not needed: at HFOV 122° the frame spans
+   ±61°, so **135° puts straight-behind comfortably inside the frame** and
+   saves a quarter of every check.
+2. **Crab-walk**, facing across the direction of travel. `move()` takes a
+   sideways `vy`, so the guest stays in frame the whole way with no stutter —
+   but the direction of travel then sits at the extreme edge of the lens,
+   where distortion is worst and the people-guard least reliable. Trading
+   forward visibility for rear visibility, walking towards stairs, is not
+   obviously a win. Left as an option.
+3. **A second camera on the spare USB port.** The honest fix, ~£30, and then
+   none of this is necessary.
+
+**"Following" is a trend, not a presence.** Someone who stops to read a sign is
+still visible behind the robot, at a growing range. So the range at each
+checkpoint is kept: holding steady is following, growing every time is being
+left behind — and then the robot waits and says so rather than arriving alone.
+It verifies once more *at* the destination, because arriving alone is the
+failure the whole module exists to prevent.
+
+Identity is deliberately weak — a 4×4×4 colour histogram of the torso compared
+by cosine similarity. Enough to prefer the right person out of two over a few
+seconds; nowhere near re-identification. With a dozen people about it can be
+fooled, so the asymmetry is built in: **being unsure means waiting and asking,
+never walking on.**
+
+```bash
+python3 escort.py --guard http://127.0.0.1:8092 --robot http://127.0.0.1:8090
+curl -XPOST localhost:8093/start -d '{"distance_cm":450,"destination":"the restaurant"}'
+curl localhost:8093/        # phase, follower range and trend, visibility
+curl -XPOST localhost:8093/stop
+```
+
+The people-guard outranks the escort at every step. An escort in progress is
+not a reason to walk into somebody.
+
+### Two things that want the same one-line fix
+
+**Turns are open-loop.** `move_robot` takes a direction, a duration and a speed
+*fraction* — not an angle. So every turn is dead-reckoned and the ring's
+bearings drift with it. Measure the rate before trusting any of it:
+
+```bash
+python3 calibrate.py turnrate --robot http://127.0.0.1:8090
+```
+
+That commands a known turn and reads the actual rotation off the camera by
+phase correlation — the camera as its own protractor. It needs texture in view;
+a blank wall gives it nothing to lock onto.
+
+**It cannot speak.** Speech belongs to the Vapi layer on the Jetson, outside
+this repo, so `say` actions surface as `pending_say` in the escort's status for
+the voice layer to pick up. Until that is wired, an escort that loses its guest
+stops and waits *silently* — safe, but rude.
+
+Both disappear if the agent forwards `getRPY()`: turns close the loop, bearings
+stop drifting.
+
 ## Tests
 
 ```bash
-python3 test_guard_core.py      # 22 tests, no camera, no torch, no robot
+python3 test_guard_core.py      # 22  the people-guard
+python3 test_awareness.py       # 18  visibility and scan planning
+python3 test_escort.py          # 15  follow-me
 ```
 
-`guard_core.py` is pure stdlib on purpose: the safety logic is testable on a
-laptop while the robot is flat, which is most of the time. The scenarios
-covered are the ones the obvious implementation gets wrong — the child who
-walks into the blind spot, the feed that dies, the box clipped by the frame
-bottom.
+55 tests, no camera, no torch, no robot.
+
+All three cores are pure stdlib on purpose: the logic is testable on a laptop
+while the robot is flat, which is most of the time. The scenarios covered are
+the ones the obvious implementation gets wrong — the child who walks into the
+blind spot, the feed that dies, the box clipped by the frame bottom, the
+blown-out frame that must not count as having looked, the guest who stops
+following.
 
 ## What this is not
 
@@ -189,6 +304,13 @@ reason to let the dog walk unattended near small children.
   people. Pushchairs, luggage, glass doors and the top of a stairwell are
   invisible to it. The walkway outside the entrance has stairs down to the
   reception — nothing here knows that.
-- **Mapping.** Deliberately skipped; see the top-level discussion. Monocular
-  SLAM on a 122° lens with no wheel odometry is a research project, and a
-  greeter that works a 3 m patch of pavement does not need a map.
+- **Mapping.** Deliberately skipped. Monocular SLAM on a 122° lens with no
+  wheel odometry is a research project, and a greeter that works a 3 m patch of
+  pavement does not need a map — `awareness.py` answers the actual question
+  without one.
+- **Closed-loop turns.** Needs `getRPY()` forwarded from the agent.
+- **Escort speech.** Needs the Vapi layer to read `pending_say`.
+- **Leading anyone down the stairs to reception.** The walkthrough video shows
+  the route; `set_gait('climb')` exists. Nothing here detects a step, a
+  handrail or the top of a flight, and a 16 kg quadruped descending stairs
+  beside a guest is not a thing to switch on untested.
