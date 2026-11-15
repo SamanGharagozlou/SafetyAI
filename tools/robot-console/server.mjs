@@ -82,6 +82,45 @@ const HOST = process.env.HOST ?? '127.0.0.1'
 const TOKEN = process.env.D1_ROBOT_TOKEN
 
 /**
+ * ACCESS KEY. Required whenever this is reachable from anywhere but loopback.
+ *
+ * The console has no other authentication: whoever loads the page can move
+ * the robot. That was acceptable while it drove a simulator on localhost. It
+ * is not acceptable on a public tunnel attached to a real machine standing in
+ * front of the public, so the server REFUSES to bind a non-loopback address
+ * without a key rather than letting that happen by omission.
+ *
+ * One shared key, delivered in the URL once and then held in a cookie: enough
+ * to stop a bot that finds the hostname, and simple enough to open on a phone.
+ * It is NOT a substitute for Tailscale Serve, which is the real answer because
+ * it never exposes the thing publicly at all.
+ */
+const ACCESS_KEY = process.env.CONSOLE_KEY
+const LOOPBACK = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1'
+
+if (!LOOPBACK && !ACCESS_KEY) {
+  console.error(`REFUSING TO START: bound to ${HOST} with no CONSOLE_KEY.\n`)
+  console.error('This console moves a physical robot and has no other login, so it will not')
+  console.error('listen on a public address unprotected. Set CONSOLE_KEY=<random string>,')
+  console.error('or leave HOST unset to stay on loopback.')
+  process.exit(1)
+}
+
+/** Constant-time-ish compare, so the key cannot be guessed a character at a time. */
+function keyMatches(given) {
+  if (!given || given.length !== ACCESS_KEY.length) return false
+  let diff = 0
+  for (let i = 0; i < given.length; i++) diff |= given.charCodeAt(i) ^ ACCESS_KEY.charCodeAt(i)
+  return diff === 0
+}
+
+const authorised = req => {
+  if (!ACCESS_KEY) return true
+  const cookie = /(?:^|;\s*)d1key=([^;]+)/.exec(req.headers.cookie ?? '')
+  return cookie ? keyMatches(decodeURIComponent(cookie[1])) : false
+}
+
+/**
  * Voice. Both values are PUBLIC by design - a Vapi public key is meant to ship
  * in a browser bundle, and an assistant id is not a secret. Unlike the robot
  * bearer token, these are safe to hand to the page.
@@ -179,6 +218,26 @@ const readBody = req => new Promise((resolve, reject) => {
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://localhost:${PORT}`)
+
+    // ?k=<key> exchanges the key for a cookie, once, then drops it from the
+    // address bar so it does not linger in screenshots or shared links.
+    if (ACCESS_KEY && url.searchParams.has('k')) {
+      if (keyMatches(url.searchParams.get('k'))) {
+        res.writeHead(302, {
+          'Set-Cookie': `d1key=${encodeURIComponent(ACCESS_KEY)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`,
+          Location: '/',
+        })
+        return res.end()
+      }
+      console.warn(`[auth] rejected key from ${req.socket.remoteAddress}`)
+    }
+
+    if (!authorised(req)) {
+      res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' })
+      return res.end('<body style="font:16px system-ui;background:#0e1116;color:#e6edf3;padding:40px">'
+        + '<h2>Access key required</h2><p>This console moves a physical robot. '
+        + 'Open the link that includes <code>?k=…</code>.</p></body>')
+    }
 
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       const html = await readFile(join(HERE, 'index.html'), 'utf8')
