@@ -571,6 +571,15 @@ async function startMeter() {
       audio: deviceId ? { deviceId: { exact: deviceId } } : true,
     })
     meterCtx = new AudioContext()
+    // Chrome starts an AudioContext SUSPENDED when it is created without a
+    // user gesture, and a suspended context feeds the analyser nothing - so
+    // the meter read "silent" while speech was demonstrably being
+    // transcribed. Resume it, and resume again on the first click in case
+    // this construction happened before any interaction.
+    if (meterCtx.state === 'suspended') {
+      meterCtx.resume().catch(() => {})
+      document.addEventListener('click', () => meterCtx?.resume().catch(() => {}), { once: true })
+    }
     const src = meterCtx.createMediaStreamSource(meterStream)
     const an = meterCtx.createAnalyser()
     an.fftSize = 512
