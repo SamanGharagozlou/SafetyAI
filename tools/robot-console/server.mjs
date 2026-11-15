@@ -65,6 +65,67 @@ const ROBOT = (process.env.ROBOT_URL ?? 'https://d1-jetson.tail5ec076.ts.net').r
 const PORT = Number(process.env.PORT ?? 5174)
 
 /**
+ * d1-guard (tools/robot-guard) - the camera-based people gate.
+ *
+ * Unset -> no gate at all, exactly as before. Set -> every motion command is
+ * adjudicated against what the camera can see first.
+ *
+ * The gate is NOT the main protection and must not be mistaken for it. A walk
+ * is a BLOCKING call on the robot for up to 25s, so by the time a guest steps
+ * in front of the dog the command was accepted long ago and nothing is asking
+ * this server's permission any more. Refusing the NEXT command does nothing
+ * for the one already running. Interrupting that one is the guard's own job,
+ * which it does by sending stop_robot directly. This gate only stops us
+ * STARTING something that is already unsafe.
+ *
+ * If the guard is configured but unreachable, motion is REFUSED. A crashed
+ * guard reading as "all clear" is the exact failure this stack already shipped
+ * once, when the endpoint served 200s with nulls while the robot lay on the
+ * floor. The error message says how to drop the gate, which takes two seconds
+ * - far better than a silent downgrade nobody notices.
+ */
+const GUARD = (process.env.GUARD_URL ?? '').replace(/\/$/, '')
+
+// d1-escort (tools/robot-guard/escort.py) - the "follow me" controller. Unset
+// means the escort controls simply do not appear.
+const ESCORT = (process.env.ESCORT_URL ?? '').replace(/\/$/, '')
+
+// A stop is never gated, and neither is reading state. Gating a stop would be
+// an own goal of the highest order.
+const UNGATED = new Set(['stop_robot', 'robot_status'])
+
+async function askGuard(name, args) {
+  if (!GUARD || UNGATED.has(name)) return { allowed: true }
+  const action = (name === 'walk_distance' || name === 'move_robot') ? 'walk'
+    : (name === 'do_gesture') ? 'gesture'
+    : (name === 'robot_command') ? 'gesture'
+    : 'gesture'
+  const gesture = name === 'do_gesture' ? (args.gesture ?? args.name ?? '')
+    : name === 'robot_command' ? (args.command ?? '')
+    : ''
+  const url = `${GUARD}/guard?action=${action}&name=${encodeURIComponent(gesture)}`
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(1500) })
+    const v = await r.json()
+    return {
+      allowed: v.allowed !== false,
+      state: v.state,
+      reason: v.reason,
+      nearest_m: v.nearest_m,
+      child_near: v.child_near,
+    }
+  } catch (error) {
+    return {
+      allowed: false,
+      state: 'UNREACHABLE',
+      reason: `the camera guard at ${GUARD} did not answer (${error.message ?? error}). `
+        + 'Motion is refused while it is down. Restart d1-guard, or unset '
+        + 'GUARD_URL to run the robot unguarded.',
+    }
+  }
+}
+
+/**
  * Binds to LOOPBACK ONLY by default, and that default is load-bearing.
  *
  * On the Jetson this process holds a token that drives a physical robot and
@@ -80,6 +141,45 @@ const PORT = Number(process.env.PORT ?? 5174)
 const HOST = process.env.HOST ?? '127.0.0.1'
 
 const TOKEN = process.env.D1_ROBOT_TOKEN
+
+/**
+ * ACCESS KEY. Required whenever this is reachable from anywhere but loopback.
+ *
+ * The console has no other authentication: whoever loads the page can move
+ * the robot. That was acceptable while it drove a simulator on localhost. It
+ * is not acceptable on a public tunnel attached to a real machine standing in
+ * front of the public, so the server REFUSES to bind a non-loopback address
+ * without a key rather than letting that happen by omission.
+ *
+ * One shared key, delivered in the URL once and then held in a cookie: enough
+ * to stop a bot that finds the hostname, and simple enough to open on a phone.
+ * It is NOT a substitute for Tailscale Serve, which is the real answer because
+ * it never exposes the thing publicly at all.
+ */
+const ACCESS_KEY = process.env.CONSOLE_KEY
+const LOOPBACK = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1'
+
+if (!LOOPBACK && !ACCESS_KEY) {
+  console.error(`REFUSING TO START: bound to ${HOST} with no CONSOLE_KEY.\n`)
+  console.error('This console moves a physical robot and has no other login, so it will not')
+  console.error('listen on a public address unprotected. Set CONSOLE_KEY=<random string>,')
+  console.error('or leave HOST unset to stay on loopback.')
+  process.exit(1)
+}
+
+/** Constant-time-ish compare, so the key cannot be guessed a character at a time. */
+function keyMatches(given) {
+  if (!given || given.length !== ACCESS_KEY.length) return false
+  let diff = 0
+  for (let i = 0; i < given.length; i++) diff |= given.charCodeAt(i) ^ ACCESS_KEY.charCodeAt(i)
+  return diff === 0
+}
+
+const authorised = req => {
+  if (!ACCESS_KEY) return true
+  const cookie = /(?:^|;\s*)d1key=([^;]+)/.exec(req.headers.cookie ?? '')
+  return cookie ? keyMatches(decodeURIComponent(cookie[1])) : false
+}
 
 /**
  * Voice. Both values are PUBLIC by design - a Vapi public key is meant to ship
@@ -180,6 +280,26 @@ createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://localhost:${PORT}`)
 
+    // ?k=<key> exchanges the key for a cookie, once, then drops it from the
+    // address bar so it does not linger in screenshots or shared links.
+    if (ACCESS_KEY && url.searchParams.has('k')) {
+      if (keyMatches(url.searchParams.get('k'))) {
+        res.writeHead(302, {
+          'Set-Cookie': `d1key=${encodeURIComponent(ACCESS_KEY)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`,
+          Location: '/',
+        })
+        return res.end()
+      }
+      console.warn(`[auth] rejected key from ${req.socket.remoteAddress}`)
+    }
+
+    if (!authorised(req)) {
+      res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' })
+      return res.end('<body style="font:16px system-ui;background:#0e1116;color:#e6edf3;padding:40px">'
+        + '<h2>Access key required</h2><p>This console moves a physical robot. '
+        + 'Open the link that includes <code>?k=…</code>.</p></body>')
+    }
+
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       const html = await readFile(join(HERE, 'index.html'), 'utf8')
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
@@ -187,7 +307,15 @@ createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/api/voice-config') {
-      return json(res, 200, { publicKey: VAPI_PUBLIC_KEY, assistantId: VAPI_ASSISTANT_ID })
+      // `simulated` drives a banner in the page. When this console is public
+      // (a tunnel, for a phone), the single most important thing a viewer can
+      // know is whether the buttons move a real machine or a fake one.
+      return json(res, 200, {
+        publicKey: VAPI_PUBLIC_KEY,
+        assistantId: VAPI_ASSISTANT_ID,
+        simulated: /127\.0\.0\.1|localhost/.test(ROBOT) && !ROBOT.includes(':8090'),
+        robot: ROBOT,
+      })
     }
 
     if (req.method === 'GET' && url.pathname === '/api/last-call') {
@@ -225,6 +353,52 @@ createServer(async (req, res) => {
       })
     }
 
+    if (url.pathname === '/api/escort') {
+      if (!ESCORT) return json(res, 200, { configured: false })
+      try {
+        if (req.method === 'POST') {
+          const body = await readBody(req)
+          const { action = 'start', ...rest } = JSON.parse(body || '{}')
+          if (action !== 'start' && action !== 'stop') {
+            return json(res, 400, { error: 'action must be start or stop' })
+          }
+          const r = await fetch(`${ESCORT}/${action}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(rest),
+            // Starting an escort is a fast bookkeeping call - the walking
+            // happens on the escort's own loop - so this does not need the
+            // long timeouts the blocking robot tools do.
+            signal: AbortSignal.timeout(5000),
+          })
+          return json(res, r.status, { configured: true, ...(await r.json()) })
+        }
+        const r = await fetch(`${ESCORT}/`, { signal: AbortSignal.timeout(2000) })
+        return json(res, 200, { configured: true, ...(await r.json()) })
+      } catch (error) {
+        return json(res, 200, {
+          configured: true,
+          phase: 'unreachable',
+          note: String(error.message ?? error),
+        })
+      }
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/guard') {
+      if (!GUARD) return json(res, 200, { configured: false })
+      try {
+        const r = await fetch(`${GUARD}/guard`, { signal: AbortSignal.timeout(1500) })
+        return json(res, 200, { configured: true, ...(await r.json()) })
+      } catch (error) {
+        return json(res, 200, {
+          configured: true,
+          state: 'UNREACHABLE',
+          reason: String(error.message ?? error),
+          walk_ok: false,
+        })
+      }
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/status') {
       try {
         return json(res, 200, await robotStatus())
@@ -241,6 +415,19 @@ createServer(async (req, res) => {
       if (!TOOLS.has(name)) return json(res, 400, { error: `tool not allowed: ${name}` })
       if (name === 'robot_command' && !COMMANDS.has(args.command)) {
         return json(res, 400, { error: `command not allowed: ${args.command}` })
+      }
+
+      const verdict = await askGuard(name, args)
+      if (!verdict.allowed) {
+        console.log(`[guard] REFUSED ${name} - ${verdict.state}: ${verdict.reason}`)
+        // 200, not 4xx: this is a normal, expected outcome that the operator
+        // and the voice agent both need to read as prose, not as a transport
+        // failure to retry.
+        return json(res, 200, {
+          result: `Held by the camera guard: ${verdict.reason}`,
+          refused: true,
+          guard: verdict,
+        })
       }
 
       try {
