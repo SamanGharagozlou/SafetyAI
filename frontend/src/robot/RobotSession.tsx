@@ -33,7 +33,7 @@ export function RobotSession({ info, session, nickname, talk, onExpired, onLeave
   const [pending, setPending] = useState<Pending | null>(null)
   const [draft, setDraft] = useState('')
   const [typing, setTyping] = useState(false)       // typing is optional: the conversation is by voice or taps
-  const [showPlaces, setShowPlaces] = useState(false)
+  const [showPlaces, setShowPlaces] = useState(true)
   const [yes, setYes] = useState(0)
   const [voiceTest, setVoiceTest] = useState('')
   const [stopping, setStopping] = useState(false)
