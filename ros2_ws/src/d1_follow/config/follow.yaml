@@ -1,0 +1,39 @@
+d1_follow:
+  ros__parameters:
+    image_topic: /camera/image_raw
+    detections_topic: /perception/humans/detections
+    embedder: osnet            # osnet | histogram (fallback when boxmot is missing)
+    device: cpu
+    auto_lock: false           # true: lock onto the first confirmed person by itself
+    stale_s: 0.5               # publish zero velocity when detections are older
+    image_buffer: 30           # frames kept to pair with (slow) detections by stamp
+
+    # IoU tracker
+    iou_min: 0.3
+    min_hits: 3
+    max_misses: 15
+
+    # target lock
+    lock_window_s: 0.5
+    lock_margin: 1.3
+    lock_timeout_s: 5.0
+    seed_size: 3
+    gallery_size: 10
+    verify_period_s: 1.0
+    sim_accept: 0.70
+    sim_reject: 0.50
+    reject_checks: 2
+    reacquire_period_s: 0.3
+    reacquire_hits: 3
+    reacquire_margin: 0.10
+    lost_timeout_s: 30.0
+    overlap_iou: 0.1
+
+    # follow controller (dry-run; node clamps max_vx<=0.5, max_wz<=0.8)
+    target_height_frac: 0.6
+    k_yaw: 1.0
+    k_x: 1.2
+    yaw_deadband: 0.08
+    x_deadband: 0.05
+    max_vx: 0.5
+    max_wz: 0.8
