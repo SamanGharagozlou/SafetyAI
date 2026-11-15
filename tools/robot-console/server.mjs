@@ -192,7 +192,27 @@ const authorised = req => {
  * browser - which is also why it is unaffected by the missing CORS headers.
  */
 const VAPI_PUBLIC_KEY = process.env.VAPI_PUBLIC_KEY ?? '2cdfae81-9e4a-4215-a17b-7ec2b7bf6aa4'
-const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID ?? '19828665-3d22-47b3-a72f-079e19b45aca'
+/*
+ * DEFAULTS TO THE LEUKERBAD GREETER, not the bare robot assistant.
+ *
+ * Two assistants carry the 7 robot tools and they are easy to confuse:
+ *
+ *   a366d544…  "Leukerbad Therme greeter"      14.6k-char spa persona + 11
+ *              tools: the 6 robot ones pointed at the Jetson funnel, plus 5
+ *              venue tools (offerings, booking, destinations, payment QR,
+ *              call staff) pointed at the info server.
+ *   19828665…  "ClawMetry D1 Robot (voice)"    3.2k chars, 7 robot tools, and
+ *              NO IDEA WHAT LEUKERBAD IS. Fine for teleop, useless as a greeter.
+ *
+ * This console IS the spa demo, so it defaults to the greeter. It used to
+ * default to the robot one, which meant that any restart that forgot to pass
+ * VAPI_ASSISTANT_ID silently downgraded the greeter into a robot remote that
+ * answered spa questions with a shrug - a failure with no error anywhere,
+ * visible only by talking to it. That happened. Hence the default, not a
+ * comment telling the next person to remember.
+ */
+const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID
+  ?? 'a366d544-fcf3-4b98-a436-d1b8c458891a'
 
 /**
  * OPTIONAL, for tuning only: the Vapi PRIVATE key, which unlocks the
