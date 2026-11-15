@@ -18,8 +18,12 @@ export default defineConfig(({ command, mode }) => {
       this.emitFile({ type: 'asset', fileName: 'demo-config.json', source: `${JSON.stringify(config, null, 2)}\n` })
     },
   } : null
+  // Robot mode (vite --mode robot): same-origin /api is proxied to the companion backend. Host header is kept so its same-origin check passes.
+  const proxy = mode === 'robot' ? { '/api': { target: process.env.D1_COMPANION_URL || 'http://127.0.0.1:8780', changeOrigin: false } } : undefined
   return {
     base: '/',
+    server: proxy ? { proxy } : undefined,
+    preview: proxy ? { proxy } : undefined,
     envPrefix: 'VITE_',
     build: { sourcemap: false },
     // The static demo must not ship the third-party voice client at all: no

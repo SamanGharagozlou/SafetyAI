@@ -7,6 +7,9 @@ import { useRoute } from './useRoute'
 import { CallScreen } from './call/CallScreen'
 import { LiveCallScreen } from './call/LiveCallScreen'
 import { resolveVapiConfig } from './voice/vapiSession'
+import { RobotSession } from './robot/RobotSession'
+import { createRobotSession, endRobotSession, RobotApiError } from './robot/robotApi'
+import type { RobotSessionInfo } from './robot/robotApi'
 import { DEMO_VAPI_ASSISTANT_ID, DEMO_VAPI_PUBLIC_KEY } from './voice/vapiDefaults'
 
 // Live duplex voice, on by default so the branch runs with no setup.
@@ -23,8 +26,23 @@ const vapi = env.MODE === 'demo' ? null : resolveVapiConfig({
   VITE_VAPI_ASSISTANT_ID: env.VITE_VAPI_ASSISTANT_ID ?? DEMO_VAPI_ASSISTANT_ID,
 })
 
+// Robot mode (vite --mode robot): the app talks to the robot companion backend (docs/companion_api.md). Every other mode is the unchanged demo.
+const robotMode = env.MODE === 'robot'
+const readQrToken = () => (robotMode ? new URLSearchParams(window.location.search).get('t') ?? '' : '')
+const robotErrorText = (error: unknown) => {
+  const code = error instanceof RobotApiError ? error.code : 'service_unavailable'
+  if (code === 'invalid_qr') return 'This QR code is not valid any more. Please scan the code on the robot again.'
+  if (code === 'robot_busy') return 'The robot is with another guest right now. Please try again in a few minutes.'
+  if (code === 'robot_unavailable') return 'The robot is not available right now. A staff member can help.'
+  return 'We couldn’t reach the robot. Please try again, or ask a staff member for help.'
+}
+
 type Notice = 'ended' | 'expired' | 'unavailable' | null
-const notices = {
+const notices = robotMode ? {
+  ended: 'Your session has ended. Scan the code on the robot to start again.',
+  expired: 'Your session has expired. Scan the code on the robot to start again.',
+  unavailable: 'There’s no active session on this page. Scan the code on the robot to start.',
+} : {
   ended: 'Your demo session has ended. Ready for another hello?',
   expired: 'Your demo session has expired. Start again whenever you’re ready.',
   unavailable: 'There’s no active demo session on this page. Let’s start with a hello.',
@@ -36,7 +54,13 @@ export function App() {
   const [nickname, setNickname] = useState('')
   const [notice, setNotice] = useState<Notice>(null)
   const [error, setError] = useState('')
+  const [robotInfo, setRobotInfo] = useState<RobotSessionInfo | null>(null)
+  const [qrToken] = useState(readQrToken)
+  const [starting, setStarting] = useState(false)
   const heading = useRef<HTMLHeadingElement>(null)
+
+  // The QR token is a secret proving presence at the robot: keep it in memory only and take it out of the address bar and history.
+  useEffect(() => { if (robotMode && qrToken && window.location.search) window.history.replaceState(null, '', window.location.pathname) }, [qrToken])
 
   useEffect(() => {
     heading.current?.focus({ preventScroll: true })
@@ -56,6 +80,7 @@ export function App() {
   }, [route, session, navigate])
 
   const expireSession = useCallback(() => {
+    setRobotInfo(null)
     setSession(null)
     setNickname('')
     setNotice('expired')
@@ -79,7 +104,27 @@ export function App() {
     }
   }, [session, expireSession])
 
+  async function startRobotSession(asGuest: boolean) {
+    if (starting) return
+    setStarting(true)
+    setError('')
+    try {
+      const info = await createRobotSession(qrToken, asGuest ? '' : nickname)
+      const bytes = crypto.getRandomValues(new Uint8Array(12))
+      setRobotInfo(info)
+      setSession({ id: `robot-${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`, nickname: info.nickname, expiresAt: info.authorization.expiresAt })
+      setNickname('')
+      setNotice(null)
+      navigate('/session')
+    } catch (failure) {
+      setError(qrToken ? robotErrorText(failure) : 'Please scan the QR code on the robot to start.')
+    } finally {
+      setStarting(false)
+    }
+  }
+
   function startSession(asGuest = false) {
+    if (robotMode) { void startRobotSession(asGuest); return }
     try {
       const next = demoSessionService.create(asGuest ? '' : nickname, sessionDuration(import.meta.env.VITE_DEMO_SESSION_SECONDS))
       setSession(next)
@@ -93,6 +138,8 @@ export function App() {
   }
 
   function endSession() {
+    if (robotInfo) void endRobotSession(robotInfo.authorization).catch(() => undefined)   // best effort: the server also ends it on its own
+    setRobotInfo(null)
     setSession(null)
     setNickname('')
     setError('')
@@ -114,7 +161,7 @@ export function App() {
         <span className="brand-icon" aria-hidden="true"><span/><span/></span>
         <span>Claw<span className="text-teal-300">Metry</span><span className="brand-dot">.</span></span>
       </a>
-      <span className="prototype-badge">{route === '/session' ? 'DEMO MODE' : 'VISITOR PROTOTYPE'}</span>
+      <span className="prototype-badge">{route === '/session' ? (robotMode ? 'LIVE ROBOT' : 'DEMO MODE') : 'VISITOR PROTOTYPE'}</span>
     </header>
 
     <main id="main-content" className={route === '/session' && session ? 'call-main' : undefined}>
@@ -129,13 +176,16 @@ export function App() {
           <input id="nickname" name="nickname" value={nickname} onChange={event => { setNickname(event.target.value); setError('') }} maxLength={40} placeholder="A nickname is perfect" autoComplete="off" aria-describedby="nickname-help" />
           <p id="nickname-help" className="field-help">Just a nickname, or leave it blank. You’re welcome either way.</p>
           {error && <p className="form-error" role="alert">{error}</p>}
-          <button type="submit" className="primary-button">Let's Get Started <span aria-hidden="true">→</span></button>
-          <button type="button" className="guest-button" onClick={() => startSession(true)}>Continue as Guest</button>
+          <button type="submit" className="primary-button" disabled={starting}>{starting ? 'Connecting…' : <>Let's Get Started <span aria-hidden="true">→</span></>}</button>
+          <button type="button" className="guest-button" disabled={starting} onClick={() => startSession(true)}>Continue as Guest</button>
         </form>
         <div className="privacy-note"><Shield/><p><strong>Your curiosity. Your privacy.</strong><br/>No real name, email, or account needed. Microphone access is your choice after joining.</p></div>
       </section>}
 
-      {route === '/session' && session && (vapi
+      {route === '/session' && session && (robotMode && robotInfo
+        ? <RobotSession key={session.id} info={robotInfo} session={{ id: session.id, expiresAt: session.expiresAt }} nickname={session.nickname} onExpired={expireSession} onLeave={endSession} onPrivacy={openPrivacy}
+            talk={vapi ? <LiveCallScreen key={`talk-${session.id}`} robot config={vapi} session={{ id: session.id, expiresAt: session.expiresAt }} nickname={session.nickname} onExpired={expireSession} onLeave={endSession} onPrivacy={openPrivacy}/> : undefined}/>
+        : vapi
         ? <LiveCallScreen key={session.id} config={vapi} session={{ id: session.id, expiresAt: session.expiresAt }} nickname={session.nickname} onExpired={expireSession} onLeave={endSession} onPrivacy={openPrivacy}/>
         : <CallScreen key={session.id} session={{ id: session.id, expiresAt: session.expiresAt }} nickname={session.nickname} onExpired={expireSession} onLeave={endSession} onPrivacy={openPrivacy}/>)}
 
@@ -143,7 +193,17 @@ export function App() {
         <span className="privacy-emblem"><Shield/></span>
         <span className="eyebrow">A CLEARER PICTURE</span>
         <h1 ref={heading} tabIndex={-1} id="privacy-heading">Privacy, in plain words.</h1>
-        <p className="intro">Here’s how this local Demo prototype works.</p>
+        {robotMode ? <><p className="intro">Here’s how this robot companion works.</p>
+        <dl className="privacy-details">
+          <div><dt>A nickname is optional.</dt><dd>You can continue as Guest. No real name, email, or account is required.</dd></div>
+          <div><dt>A temporary session with this robot.</dt><dd>Your nickname and the requests you confirm are sent to this robot’s own server, over its network connection, so it can answer you and walk you to a place. They are kept in memory only, for this session, and are deleted when it ends or expires after ten minutes. This app saves nothing in cookies or browser storage, and the QR code’s secret is removed from the address bar once the page has read it.</dd></div>
+          <div><dt>No recordings, no pictures.</dt><dd>This page never records audio or images. If a Talk tab is offered, your voice is processed by Vapi, an external voice service, only while a call is open. Nothing is logged by this page.</dd></div>
+          <div><dt>You stay in control.</dt><dd>The robot only walks after you confirm a place, and a Stop button stays on screen while it moves. Robot staff can stop it at any time.</dd></div>
+          <div><dt>Only the layout is shown.</dt><dd>You see the places the robot can take you to as dots, never a floor plan of the building.</dd></div>
+          <div><dt>No tracking.</dt><dd>This frontend includes no analytics or third-party trackers. Fonts and artwork are local. The server hosting this page may keep standard request logs, such as IP addresses.</dd></div>
+          <div><dt>Your QR code is a key, not an identity.</dt><dd>It proves you are standing at the robot and lets one guest at a time pair with it. It contains no name or personal data.</dd></div>
+          <div><dt>This is an early prototype.</dt><dd>The robot may be unavailable, may not understand you, or may stop for safety. If anything feels wrong, ask a staff member.</dd></div>
+        </dl></> : <><p className="intro">Here’s how this local Demo prototype works.</p>
         <dl className="privacy-details">
           <div><dt>A nickname is optional.</dt><dd>You can continue as Guest. No real name, email, or account is required.</dd></div>
           <div><dt>A temporary demo, in memory only.</dt><dd>Your nickname, simulated session ID, and expiry time stay in this page’s React memory. This app does not save them to cookies or browser storage, put them in the URL, or send them to a server. Ending the session, expiry, refreshing, or closing the page clears them. Navigating back to welcome also ends the session.</dd></div>
@@ -154,7 +214,7 @@ export function App() {
           <div><dt>No tracking.</dt><dd>This frontend includes no analytics, third-party trackers, or third-party audio services. Fonts and artwork are local. No audio or transcripts are logged by application code. The robot remains disconnected.</dd></div>
           <div><dt>Your QR code is just a link.</dt><dd>The event team generates it locally. No third-party QR-processing service is used. Scanning opens the site’s join page, without a nickname or session ID in the link.</dd></div>
           <div><dt>This is an early prototype.</dt><dd>Sessions are simulated, not backend authentication or robot authorization. The server hosting this page may keep standard request logs, such as IP addresses. Hosting practices have not been verified. These notes describe the frontend, not a claim of certified GDPR compliance or backend data deletion.</dd></div>
-        </dl>
+        </dl></>}
         <button type="button" className="secondary-button" onClick={() => navigate(home, true)}>← Back {session ? 'to session' : 'to welcome'}</button>
       </section>}
 

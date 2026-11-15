@@ -2,8 +2,8 @@
 
 Backend half of the guest flow, built to the contract the frontend already prepared in [frontend/API_INTEGRATION.md](../frontend/API_INTEGRATION.md)
 (`requestApiAdapter.ts`, `contracts.ts`). Implementation: `ros2_ws/src/d1_companion/d1_companion/server.py`. State machine and safety rules:
-[companion_state_machine.md](companion_state_machine.md). **Not connected to the frontend yet; the changes the frontend needs are listed in section 4.**
-Status: built and tested against the mock robot and in simulation, **not run with the real frontend, phone or robot** (*unverified*).
+[companion_state_machine.md](companion_state_machine.md). **The frontend side is implemented in `frontend/src/robot/` (robot mode, see [frontend/README.md](../frontend/README.md#robot-mode-live-robot---mode-robot)); the items the frontend owners still need to agree are in section 4.**
+Status: built and tested against the mock robot and in simulation, **driven end to end by the real React app in a mobile-sized browser** (join, tap a place, confirm, escort, arrival, typed request, stop). **Not run on a real phone or the real robot** (*unverified*).
 
 ## 1. Principles
 * **Guests never see the map.** Only the layout of the destinations is sent: `name, label, description, x, y, home`. There is no map/floor-plan endpoint (`/map.png` is 404; tested).
@@ -28,7 +28,7 @@ All JSON, `Authorization: Bearer <accessToken>` unless stated. Errors: `{"error"
 | `GET /api/requests/{request_id}` | task status (see 3) |
 | `POST /api/robot/stop` | immediate stop; `{ok, state}` |
 | `POST /api/admin/end` (header `X-Admin-Token`) | staff ends the session (only when `--admin-token` is set) |
-| `GET /`, `/phone.js`, `/phone.css`, `/healthz` | developer test client and health (no secrets) |
+| `GET /healthz` | health (no secrets). The server serves no pages: the visitor frontend is the UI |
 
 `state` values: `IDLE, AWAITING_INPUT, PREPARING, NAVIGATING, ARRIVED, BLOCKED, STOPPED, RETURNING_HOME, HOLD`. `options` lists what the guest can do now (`place`, `retry`, `stop`, `end`).
 
@@ -50,14 +50,15 @@ Task JSON (the frontend's wire shape): `{request_id, client_request_id, status, 
 `awaiting_approval` is not used; it could carry a staff approval for escorts later. An escort takes 10-20 s per 2 m at the Nav2 speed limit and is cut off after 180 s, so the
 frontend's polling must allow minutes for `GO_TO_PLACE` (its `completed` means arrival). Idempotency is per session; a retry never sends a second goal.
 
-## 4. What the frontend needs to change (to agree with the frontend developer)
-1. `contracts.ts`: add `GO_TO_PLACE`, `STOP_ROBOT`, `END_SESSION` to the action vocabulary (its decoder rejects any other `action` as `invalid_response`) and allow `place` in the submission.
-2. `requestApiAdapter.ts`: send the optional `place`; read the optional `message` (failed/denied) and `progress`; allow long-running `executing`; keep 401/403 -> `session_expired`.
-3. Session: obtain the credential with `POST /api/session` (QR token from the `/join` URL, never from the nickname); use the returned `expiresAt`.
-4. A destinations view: draw the `places` as dots with rings from `GET /api/places` and the robot from `GET /api/state` (the developer test client `phone.js` is a reference implementation, ~200 lines, no map). Poll `/api/state`.
-5. A Stop button calling `POST /api/robot/stop`, not the request flow.
-6. A reviewed integration profile: the static demo build requires `connect-src 'none'` and rejects changed endpoints; a same-origin `/api` proxy and a CSP that allows it are needed.
-Open questions: names of the new actions; polling interval and timeouts; whether the guest's confirmation step stays for escorts (recommended: yes); wording and languages of the replies.
+## 4. Frontend: what was done, what is still to agree
+Implemented on this branch as an **additive robot mode** (`vite --mode robot`; the demo build, its guards and its tests are untouched): the session call, `POST /api/requests` with the new actions
+and optional `place`, the extra response fields (`message`, `progress`, `place`), the destinations layout (dots with rings, no map), the always-visible Stop, the escort bar, the Talk tab (Vapi) and a truthful privacy page.
+Still for the frontend owners to agree or do:
+1. Fold the robot additions (`robotTasks.ts`) into `tasks/contracts.ts` / `requestApiAdapter.ts` if they prefer one adapter, and confirm the action names `GO_TO_PLACE`, `STOP_ROBOT`, `END_SESSION`.
+2. A reviewed **integration profile**: a same-origin `/api` proxy (hosting worker or Tailscale Serve) and a CSP with `connect-src 'self'` for `build:robot` (the demo keeps `connect-src 'none'`). `npm run dev:robot` proxies `/api` for development.
+3. Polling interval and timeouts (the robot flow waits up to 240 s for an escort), wording and languages of the replies, and whether voice (Vapi) should be able to start an escort through the companion (a `go_to_place` tool) so that voice and taps share one path.
+4. Playwright e2e for robot mode and a test on a real phone.
+Open question: keep the guest's confirmation step for escorts (recommended: yes, it is what the frontend's own principle asks for).
 
 ## 5. Try it
 ```bash
@@ -67,4 +68,4 @@ curl -s -XPOST localhost:8780/api/requests -H "Authorization: Bearer $A" -H "Ide
      -d '{"text":"take me to the front","source":"typed","proposed_action":"GO_TO_PLACE","client_request_id":"r1"}'
 curl -s localhost:8780/api/requests/<request_id> -H "Authorization: Bearer $A"
 ```
-Open `http://127.0.0.1:8780/?t=<qr-token>` for the developer test client.
+With the frontend: `cd frontend && npm run dev:robot`, then open `http://127.0.0.1:5173/join?t=<qr-token>` (the QR code on the robot encodes this URL).

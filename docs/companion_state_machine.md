@@ -46,8 +46,7 @@ Timeouts (all configurable in `Config`): gateway must answer a goal within 3 s, 
 
 ## Guest API
 HTTP/JSON in the contract the frontend prepared (Bearer credential, `POST /api/requests`, `GET /api/requests/{id}`, idempotency) plus session, places, live state and stop endpoints:
-**see [companion_api.md](companion_api.md)**, which also lists what the frontend must change. `ros2_ws/src/d1_companion/d1_companion/static/` is a small developer test client of that API
-(layout view, chat, stop); the real guest UI is the React app in `frontend/`.
+**see [companion_api.md](companion_api.md)**, which also lists what the frontend must change. The guest UI is the React app in `frontend/` running in **robot mode** (`npm run dev:robot`), which implements the client side of this API.
 
 ## Places
 `maps/metacam_lite_2026-11-14/places.yaml` (same file for the gateway `--places` and the companion; the map itself is only used by Nav2, never by the companion): `home` (the map origin) and four test destinations
@@ -72,15 +71,15 @@ Defaults bind to `127.0.0.1`. Publish the phone page with **Tailscale Serve (HTT
 * **Simulation (2026-11-15)**: sim robot (odometry drifting 1 deg/s, 8 % scale error) + fake MetaCam + Nav2 static navigation on the lidar map + gateway (ROS mode) + companion.
   A scripted guest used the HTTP API like the frontend would (`POST /api/requests`, poll `GET /api/requests/{id}`): front, back, right, left, each followed by "take me home", then end.
   All 8 requests went `processing -> executing -> completed`; true position error 0.01-0.25 m (Nav2 goal tolerance 0.25 m); 8-16 s per 2 m leg at the Nav2 speed limits;
-  after the session the token gave 401. The developer test client was driven in a 420 px headless Firefox: join, select, navigate, arrive, chat, finish.
+  after the session the token gave 401. The real React app (robot mode) was then driven in a 420 px headless Firefox against the same stack: join with the QR token, tap a place, confirm, escort with the Stop bar, arrival, a typed "take me home" request, and a question; the robot's true position ended at (0.01, 0.00).
 
 ## Gateway change made for this
 The gateway now reports `localization` (from the lidar localizer's status) in `state` and rejects goals when a localizer is running and the robot is not placed.
 
 ## Not done / limits (be aware)
 * **Not run on the real robot, with the real frontend, a real phone or real speech** (*unverified*). The developer client uses the browser's speech recognition/synthesis if available.
-* **The React app in `frontend/` is not connected.** The backend follows its contract; the changes the frontend needs (new actions, session call, destinations view, stop button, same-origin
-  proxy and CSP) are listed in [companion_api.md](companion_api.md#4-what-the-frontend-needs-to-change-to-agree-with-the-frontend-developer). There is no Node on the development PC to build or test it.
+* **The React app is connected in robot mode** (additive; the demo is unchanged). What the frontend owners still need to agree (action names, a same-origin proxy and CSP for the integration profile, voice sharing the escort path)
+  is in [companion_api.md](companion_api.md#4-frontend-what-was-done-what-is-still-to-agree). Not tested on a real phone.
 * Language understanding is a small rule-based parser (`nlu.py`); questions get an honest "I don't know" plus the list of places: **no facility knowledge base** (FR-I1), no TTS on the
   robot (`--robot-speech true` only sends text to the gateway `say` intent).
 * No follow-check (FR-X4), no person-approach greeting trigger (FR-E1), no rotating QR (the token is static per run), no multi-language strings, no staff UI beyond `POST /api/admin/end`.

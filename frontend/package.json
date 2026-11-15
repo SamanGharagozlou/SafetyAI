@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:robot": "vite --mode robot",
     "build": "tsc -b && vite build && node scripts/static-routes.mjs",
+    "build:robot": "tsc -b && vite build --mode robot && node scripts/static-routes.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

@@ -44,3 +44,62 @@ main{width:100%;flex:1;display:flex;flex-direction:column;align-items:center;jus
 /* Give contextual review/confirmation room without displacing the call controls. */
 .call-screen:is([data-content-state=awaiting_transcription],[data-content-state=awaiting_review],[data-content-state=awaiting_confirmation],[data-content-state=processing],[data-content-state=responding]) .orb-scene{width:120px}.call-visual[data-microphone=off] .call-waveform{visibility:hidden;height:8px}.call-screen:is([data-content-state=awaiting_review],[data-content-state=awaiting_confirmation]) .call-status h2{font-size:21px}
 @media(max-width:360px),(max-height:450px){.call-screen:is([data-content-state=awaiting_transcription],[data-content-state=awaiting_review],[data-content-state=awaiting_confirmation],[data-content-state=processing],[data-content-state=responding]) .orb-scene{width:90px}}
+
+/* Phase 6: live robot (vite --mode robot). Same palette and components as the call screen; layout view, escort bar, request flow. */
+.robot-screen{width:100%;max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:14px;padding-bottom:26px}
+.robot-screen [hidden]{display:none!important}
+.robot-panel{display:flex;flex-direction:column;gap:14px}
+.robot-tabs{display:inline-flex;padding:3px;border:1px solid #33505b;border-radius:999px;background:#0d202c}
+.robot-tabs button{min-height:36px;border:0;border-radius:999px;background:transparent;color:#b0c4cd;padding:6px 16px;font-size:12px;font-weight:650}
+.robot-tabs button[aria-selected=true]{background:#71e5cf;color:#092b30}
+.escort-bar{position:sticky;top:8px;z-index:6;display:grid;grid-template-columns:1fr auto;gap:8px 12px;align-items:center;padding:12px 14px;border:1px solid #477470;border-radius:14px;background:#10303a;box-shadow:0 10px 30px #000a}
+.escort-text{display:flex;flex-direction:column;gap:2px;font-size:12px;line-height:1.5;color:#a8c4cc;min-width:0;overflow-wrap:anywhere}
+.escort-text strong{font-size:14px;color:#edf7f8}
+.escort-stop{min-height:46px;min-width:88px;border:1px solid #ff9a8a;border-radius:10px;background:#e0584a;color:#fff;font-size:15px;font-weight:750;padding:0 20px}
+.escort-stop:disabled{opacity:.6}
+.escort-progress{grid-column:1/-1;display:block;width:100%;height:4px}
+.escort-progress .track{fill:#1d414b}.escort-progress .fill{fill:#71e5cf}
+.escort-warn{border-color:#a07f4c;background:#33291a}
+.robot-hello{display:flex;align-items:center;gap:12px}
+.robot-hello .robot{width:84px;height:74px;flex:none;margin:0}
+.robot-says{margin:0;padding:12px 14px;border:1px solid #34525d;background:#122d38;border-radius:14px 14px 14px 4px;font-size:14px;line-height:1.55;color:#e4f6f2;overflow-wrap:anywhere}
+.places-card{padding:16px;border:1px solid #33505b;border-radius:16px;background:linear-gradient(145deg,#12303a,#0d202c)}
+.places-card h2{margin:0 0 4px;font-size:20px;outline:none}
+.places-map{display:block;width:100%;height:auto;margin-top:10px;touch-action:manipulation}
+.map-bg{fill:#0a1d27;stroke:#2a4a55}
+.map-grid{stroke:#71e5cf;stroke-opacity:.08;stroke-width:1}
+.map-route{stroke:#ffc46b;stroke-width:2;stroke-dasharray:6 6;stroke-opacity:.85}
+.place{cursor:pointer;outline:none}
+.place-hit{fill:transparent}
+.place-ring{fill:none;stroke:#71e5cf;stroke-width:2.5;stroke-opacity:.5}
+.place-dot{fill:#71e5cf;stroke:#092b30;stroke-width:2}
+.place-select{fill:none;stroke:#edf7f8;stroke-width:2;opacity:0}
+.place.is-selected .place-select{opacity:.9}
+.place.is-target .place-ring{stroke:#ffc46b;stroke-opacity:.95;animation:place-pulse 1.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.place.is-target .place-dot{fill:#ffc46b}
+.place.is-here .place-ring{stroke:#9cf5e3;stroke-opacity:1}
+.place.is-here .place-dot{fill:#9cf5e3}
+.place:focus-visible .place-select{opacity:1;stroke:#9cf5e3}
+.place.is-disabled{cursor:not-allowed;opacity:.55}
+.place-label{font-size:11px;font-weight:700;fill:#edf7f8}
+.place-label-halo{stroke:#0a1d27;stroke-width:4;stroke-linejoin:round;fill:#0a1d27}
+.map-robot path{fill:#fff;stroke:#0a1d27;stroke-width:2;stroke-linejoin:round}
+@keyframes place-pulse{50%{transform:scale(1.22);stroke-opacity:.35}}
+.places-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:11px;color:#a1b7c2}
+.places-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.dot-place{background:#71e5cf}.dot-target{background:#ffc46b}.dot-here{background:#9cf5e3}
+.place-chips{display:flex;flex-wrap:wrap;gap:8px}
+.place-chip{min-height:44px;padding:8px 16px;border:1px solid #4c707b;border-radius:999px;background:#19343f;color:#d8f5ee;font-size:13px;font-weight:600}
+.place-chip:disabled{opacity:.5}.place-chip.is-here{border-color:#9cf5e3;background:#1b4a45}.place-chip.is-target{border-color:#ffc46b;background:#3a3220}
+.robot-composer label{display:block;margin-bottom:6px;font-size:12px;color:#b0c4cd}
+.composer-row{display:flex;gap:8px}
+.composer-row input{flex:1;min-width:0;min-height:48px;border:1px solid #3d5d69;border-radius:10px;background:#0b1f2a;color:#edf7f8;padding:0 14px;font-size:16px}
+.composer-row input:focus{outline:2px solid #71e5cf;outline-offset:1px}
+.composer-send{min-height:48px;padding:0 20px;border:1px solid #7debdc;border-radius:10px;background:#71e5cf;color:#092b30;font-weight:750}
+.composer-send:disabled{opacity:.45}
+.robot-flow h3{margin:0 0 8px;font-size:18px;outline:none}
+.robot-flow .primary-button{margin-top:14px}
+.robot-cancel{margin-top:10px}
+.robot-history .history-assistant{background:#122d38;border:1px solid #2f4d58}
+.robot-history span{font-size:10px;color:#8fb3bd;letter-spacing:.6px;text-transform:uppercase}
+@media(max-width:360px){.escort-stop{min-width:72px;padding:0 14px}.places-card{padding:13px}}

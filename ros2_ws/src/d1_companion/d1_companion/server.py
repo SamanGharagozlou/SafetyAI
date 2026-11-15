@@ -14,7 +14,7 @@ what that contract lacks for escorting (see docs/companion_api.md; the additions
   GET    /api/requests/{id}                                            task status; `completed` = arrived (for GO_TO_PLACE)
   POST   /api/robot/stop                                               immediate stop, never behind a confirmation step
   POST   /api/admin/end         header X-Admin-Token                   staff ends the session
-  GET    /  /phone.js  /phone.css  /healthz                            developer test client + health
+  GET    /healthz                                                      health (no secrets)
 
 Security: binds 127.0.0.1 by default (publish with Tailscale Serve, never Funnel); the QR token proves presence at the robot; every guest call needs the
 Bearer credential (no cookies, no CORS: the frontend is expected to reach /api through a same-origin proxy, as its CSP demands); the gateway only gets
@@ -39,8 +39,7 @@ from d1_companion.gateway_client import GatewayClient
 from d1_companion.statemachine import Companion, Config, S, ev
 
 log = logging.getLogger('d1_companion')
-STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
-CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 FRONTEND_ACTIONS = ('GREET', 'ROBOT_INFO', 'HELP')                       # already in the frontend's vocabulary
 EXTRA_ACTIONS = ('GO_TO_PLACE', 'STOP_ROBOT', 'END_SESSION')              # proposed additions (need agreement)
 RID = re.compile(r'^[a-zA-Z0-9-]{1,100}$')
@@ -184,12 +183,6 @@ class CompanionServer:
         return d
 
     async def _route(self, method, path, query, headers, body):
-        files = {'/': ('phone.html', 'text/html; charset=utf-8'), '/phone.js': ('phone.js', 'text/javascript; charset=utf-8'),
-                 '/phone.css': ('phone.css', 'text/css; charset=utf-8')}
-        if method in ('GET', 'HEAD') and path in files:
-            name, ctype = files[path]
-            with open(os.path.join(STATIC, name), 'rb') as f:
-                return 200, ctype, f.read()
         if method == 'GET' and path == '/healthz':
             return self._json({'ok': True, 'state': self.sm.state.value, 'gateway': self.gw.up})
         if path == '/api/session' and method == 'POST':
@@ -470,7 +463,7 @@ def main(argv=None):
 
     async def run():
         await srv.start()
-        print(f'QR code token: {srv.join_token}   (developer test client: http://{a.host}:{srv.port}/?t={srv.join_token})', flush=True)
+        print(f'QR code: <frontend>/join?t={srv.join_token}   (the visitor frontend in robot mode reads t and calls /api/session)', flush=True)
         await asyncio.Event().wait()
     try:
         asyncio.run(run())

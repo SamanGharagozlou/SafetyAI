@@ -291,7 +291,8 @@ def test_hostile_and_malformed_input():
         await asyncio.wait_for(r.read(), 5)
         w.close()
         assert (await g.call('GET', '/api/state'))[0] == 200 and comp.sm.state == S.AWAITING_INPUT
-        st, page, hd = await http(port, 'GET', '/')
-        assert st == 200 and b'<canvas' in page and 'default-src' in hd['content-security-policy'] and hd['cache-control'] == 'no-store'
+        st, _, hd = await http(port, 'GET', '/healthz')
+        assert st == 200 and hd['cache-control'] == 'no-store' and "default-src 'none'" in hd['content-security-policy']
+        assert (await http(port, 'GET', '/'))[0] == 404 and (await http(port, 'GET', '/phone.js'))[0] == 404                 # no pages: the frontend app is the UI
         assert 'access-control-allow-origin' not in hd                                                          # no CORS: same-origin proxy only
     run(with_stack(t))
