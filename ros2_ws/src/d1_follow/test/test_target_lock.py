@@ -1,5 +1,5 @@
 import numpy as np
-from d1_follow.target_lock import LockParams, State, TargetLock
+from d1_follow.target_lock import LockOutput, LockParams, State, TargetLock
 from d1_follow.tracker import Track
 
 W, H = 640, 480
@@ -53,16 +53,55 @@ def test_locks_onto_dominant_person_and_labels_others_unknown():
 def test_lock_fails_with_no_person():
     lock = TargetLock(LockParams(lock_timeout_s=1.0))
     lock.request_lock(0.0)
-    out, _ = run(lock, [[]] * 15, FakeEmbed({}))
+    events, t = [], 0.0
+    for _ in range(15):
+        out = lock.update(t, [], W, H, FakeEmbed({}))
+        events.append(out.event)
+        t += 0.1
     assert out.state == State.IDLE and lock.target_id is None
+    assert events.count('lock_failed') == 1 and out.reason == 'no_person'
 
 
 def test_lock_ambiguous_when_two_equal_people():
     lock = TargetLock(LockParams(lock_timeout_s=1.0))
     lock.request_lock(0.0)
     a, b = [100, 40, 300, 470], [340, 40, 540, 470]
-    out, _ = run(lock, [[T(1, a), T(2, b)]] * 15, FakeEmbed({1: ID_A, 2: ID_B}))
+    events, t = [], 0.0
+    for _ in range(15):
+        out = lock.update(t, [T(1, a), T(2, b)], W, H, FakeEmbed({1: ID_A, 2: ID_B}))
+        events.append(out.event)
+        t += 0.1
     assert out.state == State.IDLE
+    assert events.count('lock_failed') == 1 and out.reason == 'ambiguous'
+
+
+def test_locking_labels_dominant_track_as_candidate():
+    lock = TargetLock(LockParams())
+    lock.request_lock(0.0)
+    out = lock.update(0.0, [T(1, CENTER), T(2, SIDE)], W, H, FakeEmbed({1: ID_A, 2: ID_B}))
+    assert out.state == State.LOCKING and out.candidate_id == 1
+    assert out.labels == {1: 'candidate', 2: 'unknown'}
+
+
+def test_candidate_flicker_does_not_embed_every_frame():
+    p = LockParams()
+    lock, emb = TargetLock(p), FakeEmbed({1: ID_A, 2: ID_B})
+    lock.request_lock(0.0)
+    a, b = [100, 40, 300, 470], [340, 40, 540, 470]
+    small_a, small_b = [100, 200, 300, 300], [340, 200, 540, 300]
+    frames = [
+        [T(1, a), T(2, small_b)],      # candidate 1
+        [T(1, a), T(2, b)],            # tie: no candidate
+        [T(1, small_a), T(2, b)],      # candidate 2
+        [T(1, a), T(2, b)],            # tie: no candidate
+    ]
+    t, i = 0.0, 0
+    while t <= p.lock_timeout_s + 0.5:
+        out = lock.update(t, frames[i % 4], W, H, emb)
+        t, i = t + 0.05, i + 1
+    interval = p.lock_window_s / p.seed_size
+    assert out.state == State.IDLE and out.reason == 'ambiguous'
+    assert emb.calls <= int(p.lock_timeout_s / interval) + 2
 
 
 def test_auto_lock():
@@ -107,9 +146,31 @@ def test_lost_timeout_and_release():
     lock.update(t, [], W, H, FakeEmbed({}))
     out = lock.update(t + 31.0, [], W, H, FakeEmbed({}))
     assert out.state == State.IDLE and out.event == 'lost_timeout'
-    lock2, _, _ = locked_lock()
+    assert out.reason == 'lost_timeout'
+    lock2, _, t2 = locked_lock()
     lock2.release()
     assert lock2.state == State.IDLE and lock2.target_id is None
+    out2 = lock2.update(t2, [T(1, CENTER)], W, H, FakeEmbed({1: ID_A}))
+    assert out2.event == 'released' and out2.reason == 'released'
+
+
+def test_lock_output_positional_field_order():
+    o = LockOutput(State.TRACKING, None, None, {}, 0.8, None, None)
+    assert o.state == State.TRACKING and o.target is None and o.candidate_id is None
+    assert o.labels == {} and o.similarity == 0.8 and o.event is None and o.reason is None
+    o = LockOutput(State.LOST, None, 3, {1: 'x'}, 0.4, 'lost', 'track_lost')
+    assert (o.candidate_id, o.labels, o.similarity, o.event, o.reason) == (
+        3, {1: 'x'}, 0.4, 'lost', 'track_lost')
+
+
+def test_embed_row_count_mismatch_is_skipped():
+    lock, _, t = locked_lock()
+    bad = lambda tracks: np.zeros((0, 8), np.float32)  # noqa: E731
+    out = lock.update(t + 2.0, [T(1, CENTER)], W, H, bad)
+    assert out.state == State.TRACKING and out.similarity is None
+    lock.update(t + 3.0, [], W, H, bad)                 # lost
+    out = lock.update(t + 4.0, [T(5, CENTER)], W, H, bad)
+    assert out.state == State.LOST and out.similarity is None
 
 
 def test_embed_budget_while_tracking():

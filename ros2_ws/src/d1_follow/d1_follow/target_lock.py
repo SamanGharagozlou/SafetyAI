@@ -41,6 +41,14 @@ class LockOutput:
     reason: str | None = None
 
 
+def _embed_rows(embed, tracks):
+    """Embeddings for tracks, or None when unavailable or not one row per track."""
+    rows = embed(tracks)
+    if rows is None or len(rows) != len(tracks):
+        return None
+    return np.asarray(rows, dtype=np.float32)
+
+
 def _proximity(track, w, h):
     """Big and centred wins: the guest is the person nearest the camera axis."""
     b = track.box
@@ -74,7 +82,7 @@ class TargetLock:
         self._lock_started = 0.0
         self._cand_id = None
         self._cand_since = 0.0
-        self._last_seed = 0.0
+        self._last_embed = None
         self._seen_person = False
 
     def _clear_track_vars(self):
@@ -142,14 +150,16 @@ class TargetLock:
         cand_id = best.id if best is not None else None
         if cand_id != self._cand_id:
             self._cand_id, self._cand_since = cand_id, now
-            self._last_seed, self._gallery, self._n_seeds = None, [], 0
+            self._gallery, self._n_seeds = [], 0
+        # rate limit on the clock, not candidate identity: flicker must not embed every frame
         if best is not None and self._n_seeds < p.seed_size and (
-                self._last_seed is None or now - self._last_seed >= p.lock_window_s / p.seed_size):
-            rows = embed([best])
-            if rows is not None and len(rows):
-                self._gallery.append(np.asarray(rows[0], dtype=np.float32))
+                self._last_embed is None
+                or now - self._last_embed >= p.lock_window_s / p.seed_size):
+            self._last_embed = now
+            rows = _embed_rows(embed, [best])
+            if rows is not None:
+                self._gallery.append(rows[0])
                 self._n_seeds += 1
-                self._last_seed = now
         if (best is not None and now - self._cand_since >= p.lock_window_s
                 and self._n_seeds >= p.seed_size):
             self._state, self._target_id, self._auto_pending = State.TRACKING, best.id, False
@@ -170,10 +180,10 @@ class TargetLock:
             return self._to_lost(now, 'track_lost')
         if not target.visible or now - self._last_verify < p.verify_period_s:
             return None
-        rows = embed([target])
-        if rows is None or not len(rows):
+        rows = _embed_rows(embed, [target])
+        if rows is None:
             return None
-        e = np.asarray(rows[0], dtype=np.float32)
+        e = rows[0]
         self._last_verify = now
         self._sim = sim = float(np.max(np.stack(self._gallery) @ e))
         if sim >= p.sim_accept:
@@ -201,20 +211,20 @@ class TargetLock:
     def _lost(self, now, cands, embed):
         p = self.p
         if now - self._lost_since > p.lost_timeout_s:
-            self._state, self._reason = State.IDLE, None
+            self._state, self._reason = State.IDLE, 'lost_timeout'
             self._target_id, self._gallery, self._n_seeds = None, [], 0
             return 'lost_timeout'
         if (self._last_reacquire is not None
                 and now - self._last_reacquire < p.reacquire_period_s):
             return None
-        self._last_reacquire = now
         if not cands:
             self._hits, self._sim = {}, None
             return None
-        rows = embed(cands)
+        rows = _embed_rows(embed, cands)
         if rows is None:
             return None
-        sims = (np.asarray(rows, dtype=np.float32) @ np.stack(self._gallery).T).max(axis=1)
+        self._last_reacquire = now
+        sims = (rows @ np.stack(self._gallery).T).max(axis=1)
         self._hits = {t.id: self._hits.get(t.id, 0) + 1 if s >= p.sim_accept else 0
                       for t, s in zip(cands, sims)}
         order = np.argsort(-sims)
