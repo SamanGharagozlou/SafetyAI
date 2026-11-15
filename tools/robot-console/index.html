@@ -333,27 +333,34 @@
   </div>
 
   <div id="ios-audio" class="note" style="display:none;border-left:3px solid #c8a33a">
-    <b>This device cannot send a call to a Bluetooth speaker.</b> Not a fault in
-    this page, and no browser here behaves differently — Chrome, Edge and
-    Firefox on iPhone are all Safari underneath, because Apple requires WebKit.
-    Use the Mac console for the voice and keep this phone for the robot
-    controls.
+    <b>No phone can send this call to a Bluetooth speaker.</b> Confirmed on
+    iPhone and Android, Safari and Chrome. It is a Bluetooth limitation, not a
+    browser one — see below. Fastest fix: <b>plug the speaker in with a cable</b>
+    (AUX or USB-C). Otherwise run the voice from the Mac and keep the phone for
+    the robot controls.
   </div>
 
   <div class="note"><b>Pick both before you press Talk.</b> Names appear once
   the microphone has been allowed, and a speaker paired later shows up on its
-  own.
+  own. Phones list no output devices at all — iOS has no
+  <code>setSinkId</code>, and Chrome on Android does not expose output
+  selection either, because the OS owns the routing.
   <br><br>
-  <b>Bluetooth speaker plays music but not the call?</b> Music is output-only,
-  so iOS uses A2DP. Opening the microphone switches iOS to two-way audio, which
-  over Bluetooth needs HFP — most Bluetooth <i>speakers</i> have none, so iOS
-  drops to the phone's own speaker. Safari exposes no output picker and no
-  <code>setSinkId</code>, and every iPhone browser is WebKit, so there is no
-  browser-side fix and no other browser to try. Releasing the mic
-  between turns would restore A2DP but kill barge-in, which is a worse trade for
-  a greeter. <b>Run voice from the Mac</b> — macOS routes input and output
-  independently, so an A2DP speaker plus any mic works — or use a Bluetooth
-  <i>headset</i>, which has HFP, at mono 8–16&nbsp;kHz.</div>
+  <b>Bluetooth speaker plays music but not the call?</b> The profile is the
+  problem, not the phone. <b>A2DP carries audio one way only</b> — it is a
+  playback profile and has no microphone channel, which is why music is
+  flawless. A call needs two directions at once, so the phone switches to
+  <b>HFP</b>, and most Bluetooth <i>speakers</i> implement no usable HFP. With
+  no two-way route available the phone falls back to its own speaker and mic.
+  Same on Android as on iOS, for the same reason.
+  <br><br>
+  <b>What actually works.</b> A cable — AUX or USB-C — sidesteps Bluetooth
+  entirely and is the quickest fix. A Bluetooth <i>headset</i> has HFP and will
+  route, at mono 8–16&nbsp;kHz. Or run voice from a desktop OS: macOS, Windows
+  and Linux route input and output independently, so an A2DP speaker plus any
+  mic works, and the dropdown above becomes usable. Releasing the mic between
+  turns would restore A2DP on a phone but costs barge-in, which is a worse
+  trade for a greeter.</div>
 
   <div class="row" style="margin-bottom:12px;align-items:center">
     <div style="flex:2">
@@ -774,8 +781,12 @@ async function listSpeakers() {
     const saved = localStorage.getItem(SPK_KEY)
     sel.innerHTML = outs.map(d =>
       `<option value="${d.deviceId}"${d.deviceId === saved ? ' selected' : ''}>${esc(d.label || 'output ' + d.deviceId.slice(0, 6))}</option>`
-    ).join('') || '<option value="">no output device found</option>'
-    $('spk-note').textContent = outs.length ? '' : '— none listed yet; allow the mic once'
+    ).join('') || '<option value="">no output device offered by this OS</option>'
+    $('spk-note').textContent = outs.length ? '' : '— the OS is choosing'
+    // Chrome on Android HAS setSinkId but enumerates no audiooutput devices,
+    // so "selectable" is not the same as "any device to select". The callout
+    // belongs on the outcome, not on the feature test.
+    if (!outs.length) $('ios-audio').style.display = ''
     return outs
   } catch (e) {
     log(`   could not list speakers: ${e.message}`, 'log-err')
