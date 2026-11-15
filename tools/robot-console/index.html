@@ -401,7 +401,21 @@ function syncButtons() {
 
 async function send(name, args = {}, { retry = true } = {}) {
   state.busy = true; syncButtons()
-  showCommand(name, args, 'button')
+
+  // A WATCHDOG ON OUR OWN BUSY FLAG. If anything between here and the finally
+  // throws - or a request never settles - `busy` stays true and EVERY control
+  // is disabled for good with no visible reason. That looks exactly like "the
+  // robot stopped responding", which is the worst possible misdirection.
+  const unstick = setTimeout(() => {
+    if (state.busy) {
+      state.busy = false; syncButtons()
+      log('   (controls unstuck - a request never settled)', 'log-err')
+    }
+  }, 45000)
+
+  // Rendering must never be able to prevent sending. showCommand() used to sit
+  // outside the try, so one display error killed the whole console silently.
+  try { showCommand(name, args, 'button') } catch (e) { log(`   (display error: ${e.message})`, 'log-err') }
   log(`→ ${name} ${Object.keys(args).length ? JSON.stringify(args) : ''}`, 'log-send')
   try {
     const r = await fetch('/api/tool', {
@@ -426,6 +440,7 @@ async function send(name, args = {}, { retry = true } = {}) {
   } catch (e) {
     log(`   request failed: ${e.message} — the robot may still be moving, press STOP`, 'log-err')
   } finally {
+    clearTimeout(unstick)
     state.busy = false; syncButtons(); poll()
   }
 }
