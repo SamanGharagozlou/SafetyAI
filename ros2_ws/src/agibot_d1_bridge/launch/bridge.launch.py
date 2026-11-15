@@ -6,9 +6,9 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('local_ip', default_value='192.168.234.100',
+        DeclareLaunchArgument('local_ip', default_value='192.168.168.10',
                               description='IP of this computer on the robot network'),
-        DeclareLaunchArgument('robot_ip', default_value='192.168.234.1'),
+        DeclareLaunchArgument('robot_ip', default_value='192.168.168.168'),
         DeclareLaunchArgument('auto_stand', default_value='false'),
         Node(
             package='agibot_d1_bridge',

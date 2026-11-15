@@ -8,6 +8,8 @@ services:
       dockerfile: docker/Dockerfile
       args:
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+        TORCH_PACKAGES: ${TORCH_PACKAGES:-torch torchvision}
+        TORCH_PIP_ARGS: ${TORCH_PIP_ARGS:-}
         PRELOAD_MODELS: ${PRELOAD_MODELS:-yolo26n.pt}
     image: human_perception:humble
     container_name: human_perception
