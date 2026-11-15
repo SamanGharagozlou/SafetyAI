@@ -51,6 +51,10 @@ const OFFERINGS = [
   { id: 'sauna_entry', name: 'Sauna world',               price: 'extra on top of the bath ticket - the desk has the current rate', dur: 'with your ticket', note: 'Finnish sauna, herbal sauna, steam baths, and a sauna garden with the mountain panorama. Sixteen and over.' },
   { id: 'family',      name: 'Family visit',              price: 'children under six come in free, and there are family reductions at the desk', dur: 'any ticket', note: 'The Badnerblitz slide runs a hundred and twenty-six metres with two full three-sixty curves.' },
   { id: 'guest_card',  name: 'Leukerbad guest card discount', price: 'around fifteen percent off, if your hotel gave you the card', dur: 'any ticket', note: 'Worth asking at the desk - most hotels in the village hand it out.' },
+  // Read straight off their own in-house screen in the stairwell, so this one
+  // is solid where the ticket prices are second-hand.
+  { id: 'brunch_spa',  name: 'Brunch and Spa, Sundays', price: 'fifty-one francs', dur: 'Sundays, 08:30 to 10:30', note: 'Brunch and the spa together. The best thing to offer a couple or a family on a Sunday morning.' },
+  { id: 'massage',     name: 'Massage and therapy',    price: 'ask at the desk - the rate is not on the door sign', dur: '10:00 to 18:00', note: 'Booked at reception. Hours are shorter than the pools.' },
 ]
 
 /**
@@ -78,11 +82,17 @@ const DESTINATIONS = [
  * who notices that stops trusting the robot.
  */
 function currentPromotion() {
-  const h = new Date().getHours()
-  if (h < 10) return 'Mornings are the quietest time in the grotto, before the crowd arrives.'
+  const now = new Date()
+  const h = now.getHours()
+  // Sunday morning has a real, verified offer, so it beats anything generic.
+  if (now.getDay() === 0 && h < 11) {
+    return 'It is Sunday morning - Brunch and Spa runs 08:30 to 10:30 for fifty-one francs. Lead with this.'
+  }
+  if (h < 10) return 'Mornings are the quietest time in the grotto, before the crowd arrives. Note the sauna and hammam only open at ten.'
   if (h < 14) return 'The full day ticket is the one that pays off if you are staying past lunch.'
   if (h < 17) return 'Afternoon: the outdoor pools with the mountains in view are the thing to do today.'
-  return 'This late, the three hour ticket is the better buy than a full day.'
+  if (h < 19) return 'This late, the three hour ticket is the better buy than a full day. Sauna and hammam close at seven.'
+  return 'Close to closing - the pools shut at eight, so only sell a short ticket and be honest that it is nearly over.'
 }
 
 const bookings = []

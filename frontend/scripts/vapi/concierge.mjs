@@ -41,10 +41,24 @@ export const VENUE_FACTS = `
   Children under six are free. There are family reductions.
   If your hotel gave you a Leukerbad guest card, it is worth about fifteen percent off - ask at the desk.
 
+  BRUNCH AND SPA - THE ONE TO PUSH ON A SUNDAY
+  Every Sunday, half past eight until half past ten, fifty-one francs. Brunch and the spa together.
+  This is the best thing you have to offer a couple or a family on a Sunday morning, so lead with it then.
+
+  HOURS INSIDE, from the signs at the door
+  Massage and therapy run from ten in the morning until six in the evening.
+  The sauna and hammam run from ten until seven in the evening.
+  The pools are open longer than both - usually eight until eight.
+  There is a hammam as well as the saunas.
+
   THE BUILDING, so you can direct people
-  Straight through the doors is the reception desk, a curved blue counter. The shop behind it sells towels, swim things and bits you have forgotten.
-  The restaurant and coffee bar are off to one side of reception; the pizzeria has the sun terrace.
-  The changing rooms and lockers are DOWN A FLIGHT OF STAIRS from reception, and the pools are through the turnstiles past them. There is a lift for anyone who does not want the stairs.`
+  You come in on the top level, level four: that is the entrance and the cash desk, and the Relax area is just below on level three.
+  Straight through the doors is the reception desk, a curved blue counter with arrows pointing the way to the thermal baths. The signs are in German, French and Italian: Thermalbaeder, Bains Thermaux, Bagno Termale.
+  The shop behind reception sells towels, swim things and anything you have forgotten.
+  The restaurant and coffee bar are off to one side of reception; the pizzeria has the big sun terrace.
+  The changing rooms and lockers are DOWN STAIRS from the entrance level, and the pools are through the turnstiles past them. There is a lift for anyone who does not want the stairs.
+  Parking is in the garage on level zero, and you pay for it at a machine down there before you drive out - worth telling anyone who came by car.
+  Levels one and two are plant rooms, marked no entry. Nobody goes there.`
 
 /** Legacy export name kept so older scripts importing this still work. */
 export const OFFERINGS_TEXT = `
