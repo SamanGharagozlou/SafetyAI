@@ -107,6 +107,23 @@ ros2 run agibot_d1_bridge keyboard_teleop            # --lin 0.2 --ang 0.4 --hol
 | space | stop | `c` | cycle gait (move/crawl/climb) |
 | `+` / `-` | speed up / down | `x` | **damp (emergency, robot drops)** |
 
+Gestures (from `d1w_gestures`, robot must be standing, i.e. `ctrl_mode` = 1; press `1` first).
+Any key cancels a running gesture. `--gesture-scale 1.0` (default) shrinks the gestures if set lower,
+`--no-reset` skips the `stand_up` re-centre after each gesture.
+Inside a sequence such as `g` (greet), only the last step re-centres: `stand_up` while already
+standing made the robot lie down and rise between the bow and the shake hand (*unverified* on the robot).
+
+| Key | Gesture | Key | Gesture |
+|---|---|---|---|
+| `4` | nod | `8` | squat |
+| `5` | shake (no) | `9` | wiggle |
+| `6` | tilt | `0` | look around |
+| `7` | bow | `r` | sway circle |
+| `g` | greet (bow + shake hand) | | |
+
+Gestures stream body rates on `attitude_cmd` (the bridge forwards them to `attitudeControl`), so
+they need no second SDK connection. Pitch sign and the `stand_up` re-centre are unverified on hardware.
+
 Terminals don't report key releases, so the robot keeps moving for `--hold` seconds after the
 last key event: hold a key to move, release to stop. Ctrl-C stops and quits (it does not damp;
 the bridge watchdog does that ~3 s later if the SDK link goes quiet).
