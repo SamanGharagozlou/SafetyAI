@@ -228,6 +228,18 @@ function tools(url) {
       type: 'function',
       function: { name, description, parameters: { type: 'object', properties: props, required } },
       server: timeoutSeconds ? { ...s, timeoutSeconds } : s,
+      /**
+       * SILENCE VAPI'S OWN TOOL FILLER.
+       *
+       * Vapi speaks a built-in "request-start" line while a tool call is in
+       * flight - observed as "Give me a moment." after every single call,
+       * twice in one exchange. It is NOT the model talking, so no amount of
+       * prompting removes it, and it is absurd here: these tools return in
+       * milliseconds and the robot is already moving while it says it.
+       *
+       * An explicit empty messages array opts out of the defaults.
+       */
+      messages: [],
     }
   }
 
