@@ -120,6 +120,29 @@ async function pollRobot() {
 pollRobot()
 setInterval(pollRobot, 2000).unref?.()
 
+/**
+ * Stand the robot up the moment a session begins.
+ *
+ * The persona already asks the assistant to do this, but that is a request to
+ * a language model and this is the one action that everything else depends
+ * on: the robot settles onto its belly when idle, and a robot that is lying
+ * down refuses every gesture and every walk. Doing it here makes it certain
+ * and makes it early - before the greeting rather than after the guest has
+ * watched a refusal.
+ *
+ * Fire and forget, deliberately. It must never delay or fail a guest's Start:
+ * a robot on charge is still perfectly able to hold a conversation.
+ */
+function standUp() {
+  fetch(`${AGENT}/command`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command: 'stand_up' }),
+    signal: AbortSignal.timeout(4000),
+  }).then(r => r.json()).then(d => {
+    if (!d?.ok) console.log(`stand_up refused: ${d?.error ?? 'unknown'}`)
+  }).catch(e => console.log(`stand_up unreachable: ${e.message}`))
+}
+
 /** What a guest's phone is allowed to know, and what the face reacts to. */
 const publicState = () => ({
   live: session.live,
@@ -306,6 +329,7 @@ createServer(async (req, res) => {
         const owner = body.owner || Math.random().toString(36).slice(2, 12)
         session = { live: true, name: String(body.name ?? '').slice(0, 24), consent: true, startedAt: Date.now(), owner }
         broadcast({ type: 'start', name: session.name })
+        standUp()   // get it on its feet before the first word, not after a refusal
         // `owner` goes to this guest alone; it is what lets them stop their
         // own session later and stops anyone else ending it for them.
         return json(res, 200, { ...publicState(), owner })

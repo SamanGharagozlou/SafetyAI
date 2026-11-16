@@ -414,6 +414,11 @@ if (DEMO) {
  * moving in silence; nobody can tell a real envelope from a plausible one.
  * ------------------------------------------------------------------ */
 const BRAIN = qs.get('brain') === '1'
+/* auto=1 skips the arming tap. Only safe when the browser was launched with
+   the microphone and autoplay already granted - brain-mac.sh does exactly
+   that. A tap is a fine thing to require of someone sitting at the machine
+   and a terrible thing to require of a machine that must come up by itself. */
+const AUTO = qs.get('auto') === '1'
 const cfg = async () => (await fetch('/api/config')).json()
 
 /* ------------------------------ BRAIN ------------------------------ */
@@ -549,7 +554,10 @@ async function pump(handle, role = '') {
 }
 
 if (!DEMO) {
-  if (BRAIN) {
+  if (BRAIN && AUTO) {
+    show('stage')
+    brain()
+  } else if (BRAIN) {
     // The brain takes the microphone and plays the audio, and no browser
     // allows either until something has been tapped. One tap when you open
     // it on the laptop, and it is armed for the rest of the session.
