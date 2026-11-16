@@ -143,6 +143,7 @@ class Dashboard(Node):
         self.start_pose, self.pose_confirmed = None, False   # robot pose in the map set by the operator (lidar maps have no live localization)
         self.pois = {}                                       # points of interest of the loaded map: name -> {x, y, yaw, label, aliases, description}
         self.pois_file = None
+        self.home = None                                     # (x, y, yaw) in the map: where the robot is put before Start (the 'home' place)
         self.mono_loc = {'state': 'off', 'source': None, 't': 0.0, 'cov': None}   # RTAB-Map localization (mono maps): off | localizing | localized
 
         qos_latched = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1, reliability=ReliabilityPolicy.RELIABLE,
@@ -537,6 +538,11 @@ class Dashboard(Node):
                 json.dump(meta, f, indent=1)
             with self.lock:
                 self.ui_mode, self.current_map = 'idle', name
+            if 'home' not in self.pois:
+                p = self._db_first_pose(base + '.db')
+                if p:
+                    with self.lock:
+                        self.pois['home'] = {'x': p[0], 'y': p[1], 'yaw': p[2], 'label': 'Home', 'aliases': ['home', 'start', 'start point'], 'description': 'Where the robot is put before every start (where the map was started).'}
             if self.pois:
                 self._write_pois(os.path.join(self.maps_dir, name + '.places.yaml'))
             self._job('save_map', 'done', f'saved "{name}"')
@@ -625,6 +631,45 @@ class Dashboard(Node):
         except OSError as ex:
             return {'ok': False, 'error': f'could not save places: {ex}'}
 
+    def _db_first_pose(self, db):
+        """Pose (x, y, yaw) of the first RTAB-Map node = where the robot stood when mapping started."""
+        try:
+            import sqlite3
+            c = sqlite3.connect(f'file:{db}?mode=ro', uri=True)
+            row = c.execute('select pose from Node order by id limit 1').fetchone()
+            c.close()
+            m = np.frombuffer(row[0], np.float32)
+            return (round(float(m[3]), 3), round(float(m[7]), 3), round(math.atan2(float(m[4]), float(m[0])), 4))
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _resolve_home(self, entry):
+        """Home = the 'home' place; else (RTAB-Map map) the start of the mapping run, which is added as the 'home' place; else the map origin."""
+        h = self.pois.get('home')
+        if h:
+            return (h['x'], h['y'], h['yaw'])
+        p = None
+        if entry and entry.get('kind') == 'mono' and entry.get('db'):
+            p = self._db_first_pose(entry['db'])
+        if p:
+            with self.lock:
+                self.pois['home'] = {'x': p[0], 'y': p[1], 'yaw': p[2], 'label': 'Home', 'aliases': ['home', 'start', 'start point'],
+                                     'description': 'Where the robot is put before every start (where the map was started).'}
+            self._write_pois()
+            return p
+        return (0.0, 0.0, 0.0)
+
+    def start_home(self):
+        """Operator: 'the robot is on its home position, start'. Places the robot at the home pose of the map (no localization)."""
+        if not self.running('static_nav'):
+            return {'ok': False, 'error': 'load a map first'}
+        if self.mode not in STANDING_MODES:
+            return {'ok': False, 'error': 'stand the robot up first (it must stand on its home position)'}
+        h = self.home or self._resolve_home(self.current_entry)
+        r = self.set_pose(*h)
+        r['home'] = list(h)
+        return r
+
     def _publish_active_places(self, clear=False):
         """active_places.yaml = the places of the map that is loaded for navigation. d1_gateway and d1_companion follow this file,
         so the guest app offers the places of the loaded map (and none while no map is loaded / ready)."""
@@ -681,6 +726,8 @@ class Dashboard(Node):
                                'description': str(b.get('description') if b.get('description') is not None else old.get('description', ''))}
         r = self._write_pois()
         r['name'] = name
+        if name == 'home':
+            self.home = (round(x, 3), round(y, 3), round(yaw, 4))
         return r
 
     # ------------------------------------------------------------------ saved grid file -> 'map' layer; offline map editing
@@ -773,15 +820,19 @@ class Dashboard(Node):
         m = self._find_map(mid)
         if m is None:
             return {'ok': False, 'error': f'unknown map "{mid}"'}
-        if m['kind'] != 'lidar':
+        home_mode = m['kind'] == 'mono' and bool(m.get('yaml'))       # RTAB-Map map with a saved grid: navigate on the grid from the home pose
+        if m['kind'] != 'lidar' and not home_mode:
             if not self.mono:
                 return {'ok': False, 'error': 'monocular SLAM is deactivated (start the dashboard with mono_slam:=true)'}
             return self._load_mono_map(m['name'])
         self.cancel_goal('load map')
-        for n in ('mapping', 'bag', 'nav2', 'localization', 'static_nav'):
+        for n in ('mapping', 'bag', 'nav2', 'localization', 'static_nav') + (('perception',) if home_mode else ()):
             self.stop(n)
         if not self.running('robot'):
-            self.start_process()
+            if home_mode:
+                self.start('robot')
+            else:
+                self.start_process()
             time.sleep(2.0)
         with self.lock:
             for g in ('map', 'global', 'local'):
@@ -789,13 +840,15 @@ class Dashboard(Node):
             self.plan = []
             self.current_map, self.current_entry, self.ui_mode = m['id'], m, 'navigation'
             self.trail = []
-            self.start_pose = tuple(m['start']) if m.get('start') else None
-            self.pose_confirmed = bool(self.start_pose)       # a saved start pose counts as placed
+            self.start_pose = tuple(m['start']) if (m.get('start') and not home_mode) else None
+            self.pose_confirmed = bool(self.start_pose)       # a saved start pose counts as placed (home mode: the operator presses Start)
             self.localized = False
+            self.mono_loc = {'state': 'off', 'source': None, 't': 0.0, 'cov': None}
         self._load_pois()
+        self.home = self._resolve_home(m)
         self._publish_active_places()
         self.start('static_nav', db=m['yaml'])
-        return {'ok': True, 'name': m['name'], 'start_pose': self.start_pose, 'placed': self.pose_confirmed, 'places': len(self.pois)}
+        return {'ok': True, 'name': m['name'], 'start_pose': self.start_pose, 'placed': self.pose_confirmed, 'places': len(self.pois), 'home': list(self.home) if self.home else None, 'home_mode': home_mode}
 
     def set_pose(self, x, y, yaw):
         """Tell the robot where it is in the map (like RViz '2D Pose Estimate'); the localizer sets map->odom."""
@@ -849,6 +902,9 @@ class Dashboard(Node):
                         m = json.load(open(os.path.join(self.maps_dir, fn)))
                         if os.path.exists(m.get('db', '')):
                             m.update(id=m.get('name'), kind='mono')
+                            gy = self._mono_grid_yaml(m.get('name', ''))
+                            if os.path.exists(gy):
+                                m['yaml'] = gy                  # saved occupancy grid: usable for static navigation from a home pose
                             out.append(m)
                     except (OSError, ValueError):
                         pass
@@ -932,7 +988,7 @@ class Dashboard(Node):
             self.plan = []
             self.nav.update(status='idle', goal=None, distance_remaining=None, goal_handle=None)
             self.ui_mode, self.current_map, self.current_entry = 'idle', None, None
-            self.pois, self.pois_file = {}, None
+            self.pois, self.pois_file, self.home = {}, None, None
             self.mono_loc = {'state': 'off', 'source': None, 't': 0.0, 'cov': None}
             self.start_pose, self.pose_confirmed = None, False
             self.trail = []
@@ -964,7 +1020,7 @@ class Dashboard(Node):
                 'job': self.job,
                 'grids': {n: g['version'] for n, g in self.grids.items()},
                 'features': {'mono_slam': self.mono, 'lidar_nav': True}, 'localization': self.loc(), 'start_pose': self.start_pose, 'pose_confirmed': self.pose_confirmed,
-                'pois': self.pois,
+                'pois': self.pois, 'home': list(self.home) if self.home else None,
             }
 
     def grid_payload(self, name):
@@ -1068,6 +1124,8 @@ def make_handler(dash):
                         return self._send(200, dash.start_map(b.get('name'), bool(b.get('record', True))))
                     if a == 'save_map':
                         return self._send(200, dash.save_map(b.get('name')))
+                    if a == 'start_home':
+                        return self._send(200, dash.start_home())
                     if a == 'edit_map':
                         return self._send(200, dash.edit_map(b.get('name', '')))
                     if a == 'load_map':

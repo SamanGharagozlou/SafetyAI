@@ -160,7 +160,7 @@
     <div id="locPopup">
       <h3 id="locTitle"></h3><div id="locBody" class="dim" style="font-size:13px"></div>
       <ol id="locSteps"><li>Stand the robot up and make sure it is somewhere the map covers.</li><li>Drive it slowly (pad or W A S D); turn gently, the camera needs a clear view of mapped walls and furniture.</li><li>This box turns green when the camera has matched the map.</li></ol>
-      <div class="row"><button id="locPlace">Place robot by hand</button><button id="locHide">Hide</button></div>
+      <div class="row"><button id="locStart" class="go" style="display:none;font-size:16px;padding:12px 8px;font-weight:700">&#9654;&nbsp;Start</button><button id="locPlace">Place robot by hand</button><button id="locHide">Hide</button></div>
     </div>
     <button id="estop">E-STOP</button>
     <div id="goalinfo" style="display:none"></div>
@@ -277,8 +277,8 @@ function renderState() {
   el('cUi', 'Workflow: <b>' + S.ui_mode + (S.current_map ? ' · ' + S.current_map : '') + '</b>', '');
   const nm = (S.procs.static_nav && S.procs.static_nav.running) || (S.procs.localization && S.procs.localization.running && S.localization), ls = S.localization;
   if (nm) { let txt, cls; if (!ls) { txt = 'Localizer: <b>starting&hellip;</b>'; cls = 'dim'; } else if (ls.state === 'localized') { txt = '<b>Ready for navigation</b> · ' + (ls.source === 'visual' ? 'camera matched the map' : ls.source === 'manual' ? 'placed by hand' : 'lidar'); cls = 'ok'; }
-    else if (ls.state === 'odometry_only') { txt = '<b>Ready</b> · odometry only (drifts)'; cls = 'warn'; } else if (ls.state === 'lidar_lost') { txt = '<b>Ready</b> · lidar lost, odometry'; cls = 'warn'; }
-    else { txt = '<b>Not ready</b> · ' + (S.procs.static_nav && S.procs.static_nav.running ? 'place the robot' : 'move the robot until localized'); cls = 'bad'; }
+    else if (ls.state === 'odometry_only') { txt = S.home ? '<b>Ready for the app</b> · started from home' : '<b>Ready</b> · odometry only (drifts)'; cls = S.home ? 'ok' : 'warn'; } else if (ls.state === 'lidar_lost') { txt = '<b>Ready</b> · lidar lost, odometry'; cls = 'warn'; }
+    else { txt = '<b>Not ready</b> · ' + (S.procs.static_nav && S.procs.static_nav.running ? (S.home ? 'put the robot at home, click Start' : 'place the robot') : 'move the robot until localized'); cls = 'bad'; }
     el('cLoc', txt, cls); $('cLoc').title = ls ? ls.message : ''; }
   else el('cLoc', 'Localized: <b>' + (S.localized ? 'yes' : 'no') + '</b>', S.localized ? 'ok' : 'dim');
   const ns = S.nav.status + (S.nav.distance_remaining != null && S.nav.status === 'navigating' ? ' · ' + S.nav.distance_remaining + ' m' : '');
@@ -316,12 +316,20 @@ function renderState() {
   if ($('follow').checked && S.pose) { view.cx = S.pose[0]; view.cy = S.pose[1]; }
   { const pop = $('locPopup'), need = S.ui_mode === 'navigation' && S.procs.localization && S.procs.localization.running && ls && ls.state !== 'localized';
     if (S.current_map !== renderState.popMap) { renderState.popMap = S.current_map; renderState.locHidden = null; renderState.wasNeed = false; clearTimeout(renderState.readyT); renderState.readyUntil = 0; }
+    const homeNeed = S.ui_mode === 'navigation' && S.procs.static_nav && S.procs.static_nav.running && ls && ls.state === 'need_pose' && S.home;
+    const homeReady = S.ui_mode === 'navigation' && S.procs.static_nav && S.procs.static_nav.running && ls && ls.state !== 'need_pose' && S.home;
+    $('locStart').style.display = 'none';
+    if (homeNeed) { renderState.wasNeed = true; renderState.homeFlow = true;
+      if (renderState.locHidden !== S.current_map) { pop.className = ''; pop.style.display = 'block'; $('locTitle').innerHTML = '<span class="pulse"></span>Put the robot on its HOME position, then click Start';
+        $('locBody').innerHTML = 'Home is at <b>(' + S.home[0].toFixed(2) + ', ' + S.home[1].toFixed(2) + ')</b> facing <b>' + (S.home[2] * 180 / Math.PI).toFixed(0) + '&deg;</b> on this map (the orange <b>Home</b> pin). Stand the robot there, facing the same way, with the robot standing.';
+        $('locSteps').style.display = 'none'; $('locPlace').style.display = 'none'; $('locStart').style.display = ''; $('locHide').textContent = 'Hide'; } }
+    else if (homeReady && renderState.wasNeed && renderState.homeFlow) { renderState.wasNeed = false; renderState.homeFlow = false; renderState.readyUntil = Date.now() + 8000; renderState.locHidden = null; }
     const starting = S.ui_mode === 'navigation' && S.job && S.job.name === 'load_map' && S.job.status === 'running';
     if (starting) { renderState.wasNeed = true; pop.className = ''; pop.style.display = 'block'; $('locTitle').innerHTML = '<span class="pulse"></span>Loading the map&hellip;'; $('locBody').textContent = S.job.message; $('locSteps').style.display = 'none'; $('locPlace').style.display = 'none'; $('locHide').textContent = 'Hide'; }
     else if (need) { renderState.wasNeed = true; if (renderState.locHidden !== S.current_map) { pop.className = ''; pop.style.display = 'block'; $('locTitle').innerHTML = '<span class="pulse"></span>Move the robot until it localizes'; $('locBody').textContent = ls.message || ''; $('locSteps').style.display = ''; $('locPlace').style.display = ''; $('locHide').textContent = 'Hide'; } }
     else if (renderState.wasNeed && ls && ls.state === 'localized') { renderState.wasNeed = false; renderState.readyUntil = Date.now() + 6000; renderState.locHidden = null; }
-    if (!need && renderState.readyUntil > Date.now()) { pop.className = 'ready'; pop.style.display = 'block'; $('locTitle').innerHTML = '&#10004; Ready for navigation'; $('locBody').textContent = ls.message + '. Use Nav mode (click a goal) or a place\'s go button.'; $('locSteps').style.display = 'none'; $('locPlace').style.display = 'none'; $('locHide').textContent = 'OK'; clearTimeout(renderState.readyT); renderState.readyT = setTimeout(() => { if (renderState.readyUntil <= Date.now()) $('locPopup').style.display = 'none'; }, 6200); }
-    else if (!need && !starting) pop.style.display = 'none'; }
+    if (!need && renderState.readyUntil > Date.now()) { pop.className = 'ready'; pop.style.display = 'block'; $('locTitle').innerHTML = (S.home && S.procs.static_nav && S.procs.static_nav.running) ? '&#10004; Ready for the app' : '&#10004; Ready for navigation'; $('locBody').textContent = (S.home && S.procs.static_nav && S.procs.static_nav.running) ? 'The robot is placed at home. Guests can scan the QR and tap a place; the robot will walk to it. (Dashboard: Nav mode or a place\'s go button.)' : ls.message + '. Use Nav mode (click a goal) or a place\'s go button.'; $('locSteps').style.display = 'none'; $('locPlace').style.display = 'none'; $('locHide').textContent = 'OK'; clearTimeout(renderState.readyT); renderState.readyT = setTimeout(() => { if (renderState.readyUntil <= Date.now()) $('locPopup').style.display = 'none'; }, 6200); }
+    else if (!need && !starting && !homeNeed) pop.style.display = 'none'; }
   if (typeof renderPois === 'function') renderPois();
 }
 let logOpen = null, logTimer = null;
@@ -342,6 +350,7 @@ $('bSave').onclick = async () => { const r = await post('/api/workflow', {action
 $('bLoad').onclick = async () => { const n = $('mapSel').value; if (!n) return; toast('loading "' + n + '"…'); const r = await post('/api/workflow', {action:'load_map', name:n}); toast(r.ok ? 'localizing in "' + n + '" and starting Nav2 (drive a little if it does not localize)' : r.error, !r.ok); };
 $('bEdit').onclick = async () => { const n = $('mapSel').value; if (!n) return; const r = await post('/api/workflow', {action:'edit_map', name:n}); toast(r.ok ? 'editing "' + n + '" offline · ' + r.places + ' place(s)' + (r.warning ? ' · ' + r.warning : '') : r.error, !r.ok); if (r.ok) setTimeout(() => $('fit').click(), 400); };
 $('bDone').onclick = async () => { const r = await post('/api/workflow', {action:'clear_all', stop_robot:false}); toast(r.ok ? 'map closed (places were saved with it)' : r.error, !r.ok); };
+$('locStart').onclick = async () => { $('locStart').disabled = true; const r = await post('/api/workflow', {action:'start_home'}); $('locStart').disabled = false; toast(r.ok ? 'started from home (' + r.home.map(v => v.toFixed(2)).join(', ') + ')' : r.error, !r.ok); };
 $('locHide').onclick = () => { renderState.locHidden = S.current_map; $('locPopup').style.display = 'none'; };
 $('locPlace').onclick = () => { $('placeMode').checked = true; $('navMode').checked = false; $('poiMode').checked = false; renderState.locHidden = S.current_map; $('locPopup').style.display = 'none'; toast('Place robot: press where it really stands on the map, drag toward the way it faces'); };
 $('bPlace').onclick = () => { $('placeMode').checked = !$('placeMode').checked; if ($('placeMode').checked) $('navMode').checked = false; };
