@@ -1,6 +1,6 @@
 # ClawMetry frontend / voice stack and the robot development (how they fit)
 
-Written when `develop` was merged into `main` (branch `main-develop`). Facts below come from reading `main`; items marked *unverified* were not run.
+Written when `develop` was merged into `main` (2026-11-15). Facts below come from reading `main`; items marked *unverified* were not run.
 
 ## What `main` has
 | Piece | Where | What it does |
