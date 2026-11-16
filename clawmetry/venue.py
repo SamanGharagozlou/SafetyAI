@@ -166,8 +166,10 @@ def load(path: str) -> Venue:
     v = raw.get("venue") or {}
     limits = raw.get("limits") or {}
     out = Venue(name=v.get("name", "unknown venue"), area=v.get("area", ""),
-                signed_off_by=v.get("signed_off_by", "") or "",
-                signed_off_date=v.get("signed_off_date", "") or "",
+                signed_off_by=str(v.get("signed_off_by", "") or ""),
+                # str(): an unquoted date in YAML loads as a datetime.date, which
+                # is not JSON serializable and takes the whole API response down.
+                signed_off_date=str(v.get("signed_off_date", "") or ""),
                 people=raw.get("people") or {}, limits=limits,
                 escort=raw.get("escort") or {},
                 destinations=list(raw.get("guide_destinations") or []),

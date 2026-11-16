@@ -44,12 +44,20 @@ KINDS = {
     "outcome",       # WHAT IT DID          - final confirmed state, scored against the prediction
     "breach",        # a rule was violated
     "integrity",     # the ledger's own health: gaps, silence, restarts
+    "policy",        # THE RULES THEMSELVES CHANGED - a guardrail was edited or
+                     # signed off. Deliberately a first-class kind: an incident
+                     # review has to be able to ask what the limits said at the
+                     # time, and a config change that is not in the record is
+                     # indistinguishable from one that never happened.
 }
 
 # WHO. "assistant" is the voice agent speaking, as distinct from "agent"
 # deciding to call a tool, and "vapi" is the platform reporting on itself -
 # three different authorities that a single "agent" would have blurred.
-ACTORS = {"guest", "staff", "agent", "assistant", "gate", "robot",
+# "operator" is the person accountable for guest safety who signs the venue
+# guardrail file - a different authority from "staff" working alongside the
+# robot, and the only one whose name belongs on a policy change.
+ACTORS = {"guest", "staff", "operator", "agent", "assistant", "gate", "robot",
           "system", "vapi"}
 
 

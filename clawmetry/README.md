@@ -171,6 +171,57 @@ Everything upstream of the tap is a **claim**; everything downstream is
 why the breach set below is mostly about disagreement between sources rather
 than any single threshold.
 
+## Setting the rules, without SSH
+
+The venue file is the spa's document, but until now the only way to change it
+was to SSH into the Orin and edit YAML. A guardrail the person responsible for
+guest safety cannot read or change is not a guardrail, it is a hardcoded
+constant with a comment above it. The dashboard's **Guardrails** tab is that
+person's view: zones, speed caps, the child rules, and the sign-off.
+
+Three things make it safe to put a safety file behind a web form.
+
+**Every edit is classified, in the operator's language.** The pending-change
+panel says *more freedom* or *more restraint* for each field, not a YAML diff.
+Tightening needs a name. Loosening needs a name, a reason, and a separate
+checkbox accepting that the robot is being given more room than it has now.
+
+**The two loosenings that do not look like safety changes are treated as
+loosenings.** Ticking `verified: on_site` lifts the unverified clamp, so a zone
+can jump from 0.15 m/s to its own cap - a box labelled "measured" can triple a
+speed. Signing the file lifts the same clamp across the whole venue and enables
+guiding at all. Both are red, and both need the confirmation.
+
+**The table shows what the robot will actually do.** `cap` is what the file
+asks for and `effective` is what survives every clamp. A concourse reading
+`0.3 / 0.15` is telling you the number you wrote is not the number in force,
+which is the single most common way a configuration file lies to the person who
+wrote it.
+
+| | |
+|---|---|
+| `GET /api/venue` | zones, limits, people, warnings, and the editable schema |
+| `POST /api/venue/plan` | dry run: the classified diff, writes nothing |
+| `POST /api/venue/apply` | writes, records, reloads - in that order |
+
+The record goes on the ledger as a `policy` event with the operator's name, the
+reason, the full before/after of every field and a `loosened` flag, **before**
+the reload - so an edit that breaks the collector is still on the record. The
+previous file is kept beside it. The reload is live: `limits.max_speed` reaches
+the correlator without a restart.
+
+### What the form deliberately will not do
+
+Zone polygons are read-only, and zones cannot be added or removed. Not because
+it is hard. A boundary drawn with a mouse over a floor plan and a boundary
+measured at the venue are different claims, and a form that accepted the first
+while the file called it `verified: on_site` would launder one into the other.
+Geometry changes stay a file edit made by someone standing in the building.
+
+The plan view draws what the file describes - dashed for never measured, red
+for no-entry - so the gap between the drawing and the room is visible rather
+than implied.
+
 ## Live wiring, end to end
 
 On the Orin the tap binds `127.0.0.1:8901` and the only public door is the

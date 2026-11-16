@@ -738,9 +738,15 @@ class TestVoiceSink(unittest.TestCase):
         h = _hub(redact_transcripts=True)
         h.handle_vapi_event(_vmsg(type="transcript", role="user", transcriptType="final",
                                   transcript="my name is Anna and I am in room 204"))
-        raw = Path(h.args.ledger).read_text()
-        self.assertNotIn("Anna", raw)
-        self.assertNotIn("204", raw)
+        # Check the FIELDS, not the raw file. The raw text is mostly sha256
+        # hashes, and asserting that a short string like "204" is absent from
+        # 64 hex characters per line passes by luck: hash 391f752045fe... holds
+        # "204" and failed this the day an unrelated test shifted the clock.
+        said = [e for e in h.led.read() if e["kind"] == "utterance"]
+        self.assertEqual(len(said), 1)
+        text = said[0]["data"]["text"]
+        for word in ("Anna", "204", "room"):
+            self.assertNotIn(word, text)
         self.assertIn("redacted", h.last_said["text"])
 
     def test_vapis_clock_is_recorded_as_theirs_not_merged_into_ours(self):
@@ -937,6 +943,297 @@ class TestAttribution(unittest.TestCase):
         c = Correlator()
         c.feed(ev("utterance", {"text": "hello", "role": "user"}, actor="guest"))
         self.assertEqual(c.feed(ev("intent", {"tool": "robot_status"}, corr="a")), [])
+
+
+# ---------------------------------------------------------------------------
+# THE OPERATOR'S GUARDRAILS, EDITED FROM THE DASHBOARD
+# ---------------------------------------------------------------------------
+
+VENUE_SRC = Path(__file__).parent / "venue" / "leukerbad_therme.yaml"
+
+
+def _venue_hub():
+    """A hub pointed at a THROWAWAY COPY of the real venue file.
+
+    A copy, not the repo's file: these tests write to it, and a test that edits
+    the document the venue signs is a test that can change what the robot does.
+    """
+    import shutil
+    h = _hub()
+    dst = Path(h._tmp.name) / "venue.yaml"
+    shutil.copy(VENUE_SRC, dst)
+    import venue as venue_mod
+    h.venue = venue_mod.load(str(dst))
+    h._apply_venue()
+    return h
+
+
+class TestPolicyClassification(unittest.TestCase):
+    """Which way does an edit move the robot's freedom."""
+
+    def setUp(self):
+        import yaml
+        self.raw = yaml.safe_load(VENUE_SRC.read_text())
+
+    def _dir(self, path, value):
+        import policy
+        p = policy.build_plan(self.raw, [{"path": path, "value": value}])
+        self.assertEqual(p.errors, [])
+        self.assertEqual(len(p.changes), 1, f"{path} produced {p.changes}")
+        return p.changes[0].direction
+
+    def test_a_higher_speed_cap_loosens(self):
+        self.assertEqual(self._dir(["zones", "concourse", "speed_cap"], 0.4), "loosen")
+
+    def test_a_lower_speed_cap_tightens(self):
+        self.assertEqual(self._dir(["zones", "concourse", "speed_cap"], 0.1), "tighten")
+
+    def test_marking_a_zone_measured_is_a_loosening(self):
+        # The one that does not look like a safety change: ticking a box
+        # labelled "measured" lifts the unverified clamp and can triple a speed.
+        self.assertEqual(self._dir(["zones", "concourse", "verified"], "on_site"), "loosen")
+
+    def test_signing_the_file_is_a_loosening(self):
+        self.assertEqual(self._dir(["venue", "signed_off_by"], "A. Operator"), "loosen")
+
+    def test_clearing_the_signature_tightens(self):
+        self.raw["venue"]["signed_off_by"] = "A. Operator"
+        self.assertEqual(self._dir(["venue", "signed_off_by"], ""), "tighten")
+
+    def test_opening_a_restricted_zone_loosens(self):
+        self.assertEqual(self._dir(["zones", "pool_deck", "restricted"], False), "loosen")
+
+    def test_turning_the_camera_back_on_loosens(self):
+        self.assertEqual(self._dir(["zones", "pool_deck", "camera_off"], False), "loosen")
+
+    def test_requiring_approval_tightens(self):
+        self.assertEqual(self._dir(["zones", "concourse", "requires_approval"], True),
+                         "tighten")
+
+    def test_stopping_further_from_a_child_tightens(self):
+        self.assertEqual(self._dir(["people", "child", "freeze_within_m"], 3.0), "tighten")
+
+    def test_letting_the_robot_closer_to_a_child_loosens(self):
+        self.assertEqual(self._dir(["people", "child", "freeze_within_m"], 1.0), "loosen")
+
+    def test_a_faster_speed_near_people_loosens(self):
+        self.assertEqual(self._dir(["people", "near_person_speed"], 0.3), "loosen")
+
+    def test_noticing_people_later_loosens(self):
+        self.assertEqual(self._dir(["people", "slow_within_m"], 1.0), "loosen")
+
+    def test_an_unknown_field_is_refused_not_ignored(self):
+        import policy
+        p = policy.build_plan(self.raw, [{"path": ["zones", "concourse", "colour"],
+                                          "value": "blue"}])
+        self.assertTrue(p.errors)
+        self.assertEqual(p.changes, [])
+
+    def test_an_unknown_zone_is_refused(self):
+        import policy
+        p = policy.build_plan(self.raw, [{"path": ["zones", "nowhere", "speed_cap"],
+                                          "value": 0.2}])
+        self.assertTrue(p.errors)
+
+    def test_polygons_are_not_editable(self):
+        import policy
+        p = policy.build_plan(self.raw, [{"path": ["zones", "concourse", "polygon"],
+                                          "value": [[0, 0], [1, 1]]}])
+        self.assertTrue(p.errors)
+
+    def test_setting_a_value_to_what_it_already_is_is_not_a_change(self):
+        import policy
+        cap = self.raw["zones"]["concourse"]["speed_cap"]
+        p = policy.build_plan(self.raw, [{"path": ["zones", "concourse", "speed_cap"],
+                                          "value": cap}])
+        self.assertEqual(p.changes, [])
+        self.assertEqual(p.errors, [])
+
+    def test_a_cap_above_the_ceiling_is_flagged_as_clamped(self):
+        import policy
+        p = policy.build_plan(self.raw, [{"path": ["zones", "concourse", "speed_cap"],
+                                          "value": 1.5}])
+        self.assertTrue(p.changes[0].note, "a cap above the ceiling must say so")
+
+    def test_a_zero_speed_is_refused(self):
+        import policy
+        p = policy.build_plan(self.raw, [{"path": ["zones", "concourse", "speed_cap"],
+                                          "value": 0}])
+        self.assertTrue(p.errors)
+
+
+class TestSurgicalYamlWrite(unittest.TestCase):
+    """The document has to survive the edit."""
+
+    def setUp(self):
+        self.raw = VENUE_SRC.read_text()
+
+    def test_only_the_edited_line_changes(self):
+        import policy
+        out = policy.set_scalar(self.raw, ["zones", "concourse", "speed_cap"], 0.2)
+        a, b = self.raw.split("\n"), out.split("\n")
+        self.assertEqual(len(a), len(b))
+        self.assertEqual(sum(1 for x, y in zip(a, b) if x != y), 1)
+
+    def test_a_trailing_comment_survives(self):
+        import policy
+        out = policy.set_scalar(self.raw, ["venue", "signed_off_by"], "A. Operator")
+        line = [l for l in out.split("\n") if "signed_off_by" in l][0]
+        self.assertIn("#", line, "the comment explaining the field was deleted")
+        self.assertIn("A. Operator", line)
+
+    def test_a_date_is_quoted_so_it_stays_a_string(self):
+        # Unquoted, YAML loads 2026-11-16 as a datetime.date: not a string, not
+        # JSON serializable, and it took the whole API response down once.
+        import policy, yaml, json
+        out = policy.set_scalar(self.raw, ["venue", "signed_off_date"], "2026-11-16")
+        val = yaml.safe_load(out)["venue"]["signed_off_date"]
+        self.assertIsInstance(val, str)
+        json.dumps(val)
+
+    def test_there_is_always_a_space_before_a_comment(self):
+        # Without it YAML reads the comment INTO the value, silently.
+        import policy, yaml
+        out = policy.set_scalar(self.raw, ["venue", "signed_off_by"], "A. Operator")
+        self.assertEqual(yaml.safe_load(out)["venue"]["signed_off_by"], "A. Operator")
+
+    def test_an_absent_key_is_inserted_into_the_right_zone(self):
+        import policy, yaml
+        out = policy.set_scalar(self.raw, ["zones", "concourse", "requires_approval"], True)
+        z = yaml.safe_load(out)["zones"]
+        self.assertIs(z["concourse"]["requires_approval"], True)
+        self.assertIsNone(z["reception"].get("requires_approval"),
+                          "the inserted key leaked into a neighbouring zone")
+
+    def test_a_missing_parent_is_an_error_not_a_new_section(self):
+        import policy
+        with self.assertRaises(KeyError):
+            policy.set_scalar(self.raw, ["zoness", "concourse", "speed_cap"], 0.2)
+
+    def test_the_file_still_parses_after_several_edits(self):
+        import policy, yaml
+        out = self.raw
+        for path, val in ((["zones", "concourse", "speed_cap"], 0.2),
+                          (["zones", "pool_deck", "restricted"], False),
+                          (["venue", "signed_off_by"], "A. Operator: Duty #1"),
+                          (["people", "child", "freeze_within_m"], 2.5)):
+            out = policy.set_scalar(out, path, val)
+        d = yaml.safe_load(out)
+        self.assertEqual(d["zones"]["concourse"]["speed_cap"], 0.2)
+        self.assertIs(d["zones"]["pool_deck"]["restricted"], False)
+        self.assertEqual(d["venue"]["signed_off_by"], "A. Operator: Duty #1")
+        self.assertEqual(d["people"]["child"]["freeze_within_m"], 2.5)
+
+
+class TestGuardrailEditing(unittest.TestCase):
+    """Applying a change through the hub: who, what, and is it on the record."""
+
+    def test_a_change_needs_a_name(self):
+        h = _venue_hub()
+        code, out = h.venue_apply([{"path": ["zones", "concourse", "speed_cap"],
+                                    "value": 0.2}], operator="")
+        self.assertEqual(code, 400)
+        self.assertFalse(out["ok"])
+
+    def test_a_loosening_needs_explicit_confirmation(self):
+        h = _venue_hub()
+        code, out = h.venue_apply([{"path": ["zones", "concourse", "speed_cap"],
+                                    "value": 0.4}], operator="A. Operator")
+        self.assertEqual(code, 409)
+        self.assertTrue(out["needs_confirmation"])
+
+    def test_a_tightening_does_not(self):
+        h = _venue_hub()
+        code, out = h.venue_apply([{"path": ["zones", "concourse", "speed_cap"],
+                                    "value": 0.1}], operator="A. Operator")
+        self.assertEqual(code, 200)
+        self.assertTrue(out["ok"])
+
+    def test_the_change_lands_on_the_ledger_with_the_name_and_the_diff(self):
+        h = _venue_hub()
+        h.venue_apply([{"path": ["zones", "concourse", "speed_cap"], "value": 0.1}],
+                      operator="A. Operator", reason="wet floor")
+        pol = [e for e in h.led.read() if e["kind"] == "policy"]
+        self.assertEqual(len(pol), 1)
+        d = pol[0]["data"]
+        self.assertEqual(pol[0]["actor"], "operator")
+        self.assertEqual(d["by"], "A. Operator")
+        self.assertEqual(d["reason"], "wet floor")
+        self.assertEqual(d["changes"][0]["direction"], "tighten")
+        self.assertFalse(d["loosened"])
+
+    def test_a_loosening_is_flagged_on_the_record(self):
+        h = _venue_hub()
+        h.venue_apply([{"path": ["zones", "concourse", "speed_cap"], "value": 0.4}],
+                      operator="A. Operator", confirm_loosen=True)
+        d = [e for e in h.led.read() if e["kind"] == "policy"][0]["data"]
+        self.assertTrue(d["loosened"], "an audit must be able to find these without a diff")
+
+    def test_the_previous_file_is_kept(self):
+        h = _venue_hub()
+        _, out = h.venue_apply([{"path": ["zones", "concourse", "speed_cap"], "value": 0.1}],
+                               operator="A. Operator")
+        self.assertTrue(Path(out["backup"]).exists())
+
+    def test_the_chain_survives_a_policy_event(self):
+        h = _venue_hub()
+        h.venue_apply([{"path": ["zones", "concourse", "speed_cap"], "value": 0.1}],
+                      operator="A. Operator")
+        self.assertTrue(h.led.verify()["ok"])
+
+    def test_the_change_takes_effect_without_a_restart(self):
+        h = _venue_hub()
+        h.venue_apply([{"path": ["limits", "max_speed"], "value": 0.2}],
+                      operator="A. Operator")
+        self.assertAlmostEqual(h.venue.max_speed, 0.2)
+        self.assertAlmostEqual(h.cor.pol.speed_cap_mps, 0.2,
+                               msg="the correlator is still enforcing the old ceiling")
+
+    def test_signing_off_lifts_the_unsigned_clamp(self):
+        h = _venue_hub()
+        self.assertFalse(h.venue.signed)
+        h.venue_apply([{"path": ["venue", "signed_off_by"], "value": "A. Operator"}],
+                      operator="A. Operator", confirm_loosen=True)
+        self.assertTrue(h.venue.signed)
+
+    def test_measured_alone_does_not_raise_the_speed_while_unsigned(self):
+        # Both clamps have to come off. This is the rule an operator is most
+        # likely to expect to work on its own.
+        h = _venue_hub()
+        cfg = h.venue_config()
+        before = [z for z in cfg["zones"] if z["name"] == "reception"][0]["effective_speed"]
+        h.venue_apply([{"path": ["zones", "reception", "verified"], "value": "on_site"}],
+                      operator="A. Operator", confirm_loosen=True)
+        after = [z for z in h.venue_config()["zones"]
+                 if z["name"] == "reception"][0]["effective_speed"]
+        self.assertEqual(before, after)
+
+    def test_the_config_is_json_serializable(self):
+        # A datetime.date from an unquoted YAML date broke exactly this.
+        h = _venue_hub()
+        h.venue_apply([{"path": ["venue", "signed_off_date"], "value": "2026-11-16"}],
+                      operator="A. Operator")
+        json.dumps(h.venue_config())
+
+    def test_a_bad_edit_writes_nothing(self):
+        h = _venue_hub()
+        before = Path(h.venue.path).read_text()
+        code, _ = h.venue_apply([{"path": ["zones", "nowhere", "speed_cap"], "value": 0.2}],
+                                operator="A. Operator")
+        self.assertEqual(code, 400)
+        self.assertEqual(Path(h.venue.path).read_text(), before)
+
+    def test_the_effective_speed_shows_the_clamp(self):
+        h = _venue_hub()
+        z = [z for z in h.venue_config()["zones"] if z["name"] == "concourse"][0]
+        self.assertGreater(z["speed_cap"], z["effective_speed"],
+                           "the view must show that the asked-for cap is not what runs")
+
+    def test_no_venue_means_no_editing(self):
+        h = _hub()
+        self.assertFalse(h.venue_config()["configured"])
+        code, _ = h.venue_apply([], operator="A. Operator")
+        self.assertEqual(code, 400)
 
 
 if __name__ == "__main__":

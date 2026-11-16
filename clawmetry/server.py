@@ -54,6 +54,7 @@ from pathlib import Path
 from correlate import Correlator, Policy
 from ledger import Ledger
 import compliance as compliance_mod
+import policy as policy_mod
 import venue as venue_mod
 from frame import FrameGrabber
 from predict import BrainJudge, CosmosJudge, kinematic_predict, verify
@@ -90,6 +91,15 @@ VOICE_CHATTER = {"speech-update", "conversation-update", "user-interrupted",
                  "language-change-detected", "phone-call-control"}
 
 
+def _centroid(poly: list) -> tuple:
+    """A point inside a zone, for asking what speed applies there. Good enough
+    for a convex floor plan; a zone shaped badly enough to break it is a zone
+    that needs measuring on site anyway."""
+    if not poly:
+        return (None, None)
+    return (sum(p[0] for p in poly) / len(poly), sum(p[1] for p in poly) / len(poly))
+
+
 class Hub:
     """Ledger + correlator + collectors + subscribers."""
 
@@ -117,15 +127,7 @@ class Hub:
         self._n = 0
         self.last_said: dict | None = None   # newest guest transcript, for attribution
         self._voice_dropped = 0              # partials and chatter: counted, not stored
-        if self.venue:
-            pp = self.venue.person_policy()
-            self.cor.pol.speed_cap_mps = self.venue.max_speed
-            self.cor.pol.person_min_m = pp["hold_within_m"]
-            self.cor.pol.child_freeze_m = pp["child_freeze_within_m"]
-            self.cor.pol.child_height_under_m = pp["child_height_under_m"]
-            self.cor.pol.latch_s = pp["latch_s"]
-            self.cor.pol.stale_s = pp["stale_frame_s"]
-            self.frames.off = self.venue.camera_off_zones()
+        self._apply_venue()
         # Warm the frame cache only now. The camera-off zones have to be known
         # BEFORE a background thread starts opening the camera, or the opening
         # seconds of every run are grabbed under no privacy policy at all. The
@@ -169,6 +171,119 @@ class Hub:
             if src:
                 self.sources[src] = {"last_ts": ev["ts"], "kind": ev["kind"]}
         del self.breaches[200:]
+
+    def _apply_venue(self):
+        """Push the venue file's numbers into everything that enforces them.
+
+        Called at boot AND after an operator edit, so there is exactly one
+        place where a guardrail becomes behaviour. A reload that updated the
+        dashboard but not the correlator would show limits the robot is not
+        actually keeping, which is worse than showing nothing.
+        """
+        if not self.venue:
+            return
+        pp = self.venue.person_policy()
+        self.cor.pol.speed_cap_mps = self.venue.max_speed
+        self.cor.pol.person_min_m = pp["hold_within_m"]
+        self.cor.pol.child_freeze_m = pp["child_freeze_within_m"]
+        self.cor.pol.child_height_under_m = pp["child_height_under_m"]
+        self.cor.pol.latch_s = pp["latch_s"]
+        self.cor.pol.stale_s = pp["stale_frame_s"]
+        self.frames.off = self.venue.camera_off_zones()
+        self.zones = self._venue_zones()
+
+    # -- the operator's guardrails, editable ------------------------------
+
+    def _venue_raw(self) -> dict:
+        import yaml
+        return yaml.safe_load(Path(self.venue.path).read_text()) or {}
+
+    def venue_config(self) -> dict:
+        """Everything the guardrails view needs to render itself."""
+        if not self.venue:
+            return {"configured": False,
+                    "hint": "start with --venue clawmetry/venue/leukerbad_therme.yaml"}
+        raw = self._venue_raw()
+        v = self.venue
+        zones = []
+        for n, z in v.zones.items():
+            zones.append({
+                "name": n, "label": z.label, "polygon": z.polygon,
+                "speed_cap": z.speed_cap, "restricted": z.restricted,
+                "camera_off": z.camera_off, "requires_approval": z.requires_approval,
+                "verified": z.verified, "reason": z.reason,
+                # What the robot will ACTUALLY do here, after every clamp. The
+                # gap between this and speed_cap is the whole point of the view.
+                "effective_speed": v.speed_cap_at(*_centroid(z.polygon))
+                                   if z.polygon else v.unverified_speed,
+                "is_destination": n in v.destinations,
+            })
+        return {
+            "configured": True, "path": v.path, "name": v.name, "area": v.area,
+            "signed": v.signed, "signed_off_by": v.signed_off_by,
+            "signed_off_date": v.signed_off_date,
+            "limits": raw.get("limits") or {}, "people": raw.get("people") or {},
+            "zones": sorted(zones, key=lambda z: z["name"]),
+            "destinations": list(v.destinations),
+            "warnings": list(v.warnings),
+            "schema": policy_mod.editable_schema(),
+        }
+
+    def venue_plan(self, edits: list) -> dict:
+        if not self.venue:
+            return {"ok": False, "errors": ["no venue file is loaded"], "changes": []}
+        return policy_mod.build_plan(self._venue_raw(), edits or []).as_dict()
+
+    def venue_apply(self, edits: list, operator: str, reason: str = "",
+                    confirm_loosen: bool = False) -> tuple[int, dict]:
+        """Write the operator's change, record it, and reload. In that order.
+
+        The record goes in BEFORE the reload so that a change which crashes the
+        reload is still on the ledger. An edit that broke the collector and left
+        no trace would be the one edit nobody could investigate.
+        """
+        if not self.venue:
+            return 400, {"ok": False, "error": "no venue file is loaded"}
+        operator = (operator or "").strip()
+        if len(operator) < 3:
+            return 400, {"ok": False, "error": "name the operator making this change; "
+                                               "a guardrail change with no name on it is "
+                                               "not accountable to anyone"}
+        plan = policy_mod.build_plan(self._venue_raw(), edits or [])
+        if plan.errors:
+            return 400, {"ok": False, "errors": plan.errors}
+        if not plan.changes:
+            return 200, {"ok": True, "changed": 0, "note": "nothing to change"}
+        if plan.loosens and not confirm_loosen:
+            return 409, {"ok": False, "needs_confirmation": True,
+                         "error": "this change gives the robot more freedom than it has "
+                                  "now; re-send with confirm_loosen to accept that",
+                         **plan.as_dict()}
+        try:
+            backup, _ = policy_mod.write_plan(self.venue.path, plan)
+        except (OSError, KeyError, ValueError) as e:
+            return 500, {"ok": False, "error": f"could not write the guardrail file: {e}"}
+        ev = self.emit("policy", actor="operator", data={
+            "event": "venue_edit", "by": operator, "reason": reason,
+            "file": self.venue.path, "backup": backup,
+            "loosened": plan.loosens,
+            "changes": [c.as_dict() for c in plan.changes],
+            "source": "operator_console"})
+        try:
+            self.venue = venue_mod.load(self.venue.path)
+            self._apply_venue()
+        except Exception as e:                      # noqa: BLE001 - must not die here
+            self.emit("integrity", data={
+                "event": "venue_reload_failed", "detail": str(e),
+                "hint": f"the file was written and is recorded at seq {ev['seq']}; "
+                        f"the previous version is at {backup}"})
+            return 500, {"ok": False, "seq": ev["seq"],
+                         "error": f"written and recorded, but reloading it failed: {e}"}
+        for w in self.venue.warnings:
+            self.emit("integrity", data={"event": "venue_warning", "detail": w})
+        return 200, {"ok": True, "seq": ev["seq"], "changed": len(plan.changes),
+                     "loosened": plan.loosens, "backup": backup,
+                     "venue": self.venue_config()}
 
     def _venue_zones(self) -> list:
         """The venue's zones in the shape the predictor wants."""
@@ -742,6 +857,8 @@ class Handler(BaseHTTPRequestHandler):
                                         "hint": "start with --compliance clawmetry/compliance.yaml"})
             pack = self.hub.comp.evidence_pack(self.hub.led.read(), self.hub.evidence())
             return self._json(200, {"configured": True, **pack})
+        if p == "/api/venue":
+            return self._json(200, self.hub.venue_config())
         if p == "/api/events":
             return self._sse()
         if p in PASSTHROUGH_GET:
@@ -822,6 +939,17 @@ class Handler(BaseHTTPRequestHandler):
                                corr=payload.get("corr", ""),
                                src_ts=payload.get("src_ts"))
             return self._json(200, {"ok": True, "seq": ev["seq"]})
+
+        if p == "/api/venue/plan":
+            # Dry run: says what each edit does to the robot and never writes.
+            return self._json(200, self.hub.venue_plan(payload.get("edits") or []))
+
+        if p == "/api/venue/apply":
+            code, out = self.hub.venue_apply(
+                payload.get("edits") or [], payload.get("operator", ""),
+                reason=payload.get("reason", ""),
+                confirm_loosen=bool(payload.get("confirm_loosen")))
+            return self._json(code, out)
 
         if p == "/intervention":
             # WHO INTERVENED: a human tapped Approve / Deny / Pause.
