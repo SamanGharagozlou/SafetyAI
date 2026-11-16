@@ -8,6 +8,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
       ros-humble-navigation2 ros-humble-nav2-bringup ros-humble-rtabmap-ros \
       ros-humble-cv-bridge ros-humble-vision-opencv ros-humble-image-transport \
       ros-humble-tf2-ros ros-humble-tf2-tools ros-humble-rosbag2-storage-default-plugins \
+      ros-humble-vision-msgs ros-humble-diagnostic-msgs \
       python3-pip python3-venv python3-colcon-common-extensions python3-opencv python3-yaml \
       python3-websockets python3-numpy python3-scipy curl ca-certificates xz-utils iproute2 iputils-ping
 

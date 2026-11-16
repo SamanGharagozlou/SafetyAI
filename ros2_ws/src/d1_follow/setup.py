@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='vivek',
     maintainer_email='jayaprakashnis619@gmail.com',
-    description='Lock onto one guest and publish a dry-run follow velocity.',
+    description='Lock onto one guest, publish a follow velocity, optionally relay it to /cmd_vel.',
     license='BSD-3-Clause',
     # colcon uses these to pick the pytest runner (otherwise it silently runs unittest).
     tests_require=['pytest'],
@@ -27,6 +27,8 @@ setup(
     entry_points={
         'console_scripts': [
             'target_follower = d1_follow.target_follower_node:main',
+            'follow_relay = d1_follow.follow_relay_node:main',
+            'drive = d1_follow.follow_relay_node:drive_main',
             'lock = d1_follow.lock_cli:lock_main',
             'release = d1_follow.lock_cli:release_main',
         ],
