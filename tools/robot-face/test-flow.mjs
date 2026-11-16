@@ -16,6 +16,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(join(HERE, '../../frontend/package.json'))
 const { chromium } = require('playwright')
@@ -53,7 +54,10 @@ if (!BASE) {
   }
   const srv = spawn(process.execPath, [join(HERE, 'server.mjs')], {
     env: { ...process.env, PORT: '5189', AGENT_URL: 'http://127.0.0.1:5191',
-           PUBLIC_URL: 'http://127.0.0.1:5189', FACE_KEY: '', LEASE_MS: '6000' },
+           PUBLIC_URL: 'http://127.0.0.1:5189', FACE_KEY: '', LEASE_MS: '6000',
+           // Never into the repo: the server persists its log and sessions,
+           // and a test run must not leave history in the working tree.
+           STATE_DIR: join(tmpdir(), 'd1-face-test-' + process.pid) },
     stdio: 'ignore',
   })
   spawned.push(() => srv.kill())

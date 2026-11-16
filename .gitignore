@@ -30,3 +30,6 @@ captures/
 # clawmetry: a ledger holds guest-session records - never commit one.
 # (baseline.json IS committed: it is the measured robot calibration.)
 clawmetry-ledger*.jsonl
+
+# The greeter server's on-disk log and session history (per deployment).
+tools/robot-face/state/

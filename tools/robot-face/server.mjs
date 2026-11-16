@@ -32,7 +32,7 @@
  *   VAPI_PUBLIC_KEY=... VAPI_ASSISTANT_ID=... node tools/robot-face/server.mjs
  */
 import { createServer } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile, appendFile, mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { networkInterfaces } from 'node:os'
@@ -229,14 +229,15 @@ const sessions = []
 let scans = 0            // /join loads: someone pointed a camera at the QR
 const startSession = (name, lang, owner) => {
   sessions.push({ name: name || '(no name)', lang, owner, at: Date.now(), endedAt: 0, endedBy: '' })
-  if (sessions.length > 200) sessions.splice(0, sessions.length - 200)
+  if (sessions.length > 300) sessions.splice(0, sessions.length - 300)
+  saveSessions()
 }
 /* Takes the owner explicitly. Reading it off `session` was wrong: by the
    time a takeover calls this, `session` has already been replaced by the
    new guest, so it closed the wrong row - or none at all. */
 const endSession = (how, owner) => {
   const live = sessions.find(x => !x.endedAt && x.owner === owner)
-  if (live) { live.endedAt = Date.now(); live.endedBy = how }
+  if (live) { live.endedAt = Date.now(); live.endedBy = how; saveSessions() }
 }
 
 /**
@@ -249,10 +250,54 @@ const endSession = (how, owner) => {
  * with the large number next to it rather than a guess.
  */
 const log = []
+
+/**
+ * KEPT ON DISK, because it was not and that made it useless.
+ *
+ * Every deploy restarts this service, and the whole history - the timeline,
+ * who had used it, how many had scanned - went to zero each time. A record
+ * that disappears exactly when you ship a fix is not a record. Writes are
+ * fire-and-forget: losing a line is survivable, delaying a guest is not.
+ */
+const STATE_DIR = process.env.STATE_DIR ?? join(HERE, 'state')
+const LOG_FILE = join(STATE_DIR, 'log.jsonl')
+const SESSIONS_FILE = join(STATE_DIR, 'sessions.json')
+
 const logAdd = e => {
   const at = Date.now()
-  log.push({ ...e, at, gap: log.length ? at - log[log.length - 1].at : 0 })
-  if (log.length > 150) log.splice(0, log.length - 150)
+  const entry = { ...e, at, gap: log.length ? at - log[log.length - 1].at : 0 }
+  log.push(entry)
+  if (log.length > 400) log.splice(0, log.length - 400)
+  appendFile(LOG_FILE, JSON.stringify(entry) + '\n').catch(() => {})
+}
+
+let saveTimer = null
+const saveSessions = () => {
+  // Debounced: a busy minute should not mean a hundred writes to an SD card.
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    writeFile(SESSIONS_FILE, JSON.stringify({ scans, sessions: sessions.slice(-300) })).catch(() => {})
+  }, 1000)
+  saveTimer.unref?.()
+}
+
+async function restore() {
+  await mkdir(STATE_DIR, { recursive: true }).catch(() => {})
+  try {
+    const lines = (await readFile(LOG_FILE, 'utf8')).trim().split('\n')
+    // Only the tail is interesting, and re-reading a huge file on every
+    // boot is how a demo box gets slow.
+    for (const l of lines.slice(-400)) { try { log.push(JSON.parse(l)) } catch {} }
+    if (lines.length > 4000) await writeFile(LOG_FILE, lines.slice(-2000).join('\n') + '\n').catch(() => {})
+  } catch {}
+  try {
+    const d = JSON.parse(await readFile(SESSIONS_FILE, 'utf8'))
+    if (Array.isArray(d.sessions)) sessions.push(...d.sessions)
+    if (Number.isFinite(d.scans)) scans = d.scans
+    // Anything still marked live belongs to a process that no longer exists.
+    for (const x of sessions) if (!x.endedAt) { x.endedAt = x.at; x.endedBy = 'server restarted' }
+  } catch {}
+  console.log(`restored ${log.length} log entries, ${sessions.length} sessions, ${scans} scans`)
 }
 let brainSeenAt = 0
 const brainUp = () => Date.now() - brainSeenAt < 30000   // a long poll returns at 20s
@@ -374,7 +419,7 @@ async function weather() {
   return weatherCache.text
 }
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`)
   const p = url.pathname
 
@@ -389,7 +434,7 @@ createServer(async (req, res) => {
       ? { 'Set-Cookie': `fkey=${KEY}; Path=/; SameSite=Lax; Max-Age=86400` } : {}
 
     if (p === '/' || p === '/face') return void await page(res, 'index.html', setCookie)
-    if (p === '/join') { scans++; return void await page(res, 'join.html', setCookie) }
+    if (p === '/join') { scans++; saveSessions(); return void await page(res, 'join.html', setCookie) }
 
     if (p === '/api/config') {
       // The QR carries the key, so a guest scans their way in and never sees it.
@@ -572,7 +617,9 @@ createServer(async (req, res) => {
   } catch (e) {
     json(res, 500, { error: e.message })
   }
-}).listen(PORT, BIND, () => {
+})
+await restore()
+server.listen(PORT, BIND, () => {
   const k = KEY ? `?k=${encodeURIComponent(KEY)}` : ''
   console.log(`\nRobot face   ->  ${PUBLIC_URL}/face${k}`)
   console.log(`Guest join   ->  ${PUBLIC_URL}/join${k}   (what the QR encodes)`)
