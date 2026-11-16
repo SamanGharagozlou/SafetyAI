@@ -1,0 +1,547 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ClawMetry Control Plane</title>
+<!-- an empty icon: the browser asks for one, and a 404 in the console of a
+     safety dashboard is a red herring somebody will chase one day -->
+<link rel="icon" href="data:,">
+<style>
+:root{--bg:#0a0e14;--panel:#121820;--line:#1f2a36;--ink:#e6edf3;--dim:#7d8da0;
+--cyan:#2fd4c8;--amber:#f0b429;--red:#f05b5b;--green:#3ddc97;--violet:#9b8cf0}
+*{box-sizing:border-box}
+/* a layout rule outranks the UA's [hidden]{display:none}, so say it louder */
+[hidden]{display:none !important}
+body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
+header{display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:#0d131a;position:sticky;top:0;z-index:5}
+h1{font-size:14px;margin:0;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}
+.sp{flex:1}
+.badge{padding:3px 9px;border-radius:3px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+.badge b{color:var(--ink);font-weight:600}
+.ok{border-color:#1d4d3c;color:var(--green)}.bad{border-color:#5a2222;color:var(--red)}
+.warn{border-color:#5a4418;color:var(--amber)}
+main{display:grid;grid-template-columns:1fr 380px;gap:14px;padding:14px;align-items:start}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px}
+h2{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin:0;padding:10px 12px;border-bottom:1px solid var(--line)}
+.pipe{display:flex;gap:8px;padding:12px;flex-wrap:wrap}
+.node{flex:1;min-width:120px;border:1px solid var(--line);border-radius:5px;padding:9px 11px;background:#0e141b}
+.node .n{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.node .v{font-size:15px;margin-top:3px}
+.node.live{border-color:#1d4d3c}.node.stale{border-color:#5a2222;background:#1a0f12}
+.led{padding:6px 12px 12px;max-height:60vh;overflow:auto}
+.act{border:1px solid var(--line);border-left:3px solid var(--violet);border-radius:5px;margin-top:8px;padding:9px 11px;background:#0e141b}
+.act.denied{border-left-color:var(--red)}.act.breached{border-left-color:var(--amber)}
+.act.done{border-left-color:var(--green)}
+.row{display:grid;grid-template-columns:118px 1fr;gap:10px;padding:2px 0}
+.row .k{color:var(--dim);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding-top:2px}
+.tool{color:var(--cyan)}
+.feed{max-height:48vh;overflow:auto;padding:6px 12px 12px}
+.b{border-left:3px solid var(--line);padding:7px 10px;margin-top:7px;background:#0e141b;border-radius:0 5px 5px 0}
+.b.critical{border-left-color:var(--red)}.b.high{border-left-color:var(--amber)}
+.b.medium{border-left-color:var(--violet)}
+.b .r{color:var(--ink);font-weight:600}.b .d{color:var(--dim);margin-top:2px}
+.src{display:flex;justify-content:space-between;padding:6px 12px;border-top:1px solid var(--line)}
+.src:first-of-type{border-top:0}
+.age{color:var(--green)}.age.old{color:var(--red)}
+.empty{color:var(--dim);padding:14px 12px;font-style:italic}
+.t{color:var(--dim);font-size:11px}
+/* -- guardrails view -- */
+.tab{background:none;border:1px solid var(--line);color:var(--dim);font:inherit;padding:3px 11px;
+  border-radius:3px;cursor:pointer}
+.tab.on{border-color:var(--cyan);color:var(--cyan)}
+table.z{width:100%;border-collapse:collapse;font-size:12px}
+table.z th{font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--dim);
+  text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);font-weight:400}
+table.z td{padding:7px 8px;border-bottom:1px solid #18202a;vertical-align:middle}
+table.z tr:hover td{background:#0e141b}
+table.z .zn{color:var(--ink)}table.z .zl{color:var(--dim);font-size:10px}
+input[type=number],input[type=text],select{background:#0a0f15;border:1px solid var(--line);
+  color:var(--ink);font:inherit;font-size:12px;border-radius:3px;padding:3px 5px;width:72px}
+input[type=text]{width:100%}
+input.dirty,select.dirty{border-color:var(--amber);background:#17130a}
+input[type=checkbox]{accent-color:var(--cyan)}
+.eff{color:var(--green)}.eff.clamped{color:var(--amber)}
+.chg{border-left:3px solid var(--line);padding:7px 10px;margin-top:7px;background:#0e141b;
+  border-radius:0 5px 5px 0}
+.chg.loosen{border-left-color:var(--red)}.chg.tighten{border-left-color:var(--green)}
+.chg .h{font-weight:600}.chg .e{color:var(--dim);margin-top:2px;font-size:11px}
+.dir{font-size:9px;letter-spacing:.11em;text-transform:uppercase;padding:1px 5px;border-radius:2px;
+  border:1px solid var(--line);color:var(--dim)}
+.dir.loosen{border-color:#5a2222;color:var(--red)}.dir.tighten{border-color:#1d4d3c;color:var(--green)}
+button.go{background:#132a22;border:1px solid #1d4d3c;color:var(--green);font:inherit;padding:7px 14px;
+  border-radius:4px;cursor:pointer;width:100%;margin-top:10px}
+button.go:disabled{background:#131820;border-color:var(--line);color:var(--dim);cursor:not-allowed}
+button.go.risk{background:#2a1414;border-color:#5a2222;color:var(--red)}
+.fld{padding:9px 12px;border-bottom:1px solid #18202a}
+.fld label{display:block;font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--dim);
+  margin-bottom:4px}
+.note{color:var(--dim);font-size:11px;padding:10px 12px;font-style:italic;line-height:1.5}
+svg.plan{display:block;width:100%;height:auto;background:#0a0f15}
+svg.plan text{font-family:ui-monospace,Menlo,monospace;fill:var(--dim)}
+svg.plan text.nm{fill:var(--ink)}
+</style>
+
+<header>
+  <h1>ClawMetry · Physical AI Control Plane</h1>
+  <span class="badge" id="body">body <b>—</b></span>
+  <span class="badge" id="chain">chain <b>—</b></span>
+  <span class="badge" id="cosmos">cosmos <b>—</b></span>
+  <span class="sp"></span>
+  <button class="tab on" data-v="live">Live</button>
+  <button class="tab" data-v="guard">Guardrails</button>
+  <span class="badge" id="run">—</span>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>Authority pipeline · who acts, and are they still talking</h2>
+      <div class="pipe" id="pipe"></div>
+    </section>
+    <section style="margin-top:14px">
+      <h2>The ledger · intention vs action</h2>
+      <div class="led" id="ledger"><div class="empty">waiting for the first tool call…</div></div>
+    </section>
+  </div>
+  <div>
+    <section>
+      <h2>Breaches</h2>
+      <div class="feed" id="breaches"><div class="empty">none recorded</div></div>
+    </section>
+    <section style="margin-top:14px">
+      <h2>Voice · what was said <span class="t">(Vapi's self-report)</span></h2>
+      <div class="feed" id="voice" style="max-height:26vh">
+        <div class="empty">voice sink not wired — nothing has posted to /vapi/events</div>
+      </div>
+      <div class="src" id="stackwrap" hidden><span class="t" id="stack"></span></div>
+    </section>
+    <section style="margin-top:14px">
+      <h2>Sources · silence is a finding</h2>
+      <div id="sources"><div class="empty">no sources yet</div></div>
+    </section>
+    <section style="margin-top:14px" id="compwrap" hidden>
+      <h2>Reporting clocks · evidence, not a certificate</h2>
+      <div id="compliance"></div>
+    </section>
+  </div>
+</main>
+
+<main id="gview" hidden style="grid-template-columns:1fr 420px">
+  <div>
+    <section>
+      <h2>The floor &middot; as described, not as measured</h2>
+      <div id="plan"></div>
+      <div class="note">Geometry is not editable here. A boundary drawn with a mouse over a
+        floor plan and a boundary measured at the venue are different claims, and a view that
+        accepted the first while the file called it <b>verified: on_site</b> would quietly turn
+        one into the other. Polygons change by editing the file, standing in the building.</div>
+    </section>
+    <section style="margin-top:14px">
+      <h2>Zones &middot; cap is what you ask for, effective is what the robot does</h2>
+      <div style="overflow:auto"><table class="z" id="zones"></table></div>
+    </section>
+  </div>
+  <div>
+    <section>
+      <h2>Sign-off</h2>
+      <div id="signoff"></div>
+    </section>
+    <section style="margin-top:14px">
+      <h2>Ceilings &amp; people</h2>
+      <div id="globals"></div>
+    </section>
+    <section style="margin-top:14px">
+      <h2>Pending change</h2>
+      <div id="pending"></div>
+    </section>
+    <section style="margin-top:14px">
+      <h2>What the file is warning about</h2>
+      <div id="vwarn"></div>
+    </section>
+  </div>
+</main>
+
+
+<script>
+const acts = new Map();            // corr -> rolled-up action
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+const clock = ts => new Date(ts * 1000).toLocaleTimeString();
+
+function fold(ev) {
+  const c = ev.corr; if (!c) return;
+  const a = acts.get(c) || { corr: c, t: ev.ts };
+  const d = ev.data || {};
+  if (ev.kind === 'utterance')    { a.asked = d.text; a.lang = d.lang; a.askedAge = d.age_s; }
+  if (ev.kind === 'intent')       { a.tool = d.tool; a.args = d.args; a.t = ev.ts;
+                                    a.speechSeen = d.speech_seen; }
+  if (ev.kind === 'prediction')   { (a.preds = a.preds || []).push(d); }
+  if (ev.kind === 'decision')     { a.decision = d.decision; a.reason = d.reason; }
+  if (ev.kind === 'intervention') { a.by = d.by; a.human = d.decision; a.hts = ev.ts; }
+  if (ev.kind === 'command')      { a.sent = true; }
+  if (ev.kind === 'outcome')      { a.out = d; }
+  if (ev.kind === 'breach')       { (a.breaches = a.breaches || []).push(d); }
+  acts.set(c, a);
+}
+
+function renderLedger() {
+  const list = [...acts.values()].sort((x, y) => y.t - x.t).slice(0, 25);
+  if (!list.length) return;
+  $('ledger').innerHTML = list.map(a => {
+    const cls = a.decision === 'deny' ? 'denied' : a.breaches?.length ? 'breached' : a.out ? 'done' : '';
+    const kin = (a.preds || []).find(p => p.basis === 'kinematic');
+    const cos = (a.preds || []).find(p => p.basis === 'cosmos');
+    const rows = [];
+    // Three different things, and collapsing them into one grey dash is how
+    // a missing feed gets read as a quiet room: the guest's words, or the
+    // sink being live with nobody having spoken, or no sink at all.
+    rows.push(['who asked', a.asked
+      ? `“${esc(a.asked)}”<span class=t>${a.askedAge != null ? ` · said ${a.askedAge}s before the command` : ''} · Vapi transcript</span>`
+      : (a.speechSeen
+          ? '<span style="color:var(--amber)">nothing said — no guest utterance within 120s of this command</span>'
+          : '<span class=t>no transcript — Vapi voice sink not wired (POST /vapi/events)</span>')]);
+    rows.push(['intended', a.tool
+      ? `<span class="tool">${esc(a.tool)}</span> ${a.args && Object.keys(a.args).length ? esc(JSON.stringify(a.args)) : ''}`
+      : '<span style="color:var(--amber)">unknown — no intent was ever recorded for this action</span>']);
+    if (kin) rows.push(['predicted', kin.confidence === 0
+      ? `<span style="color:var(--amber)">unknown — ${esc(kin.reason)}</span>`
+      : `→ x ${kin.end_pose[0]} y ${kin.end_pose[1]} · ${kin.duration_s}s${kin.predicted_breach ? ` · <span style="color:var(--red)">BREACH: ${esc(kin.reason)}</span>` : ''}`]);
+    if (cos) rows.push(['world model', cos.available
+      ? (cos.contradiction
+          ? `<span style="color:var(--red)">unsafe (self-contradictory)</span> — flags said clear, reasoning said: ${esc(cos.reason)} · taking the cautious reading (${cos.latency_s}s)`
+          : `${cos.unsafe ? '<span style="color:var(--red)">unsafe</span>' : '<span style="color:var(--green)">clear</span>'} — ${esc(cos.reason) || 'no reason given'} (${cos.latency_s}s)`)
+      : `<span style="color:var(--amber)">unavailable — ${esc(cos.reason)}</span>`]);
+    if (a.decision) rows.push(['gate', a.decision === 'deny'
+      ? `<span style="color:var(--red)">DENIED</span> — ${esc(a.reason)}`
+      : '<span style="color:var(--green)">allowed</span>']);
+    if (a.human) rows.push(['intervened', `<span style="color:var(--amber)">${esc(a.by)} tapped ${esc(a.human).toUpperCase()}</span> at ${clock(a.hts)}`]);
+    if (a.out) {
+      const p = a.out.end_pose;
+      const pose = (Array.isArray(p) && p[0] != null)
+        ? `end x ${(+p[0]).toFixed(2)} y ${(+p[1]).toFixed(2)}`
+        : '<span class=t>no pose feed</span>';
+      const dev = a.out.deviation_z == null
+        ? '<span style="color:var(--amber)">unverified</span>'
+        : `deviation <b style="color:${a.out.deviation_z >= 3 ? 'var(--red)' : 'var(--green)'}">${a.out.deviation_z}σ</b>`;
+      rows.push(['what it did', `${pose} · ${a.out.duration_s ?? '?'}s · ${dev}` +
+        (a.out.error ? ` · <span style="color:var(--red)">${esc(a.out.error)}</span>` : '')]);
+    }
+    (a.breaches || []).forEach(b => rows.push(['breach', `<span style="color:var(--red)">${esc(b.rule)}</span> — ${esc(b.detail)}`]));
+    return `<div class="act ${cls}"><div class="t">${clock(a.t)} · ${esc(a.corr)}</div>` +
+      rows.map(([k, v]) => `<div class="row"><div class="k">${k}</div><div>${v}</div></div>`).join('') + '</div>';
+  }).join('');
+}
+
+const voice = [];
+function foldVoice(ev) {
+  if (ev.kind !== 'utterance') return;
+  const d = ev.data || {};
+  if (d.replayed) return;            // the same sentence, re-entered against an action
+  if (d.type === 'end-of-call-report') {
+    const m = d.stage_latency_ms;
+    $('stackwrap').hidden = false;
+    $('stack').textContent = m
+      ? 'voice stack over ' + (m.turns_measured ?? '?') + ' turns · ' +
+        ['stt_ms','endpointing_ms','llm_ms','tts_ms','turn_ms'].filter(k => m[k] != null)
+          .map(k => k.replace('_ms','') + ' ' + Math.round(m[k]) + 'ms').join(' · ')
+      : 'the report carried no stage latencies';
+  }
+  if (d.text) voice.unshift({ ts: ev.ts, who: ev.actor, text: d.text });
+  else if (d.type === 'status-update')
+    voice.unshift({ ts: ev.ts, who: 'vapi',
+                    text: 'call ' + (d.status || '?') + (d.ended_reason ? ' (' + d.ended_reason + ')' : '') });
+  voice.length = Math.min(voice.length, 14);
+  if (voice.length) $('voice').innerHTML = voice.map(v =>
+    `<div class="b"><div class="r">${esc(v.who)} <span class=t>${clock(v.ts)}</span></div>` +
+    `<div class="d">${esc(v.text)}</div></div>`).join('');
+}
+
+function renderState(s) {
+  $('body').innerHTML = `body <b>${esc(s.body)}</b>`;
+  $('run').innerHTML = `<b>${esc(s.robot_id)}</b> · ${esc(s.run_id)}`;
+  const ch = $('chain');
+  ch.className = 'badge ' + (s.chain.ok ? 'ok' : 'bad');
+  ch.innerHTML = s.chain.ok ? `chain <b>intact · ${s.chain.count}</b>`
+                            : `chain <b>BROKEN at ${s.chain.broken_at}</b>`;
+  const co = $('cosmos');
+  co.className = 'badge ' + (s.cosmos.configured && s.cosmos.enabled ? 'ok' : 'warn');
+  co.innerHTML = `cosmos <b>${s.cosmos.configured ? (s.cosmos.enabled ? 'judging' : 'configured, off') : 'not configured'}</b>`;
+
+  const r = s.robot || {};
+  const nodes = [
+    ['guest / staff', s.sources.vapi_tap ? 'calling' : 'idle', !!s.sources.vapi_tap],
+    ['agent brain', s.open_actions.length ? `${s.open_actions.length} in flight` : 'idle', true],
+    ['gate', 'kinematic' + (s.cosmos.enabled ? ' + cosmos' : ''), true],
+    ['robot bridge', r.connected === undefined ? 'no state' : (r.moving ? 'moving' : 'standing'),
+      !!(s.sources.bridge && s.sources.bridge.age_s < 3)],
+  ];
+  $('pipe').innerHTML = nodes.map(([n, v, live]) =>
+    `<div class="node ${live ? 'live' : 'stale'}"><div class="n">${n}</div><div class="v">${esc(v)}</div></div>`).join('');
+
+  const src = Object.entries(s.sources);
+  $('sources').innerHTML = src.length ? src.map(([k, v]) =>
+    `<div class="src"><span>${esc(k)}</span><span class="age ${v.age_s > 2 ? 'old' : ''}">${v.age_s}s ago</span></div>`
+  ).join('') : '<div class="empty">no sources yet</div>';
+
+  const cw = $('compwrap'), cp = s.compliance || {};
+  if (cp.configured) {
+    cw.hidden = false;
+    fetch('/api/compliance').then(r => r.json()).then(c => {
+      const clocks = (c.clocks || []).slice(0, 6);
+      const gaps = (c.readiness?.blocking_certification || []);
+      $('compliance').innerHTML =
+        (clocks.length
+          ? clocks.map(k => `<div class="src"><span>${esc(k.citation)} <span class=t>${esc(k.rule)}</span></span>` +
+              `<span class="age ${k.overdue ? 'old' : ''}">${k.overdue ? 'OVERDUE' : Math.round(k.remaining_s / 60) + 'm left'}</span></div>`).join('')
+          : '<div class="empty">no reportable breach has started a clock</div>') +
+        `<div class="src" style="border-top:1px solid var(--line)"><span class=t>blocking certification</span>` +
+        `<span style="color:var(--amber)">${gaps.length} gaps</span></div>` +
+        gaps.map(g => `<div class="b medium"><div class="r">${esc(g.control)}</div><div class="d">${esc(g.gap)}</div></div>`).join('');
+    }).catch(() => {});
+  } else { cw.hidden = true; }
+
+  if (s.breaches.length) $('breaches').innerHTML = s.breaches.map(b =>
+    `<div class="b ${esc(b.severity)}"><div class="r">${esc(b.rule)}</div>
+     <div class="d">${esc(b.detail)}</div><div class="t">${clock(b.ts)}</div></div>`).join('');
+}
+
+new EventSource('/api/events').onmessage = e => {
+  const ev = JSON.parse(e.data);
+  fold(ev); foldVoice(ev); renderLedger();
+};
+const poll = () => fetch('/api/state').then(r => r.json()).then(renderState).catch(() => {});
+poll(); setInterval(poll, 1000);
+
+/* ===================== GUARDRAILS =====================================
+   The operator's view of the venue file. Three rules shape it:
+     - nothing is written until Apply, so every control is a proposal;
+     - the diff is in the operator's language ("more freedom" / "more
+       restraint"), not in YAML paths;
+     - a change that loosens needs a second, deliberate click, because the
+       two loosenings that matter most (ticking "measured on site", and
+       signing the file) both look like paperwork.
+   ===================================================================== */
+let VENUE = null;
+const EDITS = new Map();              // "zones.x.speed_cap" -> {path, value}
+
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(o => o.classList.toggle('on', o === t));
+  const g = t.dataset.v === 'guard';
+  document.querySelector('main').hidden = g;
+  $('gview').hidden = !g;
+  if (g && !VENUE) loadVenue();
+});
+
+function loadVenue() {
+  return fetch('/api/venue').then(r => r.json()).then(v => {
+    VENUE = v; EDITS.clear(); renderGuard(); renderPending();
+  }).catch(() => { $('zones').innerHTML = '<tr><td class="empty">could not read the venue file</td></tr>'; });
+}
+
+function setEdit(path, value, el, original) {
+  const k = path.join('.');
+  // Returning a control to its original value is not a change. Without this
+  // an operator who fat-fingers a number and fixes it still sees a pending
+  // edit, and learns to click Apply past things it tells them.
+  if (String(value) === String(original)) EDITS.delete(k);
+  else EDITS.set(k, {path, value});
+  if (el) el.classList.toggle('dirty', EDITS.has(k));
+  renderPending();
+}
+
+function num(path, v, orig, step, min, max) {
+  const k = path.join('.');
+  return `<input type=number step=${step} min=${min} max=${max} value="${v}"
+    data-k="${k}" data-orig="${orig}" data-path='${JSON.stringify(path)}'
+    class="${EDITS.has(k) ? 'dirty' : ''}">`;
+}
+function chk(path, v, orig) {
+  const k = path.join('.');
+  return `<input type=checkbox ${v ? 'checked' : ''} data-k="${k}" data-orig="${orig}"
+    data-path='${JSON.stringify(path)}'>`;
+}
+
+function renderGuard() {
+  const v = VENUE;
+  if (!v || !v.configured) {
+    $('zones').innerHTML = `<tr><td class="empty">${esc((v && v.hint) || 'no venue file loaded')}</td></tr>`;
+    $('signoff').innerHTML = `<div class="note">Start the collector with <b>--venue</b> to govern a real venue.</div>`;
+    $('plan').innerHTML = ''; $('globals').innerHTML = ''; $('vwarn').innerHTML = '';
+    return;
+  }
+  // -- the floor plan, read only
+  $('plan').innerHTML = planSvg(v.zones);
+
+  // -- zones
+  $('zones').innerHTML =
+    `<thead><tr><th>zone</th><th>cap m/s</th><th>effective</th><th>measured</th>
+      <th title="the robot never enters">no entry</th>
+      <th title="no frame captured here at all">camera off</th>
+      <th title="a human must approve before acting here">approval</th></tr></thead><tbody>` +
+    v.zones.map(z => {
+      const clamped = z.effective_speed < z.speed_cap - 1e-9;
+      return `<tr>
+        <td><div class="zn">${esc(z.name)}</div><div class="zl">${esc(z.label)}</div></td>
+        <td>${num(['zones', z.name, 'speed_cap'], z.speed_cap, z.speed_cap, 0.01, 0.01, 2)}</td>
+        <td><span class="eff ${clamped ? 'clamped' : ''}" title="${clamped
+            ? 'clamped below the cap you asked for' : 'the cap applies as written'}"
+          >${z.effective_speed.toFixed(2)}</span></td>
+        <td><select data-k="zones.${z.name}.verified" data-orig="${z.verified}"
+              data-path='${JSON.stringify(['zones', z.name, 'verified'])}'
+              class="${EDITS.has('zones.' + z.name + '.verified') ? 'dirty' : ''}" style="width:84px">
+            <option value="plan" ${z.verified === 'plan' ? 'selected' : ''}>plan</option>
+            <option value="on_site" ${z.verified !== 'plan' ? 'selected' : ''}>on site</option>
+          </select></td>
+        <td>${chk(['zones', z.name, 'restricted'], z.restricted, z.restricted)}</td>
+        <td>${chk(['zones', z.name, 'camera_off'], z.camera_off, z.camera_off)}</td>
+        <td>${chk(['zones', z.name, 'requires_approval'], z.requires_approval, z.requires_approval)}</td>
+      </tr>` + (z.reason ? `<tr><td colspan=7 class="zl" style="padding-top:0">
+            ↳ ${esc(z.reason)}</td></tr>` : '');
+    }).join('') + '</tbody>';
+
+  // -- sign-off
+  const sg = v.signed;
+  $('signoff').innerHTML =
+    `<div class="fld"><label>venue</label>${esc(v.name)} &middot; <span class=t>${esc(v.area)}</span></div>
+     <div class="fld"><label>status</label>${sg
+        ? `<span style="color:var(--green)">signed off</span> by ${esc(v.signed_off_by)}` +
+          (v.signed_off_date ? ` on ${esc(v.signed_off_date)}` : '')
+        : `<span style="color:var(--amber)">NOT SIGNED OFF</span> &mdash; the whole venue runs at
+           the unverified speed and guiding is refused`}</div>
+     <div class="fld"><label>signed off by &mdash; the person accountable for guest safety</label>
+       <input type=text value="${esc(v.signed_off_by)}" data-k="venue.signed_off_by"
+         data-orig="${esc(v.signed_off_by)}" data-path='${JSON.stringify(['venue', 'signed_off_by'])}'
+         placeholder="name and role"></div>
+     <div class="fld"><label>date</label>
+       <input type=text value="${esc(v.signed_off_date)}" data-k="venue.signed_off_date"
+         data-orig="${esc(v.signed_off_date)}" data-path='${JSON.stringify(['venue', 'signed_off_date'])}'
+         placeholder="YYYY-MM-DD"></div>
+     <div class="note">${esc(v.path)}</div>`;
+
+  // -- ceilings and people
+  const L = v.limits || {}, P = v.people || {}, C = P.child || {};
+  const row = (label, path, val, step, min, max, hint) =>
+    `<div class="fld"><label>${label}</label>${num(path, val, val, step, min, max)}
+      <span class=t style="margin-left:8px">${hint}</span></div>`;
+  $('globals').innerHTML =
+    row('max speed (the ceiling every cap is clamped to)', ['limits', 'max_speed'], L.max_speed ?? 0.4, 0.01, 0.01, 2, 'm/s') +
+    row('unverified / unsigned speed', ['limits', 'unverified_zone_speed'], L.unverified_zone_speed ?? 0.15, 0.01, 0.01, 2, 'm/s') +
+    row('slow down within', ['people', 'slow_within_m'], P.slow_within_m ?? 2.0, 0.1, 0.1, 10, 'm of a person') +
+    row('hold within', ['people', 'hold_within_m'], P.hold_within_m ?? 1.0, 0.1, 0.1, 10, 'm of a person') +
+    row('speed allowed near a person', ['people', 'near_person_speed'], P.near_person_speed ?? 0.15, 0.01, 0.01, 2, 'm/s') +
+    row('a child is anyone under', ['people', 'child', 'height_under_m'], C.height_under_m ?? 1.25, 0.01, 0.5, 2, 'm tall') +
+    row('full stop within', ['people', 'child', 'freeze_within_m'], C.freeze_within_m ?? 2.0, 0.1, 0.1, 10, 'm of a child') +
+    `<div class="fld"><label>refuse limb gestures near a child</label>
+      ${chk(['people', 'child', 'forbid_limb_gestures'], C.forbid_limb_gestures !== false, C.forbid_limb_gestures !== false)}</div>`;
+
+  // -- warnings
+  $('vwarn').innerHTML = (v.warnings || []).length
+    ? v.warnings.map(w => `<div class="b high"><div class="d">${esc(w)}</div></div>`).join('')
+    : '<div class="empty">none</div>';
+
+  wire();
+}
+
+function wire() {
+  $('gview').querySelectorAll('[data-path]').forEach(el => {
+    const path = JSON.parse(el.dataset.path), orig = el.dataset.orig;
+    const read = () => el.type === 'checkbox' ? el.checked : el.value;
+    el.oninput = el.onchange = () => setEdit(path, read(), el,
+      el.type === 'checkbox' ? (orig === 'true') : orig);
+  });
+}
+
+/* The plan view. Bounds come from the polygons themselves, so a venue with a
+   different footprint needs no new numbers here. */
+function planSvg(zones) {
+  const pts = zones.flatMap(z => z.polygon || []);
+  if (!pts.length) return '<div class="empty">no zone has a polygon</div>';
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const pad = 1.2, W = (x1 - x0) + pad * 2, H = (y1 - y0) + pad * 2;
+  // Everything inside the svg is measured in METRES, so text sized in px would
+  // be metres tall. S scales type to the venue's own footprint instead.
+  const S = Math.max(W, H) / 28;
+  const X = x => (x - x0 + pad), Y = y => (H - (y - y0 + pad));   // y up, like the floor
+  const body = zones.filter(z => (z.polygon || []).length).map(z => {
+    const d = z.polygon.map(p => `${X(p[0]).toFixed(2)},${Y(p[1]).toFixed(2)}`).join(' ');
+    const c = z.restricted ? 'var(--red)' : z.camera_off ? 'var(--violet)'
+            : z.verified !== 'plan' ? 'var(--green)' : 'var(--cyan)';
+    const cx = z.polygon.reduce((a, p) => a + X(p[0]), 0) / z.polygon.length;
+    const cy = z.polygon.reduce((a, p) => a + Y(p[1]), 0) / z.polygon.length;
+    return `<polygon points="${d}" fill="${c}" fill-opacity="${z.restricted ? .20 : .09}"
+      stroke="${c}" stroke-width="${(S * .08).toFixed(3)}"
+      stroke-dasharray="${z.verified === 'plan' ? `${(S * .3).toFixed(2)} ${(S * .22).toFixed(2)}` : 'none'}"/>
+      <text class="nm" font-size="${(S * .62).toFixed(3)}" x="${cx.toFixed(2)}"
+        y="${(cy - S * .14).toFixed(2)}" text-anchor="middle">${esc(z.name)}</text>
+      <text font-size="${(S * .52).toFixed(3)}" x="${cx.toFixed(2)}"
+        y="${(cy + S * .72).toFixed(2)}" text-anchor="middle">${z.effective_speed.toFixed(2)} m/s${
+        z.restricted ? ' · no entry' : ''}</text>`;
+  }).join('');
+  return `<svg class="plan" viewBox="0 0 ${W.toFixed(2)} ${H.toFixed(2)}"
+      style="max-height:46vh"><g>${body}</g></svg>
+    <div class="src"><span class=t>dashed outline = from a floor plan, never measured</span>
+      <span class=t>${(x1 - x0).toFixed(1)} × ${(y1 - y0).toFixed(1)} m</span></div>`;
+}
+
+/* The diff, in the operator's language. Fetched from the server so the
+   classification the ledger will record is the one shown here - a browser that
+   decided for itself what "loosen" meant could disagree with the record. */
+let planTimer = null;
+function renderPending() {
+  clearTimeout(planTimer);
+  const box = $('pending');
+  if (!EDITS.size) {
+    box.innerHTML = '<div class="empty">nothing changed</div>';
+    return;
+  }
+  planTimer = setTimeout(() => {
+    fetch('/api/venue/plan', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({edits: [...EDITS.values()]})})
+    .then(r => r.json()).then(p => {
+      const errs = (p.errors || []).map(e =>
+        `<div class="b critical"><div class="d">${esc(e)}</div></div>`).join('');
+      const chs = (p.changes || []).map(c => `<div class="chg ${esc(c.direction)}">
+        <div class="h">${esc(c.key)} <span class="dir ${esc(c.direction)}">${
+          c.direction === 'loosen' ? 'more freedom' : c.direction === 'tighten' ? 'more restraint' : 'no effect'
+        }</span></div>
+        <div class="e">${esc(String(c.before))} → <b>${esc(String(c.after))}</b> &middot; ${esc(c.effect)}</div>
+        ${c.note ? `<div class="e" style="color:var(--amber)">${esc(c.note)}</div>` : ''}</div>`).join('');
+      box.innerHTML = errs + chs + `
+        <div class="fld" style="border:0;padding:12px 0 0">
+          <label>your name &mdash; goes on the record</label>
+          <input type=text id="opname" placeholder="name and role">
+        </div>
+        <div class="fld" style="border:0;padding:6px 0 0">
+          <label>why</label><input type=text id="opwhy" placeholder="e.g. measured at the morning walkthrough">
+        </div>` +
+        (p.loosens ? `<label class="note" style="display:block;padding:10px 0 0;font-style:normal">
+            <input type=checkbox id="opconfirm"> I accept that this gives the robot
+            <b style="color:var(--red)">more freedom</b> than it has now.</label>` : '') +
+        `<button class="go ${p.loosens ? 'risk' : ''}" id="opgo" disabled>${
+          p.ok ? 'Apply ' + (p.changes || []).length + ' change' + ((p.changes || []).length === 1 ? '' : 's')
+               : 'Fix the errors above'}</button>
+         <div class="note" style="padding:8px 0 0">The previous file is kept, and the change is
+           written to the ledger with your name before it takes effect.</div>`;
+      const go = $('opgo'), nm = $('opname'), cf = $('opconfirm');
+      const ready = () => go.disabled = !(p.ok && nm.value.trim().length >= 3 && (!p.loosens || cf.checked));
+      nm.oninput = ready; if (cf) cf.onchange = ready; ready();
+      go.onclick = () => {
+        go.disabled = true; go.textContent = 'applying…';
+        fetch('/api/venue/apply', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({edits: [...EDITS.values()], operator: nm.value.trim(),
+            reason: $('opwhy').value.trim(), confirm_loosen: !!(cf && cf.checked)})})
+        .then(r => r.json().then(j => ({ok: r.ok, j})))
+        .then(({ok, j}) => {
+          if (!ok) { go.textContent = 'Apply'; go.disabled = false;
+            box.insertAdjacentHTML('afterbegin',
+              `<div class="b critical"><div class="d">${esc(j.error || (j.errors || []).join('; '))}</div></div>`);
+            return; }
+          EDITS.clear(); VENUE = j.venue; renderGuard(); renderPending();
+        }).catch(() => { go.textContent = 'Apply'; go.disabled = false; });
+      };
+    }).catch(() => { box.innerHTML = '<div class="empty">could not check the change</div>'; });
+  }, 220);
+}
+</script>
