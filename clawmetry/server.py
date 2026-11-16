@@ -510,7 +510,7 @@ class Hub:
         showing "cannot nod while not standing" keeps showing exactly that.
         """
         data = json.dumps(body).encode()
-        headers = {"content-type": "application/json"}
+        headers = {"content-type": "application/json", "x-clawmetry-forwarded": "1"}
         if self.args.token:
             headers["authorization"] = f"Bearer {self.args.token}"
         try:
@@ -669,7 +669,10 @@ class Hub:
 
     def _forward(self, raw: dict):
         body = json.dumps(raw).encode()
-        headers = {"content-type": "application/json"}
+        # Tells the edge this already came THROUGH the tap, so its tee stays
+        # quiet. Without it, repointing the funnel at 8901 would record every
+        # command twice - once governed, once as an unenforced observation.
+        headers = {"content-type": "application/json", "x-clawmetry-forwarded": "1"}
         if self.args.token:
             headers["authorization"] = f"Bearer {self.args.token}"
         try:

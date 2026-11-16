@@ -1280,6 +1280,26 @@ class TestObservedFromEdge(unittest.TestCase):
         # and it must NOT have stopped recording what actually happened
         self.assertIn("outcome", [e["kind"] for e in h.led.read()])
 
+    def test_forwarded_requests_are_marked_so_the_edge_does_not_tee_them_back(self):
+        # Both wired at once, the funnel pointing here AND the edge teeing,
+        # would otherwise record every command twice.
+        import urllib.request
+        seen = {}
+        h = _hub(upstream="http://127.0.0.1:1")
+        real = urllib.request.Request
+
+        def spy(url, data=None, headers=None, method=None):
+            seen.update(headers or {})
+            return real(url, data=data, headers=headers or {}, method=method)
+
+        urllib.request.Request = spy
+        try:
+            h._forward({"message": {}})
+            h._forward_path("/move", {})
+        finally:
+            urllib.request.Request = real
+        self.assertEqual(seen.get("x-clawmetry-forwarded"), "1")
+
     def test_the_source_distinguishes_it_from_a_governed_call(self):
         h = _hub()
         h.handle_observed_tool("do_gesture", {"gesture": "nod"}, call_id="c1")

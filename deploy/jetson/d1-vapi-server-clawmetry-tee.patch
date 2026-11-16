@@ -1,12 +1,15 @@
 --- /home/sepa/vapi-robot/server.js.pretee.bak	2026-11-15 23:47:02.280619994 -0500
-+++ /home/sepa/vapi-robot/server.js	2026-11-15 23:47:02.320621288 -0500
-@@ -249,9 +249,35 @@
++++ /home/sepa/vapi-robot/server.js	2026-11-15 23:49:35.697484286 -0500
+@@ -249,9 +249,38 @@
    return bearer === TOKEN || req.headers['x-vapi-secret'] === TOKEN;
  }
  
 +const CLAWMETRY = process.env.CLAWMETRY_TEE ?? 'http://127.0.0.1:8901';
-+function tee(path, payload) {
++function tee(path, req, payload) {
 +  if (!CLAWMETRY) return;
++  // Already came through the tap: it has recorded this itself, with the
++  // authority to have refused it. Teeing would log the same command twice.
++  if (req && req.headers['x-clawmetry-forwarded']) return;
 +  try {
 +    const body = JSON.stringify(payload);
 +    const u = new URL(CLAWMETRY + path);
@@ -36,7 +39,7 @@
    if (path === '/health') {
      return send(res, 200, { ok: true, service: 'd1-vapi-server', auth: TOKEN ? 'bearer' : 'open' });
    }
-@@ -276,6 +302,15 @@
+@@ -276,6 +305,15 @@
      try { body = JSON.parse(Buffer.concat(chunks).toString() || '{}'); }
      catch (e) { return send(res, 400, { ok: false, error: 'bad JSON' }); }
  
@@ -45,26 +48,26 @@
 +      // nothing with them ourselves - they exist so the collector can bind what
 +      // a guest SAID to what the robot then DID.
 +      try { noteCall(body); } catch (e) {}
-+      tee('/vapi/events', body);
++      tee('/vapi/events', req, body);
 +      return send(res, 200, { ok: true });
 +    }
 +
      if (path === '/vapi') {
        noteCall(body);                       // capture controlUrl from any message type
        const calls = extractCalls(body);
-@@ -290,7 +325,10 @@
+@@ -290,7 +328,10 @@
          const { path: p, body: b } = t(c.args);
          const r = await rosCall(p, b);
          console.log(`[vapi] ${c.name} ${JSON.stringify(c.args)} -> ${r.code}`);
 -        results.push({ toolCallId: c.id, result: speak(c.name, r) });
 +        const spoken = speak(c.name, r);
-+        tee('/observe/tool', { name: c.name, args: c.args, call_id: c.id,
++        tee('/observe/tool', req, { name: c.name, args: c.args, call_id: c.id,
 +                                result: spoken, code: r.code, source: 'vapi_tool' });
 +        results.push({ toolCallId: c.id, result: spoken });
        }
        return send(res, 200, { results });
      }
-@@ -300,6 +338,14 @@
+@@ -300,6 +341,14 @@
      if (req.method === 'POST' && direct[path]) {
        const r = await rosCall(direct[path], body);
        console.log(`[rest] ${path} ${JSON.stringify(body)} -> ${r.code}`);
@@ -72,7 +75,7 @@
 +        const asTool = { '/move': 'move_robot', '/command': 'robot_command',
 +                         '/gait': 'set_gait', '/gesture': 'do_gesture',
 +                         '/stop': 'stop_robot' }[path];
-+        tee('/observe/tool', { name: asTool, args: body, call_id: '',
++        tee('/observe/tool', req, { name: asTool, args: body, call_id: '',
 +                                result: JSON.stringify(r.body).slice(0, 500),
 +                                code: r.code, source: 'rest_direct' });
 +      }
