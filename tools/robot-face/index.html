@@ -438,6 +438,11 @@ async function brain() {
 
   let calling = false, ready = false, state = 'idle', caption = ''
   const pending = []
+  /* Identity, so the server can pick ONE of us. Two brains both open their
+     own call and the room gets two assistants talking over each other -
+     heard as an echo. A stray tab must not be able to do that. */
+  const bid = Math.random().toString(36).slice(2, 10)
+  let holding = true
 
   // Posted on every change AND on a heartbeat, so the server can tell the
   // guest's phone whether anything is actually able to talk. A Start button
@@ -445,7 +450,15 @@ async function brain() {
   // explanation on screen.
   const report = () => fetch('/api/face', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ state, caption }),
+    body: JSON.stringify({ state, caption, bid }),
+  }).then(r => r.json()).then(d => {
+    // The heartbeat is also how the lease is kept, so it is also where we
+    // learn we have lost it - faster than waiting for the next long poll.
+    if (d && d.holding === false && holding) {
+      holding = false
+      fault('another voice is already running for this robot — this window is standing by')
+      if (calling) stop()
+    } else if (d && d.holding === true && !holding) { holding = true; fault('') }
   }).catch(() => {})
   const set = (s, cap) => { state = s; if (cap !== undefined) caption = cap; report() }
   setInterval(report, 3000)
@@ -468,8 +481,24 @@ async function brain() {
     if (m?.type === 'transcript' && m.transcriptType === 'final' && m.role === 'assistant') set(state, m.transcript)
   })
 
-  const start = async name => {
+  /* A rotating Swiss welcome. The canton has four national languages and the
+     foyer has tourists from everywhere, so a greeter that always opens in the
+     same one is telling most of the room it was not expecting them. Picked at
+     random per guest, then the conversation settles into whatever they chose.
+     Romansh is in here because it is a national language and almost nothing
+     ever greets anyone in it. */
+  const WELCOME = [
+    'Grüezi! Fancy a hot soak?',
+    'Bonjour! Envie d\'un bain chaud?',
+    'Buongiorno! Voglia di un bagno caldo?',
+    'Allegra! Fancy a hot soak?',
+    'Hoi! Lust auf ein warmes Bad?',
+    'Hello! Fancy a hot soak?',
+  ]
+
+  const start = async (name, lang) => {
     if (calling) return
+    if (!holding) return          // another voice already holds this robot
     calling = true
     const wedged = setTimeout(() => {
       if (!ready) { calling = false; fault('the call did not connect — retrying') }
@@ -478,7 +507,13 @@ async function brain() {
       // The DJI microphone and the Bluetooth speaker both belong to this
       // machine. Default audioSource and default echo cancellation: one
       // device holding both is the case AEC is built for.
-      await vapi.start(c.assistantId, name ? { variableValues: { name } } : undefined)
+      const overrides = {
+        variableValues: { name: name || 'there', language: lang && lang !== 'any' ? lang : 'any' },
+      }
+      // Only choose the opener when they did not: if a guest picked a
+      // language, the assistant should open in THAT one, not in a random one.
+      if (!lang || lang === 'any') overrides.firstMessage = WELCOME[Math.floor(Math.random() * WELCOME.length)]
+      await vapi.start(c.assistantId, overrides)
     } catch (e) { calling = false; clearTimeout(wedged); fault(`could not start: ${e?.message ?? e}`) }
   }
   const stop = () => {
@@ -487,14 +522,23 @@ async function brain() {
   }
 
   await pump(async (d, first) => {
+    if (d.holding === false) {
+      // Stand down, and say so - a silent second brain is how you end up
+      // hunting an echo instead of closing a tab.
+      if (holding) fault('another voice is already running for this robot — this window is standing by')
+      holding = false
+      if (calling) stop()
+      return
+    }
+    if (d.holding === true && !holding) { holding = true; fault('') }
     if (!first) for (const e of d.events ?? []) {
-      if (e.type === 'start') await start(e.name)
+      if (e.type === 'start') await start(e.name, e.lang)
       else if (e.type === 'stop') stop()
       else if (e.type === 'say') sendText(e.text)
     }
-    if (d.session?.live && !calling) await start(d.session.name)
+    if (d.session?.live && !calling) await start(d.session.name, d.session.lang)
     if (!d.session?.live && calling) stop()
-  }, '&role=brain')
+  }, `&role=brain&bid=${bid}`)
 }
 
 /* ----------------------------- DISPLAY ----------------------------- *

@@ -46,7 +46,7 @@ if (!BASE) {
   }
   const srv = spawn(process.execPath, [join(HERE, 'server.mjs')], {
     env: { ...process.env, PORT: '5189', AGENT_URL: 'http://127.0.0.1:5191',
-           PUBLIC_URL: 'http://127.0.0.1:5189', FACE_KEY: '' },
+           PUBLIC_URL: 'http://127.0.0.1:5189', FACE_KEY: '', LEASE_MS: '2000' },
     stdio: 'ignore',
   })
   spawned.push(() => srv.kill())
@@ -168,6 +168,7 @@ pass.push(['QR encodes the join URL', (await screen.locator('#qr canvas').count(
 await guest.goto(BASE + '/join' + K, { waitUntil: 'domcontentloaded' })
 pass.push(['Start is disabled before consent', await guest.isDisabled('#start')])
 await guest.fill('#name', 'Anna')
+await guest.selectOption('#lang', 'French')
 await guest.check('#consent')
 pass.push(['consent enables Start', !(await guest.isDisabled('#start'))])
 
@@ -187,6 +188,14 @@ pass.push(['guest is greeted by name', (await guest.textContent('#greet'))?.incl
 // --- the face should have started a call, carrying the name
 let log = await face.evaluate(() => window.__log ?? [])
 pass.push(['face started a call on the guest tap', log.some(l => l[0] === 'start'), JSON.stringify(log.find(l=>l[0]==='start')||'')])
+{
+  const ov = JSON.parse(log.find(l => l[0] === 'start')?.[2] ?? 'null')
+  pass.push(['the chosen language reaches the assistant',
+    ov?.variableValues?.language === 'French', JSON.stringify(ov?.variableValues)])
+  // A guest who picked a language must be greeted in it, not in a random one.
+  pass.push(['a picked language is not overridden by the random welcome',
+    ov?.firstMessage === undefined, JSON.stringify(ov?.firstMessage ?? null)])
+}
 pass.push(['the screen is on stage during the call', !(await screen.isHidden('#stage'))])
 // The screen is independent by design, so the QR cycle keeps running
 // through a conversation. The trade is deliberate: nothing the screen draws
@@ -266,6 +275,29 @@ pass.push(['the screen keeps animating regardless of the call',
   }), 'the drop keeps moving'])
 await face.evaluate(() => window.__vapiEmit('speech-end'))
 
+// --- ONLY ONE VOICE. Two brains means two assistants in the same room,
+// heard as an echo. Vapi's call list showed them arriving in exact pairs.
+const second = await ctx.newPage()
+await second.route('**/@vapi-ai/web@**', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: STUB }))
+await second.goto(BASE + '/face' + (K ? K + '&' : '?') + 'brain=1', { waitUntil: 'domcontentloaded' })
+await second.click('#arm')
+await wait(4000)
+const slog = await second.evaluate(() => window.__log ?? [])
+pass.push(['a second brain never opens its own call',
+  !slog.some(l => l[0] === 'start'), JSON.stringify(slog.map(l => l[0]))])
+pass.push(['and it says so instead of failing quietly',
+  /another voice/i.test((await second.textContent('#fault')) ?? ''), await second.textContent('#fault')])
+pass.push(['the first brain keeps its call',
+  (await face.evaluate(() => window.__log ?? [])).filter(l => l[0] === 'start').length === 1])
+pass.push(['the robot only ever had one voice',
+  (await face.evaluate(() => window.__log ?? [])).filter(l => l[0] === 'start').length
+  + slog.filter(l => l[0] === 'start').length === 1])
+await second.close()
+
+// The lease must be free before a fresh brain can be tested on its own.
+await face.close()
+await wait(3000)        // LEASE_MS is 2s under test
+
 // --- THE REGRESSION: a face phone opening against a dirty event log.
 // The log now holds this run's starts, stops and sentences. A face that
 // replays them tears down the call it is setting up and wedges itself.
@@ -291,13 +323,12 @@ const flog2 = await fresh.evaluate(() => window.__log ?? [])
 pass.push(['a tap after joining reaches the robot',
   flog2.some(l => l[0] === 'send' && /restaurant/i.test(l[1])),
   JSON.stringify(flog2.filter(l => l[0] === 'send').map(l => JSON.parse(l[1]).message.content))])
-await fresh.close()
-
-// --- stop
+// --- stop  (asserted on `fresh`, which now holds the lease: `face` is closed)
 await guest.click('#stop')
 await wait(900)
-log = await face.evaluate(() => window.__log ?? [])
+log = await fresh.evaluate(() => window.__log ?? [])
 pass.push(['stop ends the call', log.some(l => l[0] === 'stop')])
+await fresh.close()
 pass.push(['the screen is still alive after the call ends',
   await until(async () => {
     const a = await screen.evaluate(() => document.getElementById('drop').getAttribute('transform'))

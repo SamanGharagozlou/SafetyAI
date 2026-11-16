@@ -43,10 +43,15 @@
   .sub { color: var(--pale); font-size: 15px; margin: 0; line-height: 1.5; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
   label { display: block; font-size: 13px; color: var(--pale); margin-bottom: 7px; }
-  input[type=text] {
+  input[type=text], select {
     width: 100%; padding: 14px; font-size: 17px; border-radius: 11px;
     border: 1px solid var(--line); background: #072e47; color: var(--white);
+    -webkit-appearance: none; appearance: none;
   }
+  select { background-image: linear-gradient(45deg,transparent 50%,var(--pale) 50%),
+                             linear-gradient(135deg,var(--pale) 50%,transparent 50%);
+           background-position: calc(100% - 20px) 22px, calc(100% - 14px) 22px;
+           background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; }
   .consent { display: flex; gap: 12px; align-items: flex-start; margin-top: 16px; font-size: 14px; line-height: 1.5; }
   .consent input { width: 22px; height: 22px; accent-color: var(--bright); flex: 0 0 auto; margin-top: 1px; }
   button {
@@ -75,6 +80,17 @@
   <div class="card" style="margin-top:18px">
     <label for="name">Your name <span style="opacity:.6">(optional)</span></label>
     <input type="text" id="name" maxlength="24" autocomplete="given-name" placeholder="e.g. Anna">
+    <label for="lang" style="margin-top:16px">Language</label>
+    <select id="lang">
+      <option value="any">🇨🇭 Any — greet me and I'll answer</option>
+      <option value="German">Deutsch</option>
+      <option value="French">Français</option>
+      <option value="Italian">Italiano</option>
+      <option value="English">English</option>
+      <option value="Spanish">Español</option>
+      <option value="Portuguese">Português</option>
+      <option value="Dutch">Nederlands</option>
+    </select>
     <div class="consent">
       <input type="checkbox" id="consent">
       <label for="consent" style="margin:0;color:var(--white)">
@@ -185,7 +201,7 @@ $('start').addEventListener('click', async () => {
   $('start').textContent = 'Waking the robot…'
   try {
     const name = $('name').value.trim()
-    await post({ action: 'start', consent: true, name })
+    await post({ action: 'start', consent: true, name, lang: $('lang').value })
     $('before').classList.add('hide')
     $('during').classList.remove('hide')
     $('greet').textContent = name ? `Hello, ${name}` : 'Talk to me'

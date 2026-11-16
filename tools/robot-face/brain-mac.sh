@@ -24,6 +24,19 @@ CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
 PROFILE="${PROFILE:-$HOME/.d1-brain-profile}"
 URL="$HOST/face?k=$KEY&brain=1&auto=1"
 
+# Refuse to start a second one rather than killing the first.
+#
+# An earlier version pkilled any running brain before starting. Under a
+# launchd KeepAlive agent that is a restart loop: launchd starts the script,
+# the script kills the Chrome launchd started a moment ago, launchd sees it
+# die and starts again - hundreds of windows in a couple of minutes. Killing
+# something you are supervised by is never right. Refusing is.
+if pgrep -f "[d]1-brain-profile" >/dev/null 2>&1; then
+  echo "a voice window is already running. Stop it first:" >&2
+  echo "  pkill -f '[d]1-brain-profile'" >&2
+  exit 1
+fi
+
 echo "voice   -> $URL"
 echo "profile -> $PROFILE   (separate, so your own Chrome is untouched)"
 echo "audio   -> whatever macOS has as the default input and output right now:"
@@ -34,6 +47,7 @@ echo "audio   -> whatever macOS has as the default input and output right now:"
 exec "$CHROME" \
   --user-data-dir="$PROFILE" \
   --use-fake-ui-for-media-stream \
+  --test-type \
   --autoplay-policy=no-user-gesture-required \
   --no-first-run --no-default-browser-check \
   --disable-background-timer-throttling \

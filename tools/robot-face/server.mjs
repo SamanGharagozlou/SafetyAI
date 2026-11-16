@@ -86,7 +86,7 @@ const PUBLIC_URL = (process.env.PUBLIC_URL ?? `http://${lanAddress()}:${PORT}`).
  * a pairing failure mode to a demo whose whole risk is failing in front of
  * people. One session, reset on stop.
  */
-let session = { live: false, name: '', consent: false, startedAt: 0, owner: '' }
+let session = { live: false, name: '', consent: false, startedAt: 0, owner: '', lang: 'any' }
 
 /**
  * ROBOT STATE, read from the ros-agent on the Jetson.
@@ -147,6 +147,7 @@ function standUp() {
 const publicState = () => ({
   live: session.live,
   name: session.name,
+  lang: session.lang,
   startedAt: session.startedAt,
   // "Busy" to a second guest means someone else is already talking to it.
   // The robot physically moving is NOT busy for this purpose - it moves
@@ -215,6 +216,33 @@ let faceState = { state: 'idle', caption: '', at: 0 }
 let brainSeenAt = 0
 const brainUp = () => Date.now() - brainSeenAt < 30000   // a long poll returns at 20s
 
+/**
+ * ONE VOICE AT A TIME.
+ *
+ * Every brain that is running polls, sees the session go live and opens its
+ * own call. Two of them means two assistants talking into the same room
+ * through the same speaker - heard as an echo, or as two voices over each
+ * other - and it happens for dull reasons: a forgotten tab, a reload, a
+ * second laptop. Vapi's own call list showed them arriving in exact pairs.
+ *
+ * So the first brain to appear holds a lease and the others stand down.
+ * The lease lapses if its holder stops polling, so closing the laptop and
+ * opening another one still works, just not both at once.
+ */
+let lease = { id: '', at: 0 }
+/* Short, because the lease is refreshed by the 3 s /api/face heartbeat and
+   not only by the long poll. At 30 s - long enough to cover a 20 s poll -
+   every restart left a half-minute window where the new voice stood down
+   waiting for a holder that was already gone. */
+const LEASE_MS = Number(process.env.LEASE_MS ?? 8000)
+function claimLease(id) {
+  const now = Date.now()
+  if (!id) return false
+  if (lease.id === id) { lease.at = now; return true }
+  if (!lease.id || now - lease.at > LEASE_MS) { lease = { id, at: now }; return true }
+  return false
+}
+
 const json = (res, code, body) => {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
   res.end(JSON.stringify(body))
@@ -269,8 +297,13 @@ createServer(async (req, res) => {
       const since = Number(url.searchParams.get('since') ?? 0) || 0
       // The brain's poll doubles as its heartbeat. Timers get throttled when
       // a page is backgrounded; a request that actually arrives does not.
-      if (url.searchParams.get('role') === 'brain') brainSeenAt = Date.now()
-      const reply = () => json(res, 200, { seq, session: publicState(), events: events.filter(e => e.seq > since) })
+      let holding = null
+      if (url.searchParams.get('role') === 'brain') {
+        brainSeenAt = Date.now()
+        holding = claimLease(url.searchParams.get('bid') ?? '')
+      }
+      const reply = () => json(res, 200, { seq, session: publicState(), holding,
+                                           events: events.filter(e => e.seq > since) })
       const pending = events.some(e => e.seq > since)
       // wait=1 asks to be held until something happens. Anything that has
       // never polled before gets an immediate answer so it can sync.
@@ -290,6 +323,9 @@ createServer(async (req, res) => {
       try { body = JSON.parse(await readBody(req) || '{}') }
       catch (e) { return json(res, 400, { error: `body is not JSON: ${e.message}` }) }
       brainSeenAt = Date.now()
+      // The heartbeat refreshes the lease too, so a dead brain's claim
+      // lapses in seconds rather than outliving it by half a minute.
+      const holdsIt = claimLease(String(body.bid ?? ''))
       const next = {
         state: ['idle', 'listening', 'thinking', 'speaking', 'happy'].includes(body.state) ? body.state : 'idle',
         caption: String(body.caption ?? '').slice(0, 300),
@@ -300,7 +336,7 @@ createServer(async (req, res) => {
       const changed = next.state !== faceState.state || next.caption !== faceState.caption
       faceState = next
       if (changed) broadcast({ type: 'face', state: next.state, caption: next.caption })
-      return json(res, 200, { ok: true, live: session.live, name: session.name })
+      return json(res, 200, { ok: true, holding: holdsIt, live: session.live, name: session.name })
     }
 
     if (p === '/api/session' && req.method === 'POST') {
@@ -327,8 +363,10 @@ createServer(async (req, res) => {
           return json(res, 409, { error: 'The robot is with another guest just now.', busy: true, ...publicState() })
         }
         const owner = body.owner || Math.random().toString(36).slice(2, 12)
-        session = { live: true, name: String(body.name ?? '').slice(0, 24), consent: true, startedAt: Date.now(), owner }
-        broadcast({ type: 'start', name: session.name })
+        const lang = String(body.lang ?? 'any').slice(0, 20)
+        session = { live: true, name: String(body.name ?? '').slice(0, 24), consent: true,
+                    startedAt: Date.now(), owner, lang }
+        broadcast({ type: 'start', name: session.name, lang })
         standUp()   // get it on its feet before the first word, not after a refusal
         // `owner` goes to this guest alone; it is what lets them stop their
         // own session later and stops anyone else ending it for them.
@@ -353,7 +391,7 @@ createServer(async (req, res) => {
         // Anyone may stop. A Stop that checks credentials is a Stop that
         // fails when it is most needed, and the worst case here is a session
         // ending early next to a machine that can walk.
-        session = { live: false, name: '', consent: false, startedAt: 0, owner: '' }
+        session = { live: false, name: '', consent: false, startedAt: 0, owner: '', lang: 'any' }
         broadcast({ type: 'stop' })
         return json(res, 200, publicState())
       }

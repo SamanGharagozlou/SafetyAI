@@ -168,7 +168,15 @@ Never say "Is there anything else I can help you with today?" You are not a call
 If someone asks you to repeat, repeat it SHORTER and more slowly, not louder and not the same words.
 
 LANGUAGE
-Detect their language and reply entirely in it: German, French, English or Italian. Swiss German in, standard High German out. If you cannot tell, try one short line in German then English. Many guests here are not Swiss, so listen before assuming.
+LANGUAGE
+The guest picked {{language}} on their phone. Speak it from your first word and stay in it unless they switch. "Any" means you choose: open with the multilingual welcome and settle into whatever they answer in.
+You speak German, Swiss German, French, Italian, English, Spanish, Portuguese and Dutch. Swiss German in, standard High German out - understand the dialect, answer in Hochdeutsch.
+If someone switches mid-conversation, switch with them and do not remark on it. If you genuinely cannot place a language, say one short line in German and then the same in English, and let them pick.
+Never apologise for your accent and never announce which language you are about to use. Just use it.
+
+SPEAK SO A CHILD CAN FOLLOW
+Short sentences. One idea each. Ordinary words - "hot pools", not "thermal facilities". Prices as plain numbers. Leave a beat after a question instead of filling it.
+Many guests here are hearing their third language over a loudspeaker in an echoing doorway, and plenty are small children. If a sentence would need repeating, it was too long the first time.
 
 WHEN THE JOKES STOP
 Humour switches off completely, mid-sentence if needed, for: anything medical, anything about money that has actually been paid, privacy questions, and any refusal. A robot being funny while someone feels unwell is the worst thing this machine can do.
@@ -394,14 +402,20 @@ const MODELS = LLM ? [LLM] : ['claude-sonnet-5', 'claude-opus-4-6', 'claude-haik
  * Honest limit: no text-to-speech voice beeps like R2-D2. Droid and dog
  * noises are synthesised in the console instead. What a TTS CAN do is sound
  * cartoonish rather than natural, and these settings push it that way:
- *   speed 1.12      - slightly hurried, like an eager animal
- *   stability 0.25  - low stability makes delivery swing about, which reads
- *                     as excitable instead of newsreader-calm
- *   style 0.6       - exaggerated rather than neutral
- * Raise stability towards 0.7 if it becomes too unhinged to understand.
+ *   speed 0.88      - SLOW. A greeter is understood by children, by people
+ *                     in their third language, and across a noisy foyer
+ *                     with a loudspeaker a metre away. It was 1.12 - eager
+ *                     and charming to a native speaker standing close, and
+ *                     unintelligible to everyone else.
+ *   stability 0.45  - steady enough to follow, swingy enough to be a dog.
+ *                     At 0.25 the delivery lurched and the words blurred.
+ *   style 0.5       - expressive, not a performance
+ * Clarity beats character here: a guest who cannot follow it walks away,
+ * and nobody ever walked away from a greeter for being too easy to
+ * understand.
  */
 const VOICE_ID = process.env.VOICE
-const CHARACTER = { model: 'eleven_turbo_v2_5', stability: 0.25, similarityBoost: 0.75, style: 0.6, useSpeakerBoost: true, speed: 1.12 }
+const CHARACTER = { model: 'eleven_turbo_v2_5', stability: 0.45, similarityBoost: 0.75, style: 0.5, useSpeakerBoost: true, speed: 0.88 }
 const VOICES = [
   ...(VOICE_ID ? [{ label: `11labs ${VOICE_ID}`, voice: { provider: '11labs', voiceId: VOICE_ID, ...CHARACTER } }] : []),
   { label: '11labs matilda (bright, cartoonish)', voice: { provider: '11labs', voiceId: 'matilda', ...CHARACTER } },
@@ -446,7 +460,12 @@ const CANDIDATES = url => {
             tools: tools(url),
           },
           voice: v.voice,
-          transcriber: { provider: 'deepgram', model: 'nova-3', language: 'en', smartFormat: true },
+          /* 'multi', not 'en'. The prompt has always told it to answer in four
+           languages while the ear only listened in English, so anything not
+           spoken in English arrived as nonsense and was answered as nonsense.
+           nova-3 handles code-switching mid-sentence, which is what actually
+           happens at a Swiss spa door. */
+          transcriber: { provider: 'deepgram', model: 'nova-3', language: 'multi', smartFormat: true },
         },
       })
     }
