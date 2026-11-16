@@ -460,6 +460,11 @@ async function brain() {
   const vapi = new Vapi(c.publicKey)
 
   let calling = false, ready = false, state = 'idle', caption = ''
+  /* What this particular call is actually running. Worth reporting rather
+     than assuming, because a picked language swaps the transcriber and
+     sometimes the voice model - so the stack on screen is per call, not
+     whatever the assistant was configured with. */
+  let stack = null
   const pending = []
   /* Identity, so the server can pick ONE of us. Two brains both open their
      own call and the room gets two assistants talking over each other -
@@ -475,18 +480,24 @@ async function brain() {
   // busy turn is one request rather than ten.
   const outbox = []
   const note = (kind, text = '') => { outbox.push({ kind, text }); report() }
-  const report = () => fetch('/api/face', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ state, caption, bid, log: outbox.splice(0, outbox.length) }),
-  }).then(r => r.json()).then(d => {
-    // The heartbeat is also how the lease is kept, so it is also where we
-    // learn we have lost it - faster than waiting for the next long poll.
-    if (d && d.holding === false && holding) {
-      holding = false
-      fault('another voice is already running for this robot — this window is standing by')
-      if (calling) stop()
-    } else if (d && d.holding === true && !holding) { holding = true; fault('') }
-  }).catch(() => {})
+  const report = () => {
+    /* Take a copy, and only drop the entries once the POST has actually
+       landed. Splicing them into the body first meant a failed or raced
+       request threw the events away, and the debug log quietly lost most
+       of a conversation - which is the one thing it exists not to do. */
+    const batch = outbox.slice(0, 20)
+    return fetch('/api/face', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state, caption, bid, stack, log: batch }),
+    }).then(r => r.json()).then(d => {
+      outbox.splice(0, batch.length)
+      if (d && d.holding === false && holding) {
+        holding = false
+        fault('another voice is already running for this robot — this window is standing by')
+        if (calling) stop()
+      } else if (d && d.holding === true && !holding) { holding = true; fault('') }
+    }).catch(() => {})
+  }
   const set = (s, cap) => { state = s; if (cap !== undefined) caption = cap; report() }
   setInterval(report, 3000)
   report()
@@ -637,6 +648,32 @@ async function brain() {
     'Buongiorno! Hello! Ten thermal pools waiting, and the Alps right in front of them.',
   ]
 
+  /* PICK THE DEVICES OURSELVES.
+     Relying on the macOS defaults has broken this repeatedly: unplug the
+     DJI receiver and macOS quietly promotes the Bluetooth SPEAKER to be the
+     microphone, which forces it into HFP, delivers no usable audio, and
+     Vapi ends the call with error-assistant-did-not-receive-customer-audio.
+     A speaker is never a microphone, so we never let it be chosen as one. */
+  const BAD_MIC = /spk|speaker|aka/i
+  async function pickDevices() {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices()
+      const ins = all.filter(d => d.kind === 'audioinput' && d.deviceId !== 'default')
+      const outs = all.filter(d => d.kind === 'audiooutput')
+      const mic = ins.find(d => /wireless microphone|dji/i.test(d.label))
+        ?? ins.find(d => !BAD_MIC.test(d.label))
+        ?? ins[0]
+      const spk = outs.find(d => /aka|spk/i.test(d.label)) ?? outs[0]
+      if (mic) await vapi.setInputDevicesAsync({ audioDeviceId: mic.deviceId })
+      if (spk) await vapi.setOutputDeviceAsync({ outputDeviceId: spk.deviceId })
+      const warn = mic && BAD_MIC.test(mic.label)
+        ? ' — WARNING: that is a speaker being used as a microphone, calls will fail' : ''
+      note('audio', `mic "${mic?.label ?? 'none'}" → out "${spk?.label ?? 'default'}"${warn}`)
+      if (warn) fault('the microphone is a Bluetooth speaker — plug the DJI receiver back in')
+      return { mic: mic?.label ?? 'none', spk: spk?.label ?? 'default', bad: !!warn }
+    } catch (e) { note('audio', `could not pick devices: ${e.message}`); return null }
+  }
+
   const start = async (name, lang) => {
     if (calling) return
     if (!holding) return          // another voice already holds this robot
@@ -649,7 +686,7 @@ async function brain() {
       // machine. Default audioSource and default echo cancellation: one
       // device holding both is the case AEC is built for.
       const picked = lang && lang !== 'any' ? lang : ''
-      await vapi.start(c.assistantId, {
+      const call = await vapi.start(c.assistantId, {
         variableValues: { name: name || 'there', language: picked || 'any' },
         // Always sent: the assistant's stored firstMessage is English, and
         // it is spoken verbatim, so leaving it alone is how a French guest
@@ -658,6 +695,28 @@ async function brain() {
         ...(STT_OVERRIDE[picked] ? { transcriber: STT_OVERRIDE[picked] } : {}),
         ...(VOICE_OVERRIDE[picked] ? { voice: VOICE_OVERRIDE[picked] } : {}),
       })
+      /* Prefer what Vapi says the call is running. If it does not hand the
+         assistant back, fall back to what WE sent and say so - an honest
+         "assistant default" beats a dash, and the overrides are the part
+         that actually varies per guest. */
+      const a = call?.assistant ?? {}
+      const fmt = (o, ...keys) => o ? keys.map(k => o[k]).filter(Boolean).join(' · ') : ''
+      const sent = { stt: STT_OVERRIDE[picked], voice: VOICE_OVERRIDE[picked] }
+      stack = {
+        llm: fmt(a.model, 'provider', 'model') || 'assistant default',
+        tts: fmt(a.voice, 'provider', 'voiceId', 'model')
+             || fmt(sent.voice, 'provider', 'voiceId', 'model')
+             || 'assistant default',
+        stt: fmt(a.transcriber, 'provider', 'model', 'language')
+             || fmt(sent.stt, 'provider', 'model', 'language')
+             || 'assistant default',
+        lang: picked || 'any',
+        overridden: [sent.stt && 'stt', sent.voice && 'tts'].filter(Boolean).join(' + ') || 'none',
+      }
+      const dev = await pickDevices()
+      if (dev) { stack.mic = dev.mic; stack.speaker = dev.spk }
+      note('stack', `llm ${stack.llm} | tts ${stack.tts} | stt ${stack.stt}`)
+      report()
     } catch (e) { calling = false; clearTimeout(wedged); fault(`could not start: ${e?.message ?? e}`) }
   }
   const stop = () => {

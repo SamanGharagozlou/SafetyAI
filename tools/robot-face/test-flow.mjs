@@ -354,9 +354,25 @@ pass.push(['a tap after joining reaches the robot',
   const dbg = await ctx.newPage()
   await dbg.goto(BASE + '/debug' + K, { waitUntil: 'domcontentloaded' })
   pass.push(['the debug page loads', /debug/i.test(await dbg.title())])
+  // Which TTS and STT a call is really on - it changes per language, so
+  // reading it off the created call beats assuming the assistant's config.
+  pass.push(['it names the llm, tts and stt in use',
+    await until(async () => { const t = await dbg.textContent('#bar') ?? ''
+      return /llm/.test(t) && /tts/.test(t) && /stt/.test(t) }, 8000),
+    (await dbg.textContent('#bar'))?.replace(/\s+/g, ' ').slice(0, 110)])
   pass.push(['it shows the conversation log',
     await until(async () => (await dbg.textContent('#rows'))?.includes('call'), 6000),
     (await dbg.textContent('#rows'))?.trim().slice(0, 60)])
+  // Who used it, and how their turn ended - the queue matters more at a
+  // stand than any single conversation.
+  await dbg.click('.tab[data-tab="guests"]')
+  pass.push(['the guests tab lists who has used it',
+    await until(async () => /Anna/.test(await dbg.textContent('#grows') ?? ''), 6000),
+    (await dbg.textContent('#grows'))?.replace(/\s+/g, ' ').slice(0, 90)])
+  pass.push(['and says a guest was cut off by the next scan',
+    /took over/.test(await dbg.textContent('#grows') ?? '')])
+  pass.push(['QR page opens are counted', Number(await dbg.textContent('#scans')) > 0,
+    await dbg.textContent('#scans')])
   await dbg.close()
 }
 {

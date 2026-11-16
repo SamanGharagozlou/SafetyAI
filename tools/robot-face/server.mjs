@@ -160,6 +160,7 @@ const publicState = () => ({
   // it - which is exactly what happened the first time this ran.
   brain: { connected: brainUp() },
   face: faceState,
+  stack,
 })
 
 /**
@@ -213,6 +214,30 @@ const broadcast = event => {
  * drawing generates the thing that merely has to look right.
  */
 let faceState = { state: 'idle', caption: '', at: 0 }
+let stack = null          // which LLM / TTS / STT this call is actually on
+
+/**
+ * WHO HAS USED IT, and how their turn ended.
+ *
+ * At a stand the queue matters more than any single conversation: who is on
+ * it now, how many have been through, and whether people are finishing or
+ * being cut off by the next scan. `endedBy` is the interesting column -
+ * a lot of `superseded` means the queue is pushing, a lot of `timeout`
+ * means people walk away without finishing.
+ */
+const sessions = []
+let scans = 0            // /join loads: someone pointed a camera at the QR
+const startSession = (name, lang, owner) => {
+  sessions.push({ name: name || '(no name)', lang, owner, at: Date.now(), endedAt: 0, endedBy: '' })
+  if (sessions.length > 200) sessions.splice(0, sessions.length - 200)
+}
+/* Takes the owner explicitly. Reading it off `session` was wrong: by the
+   time a takeover calls this, `session` has already been replaced by the
+   new guest, so it closed the wrong row - or none at all. */
+const endSession = (how, owner) => {
+  const live = sessions.find(x => !x.endedAt && x.owner === owner)
+  if (live) { live.endedAt = Date.now(); live.endedBy = how }
+}
 
 /**
  * A TIMED LOG OF THE CONVERSATION, for /debug.
@@ -251,6 +276,8 @@ const brainUp = () => Date.now() - brainSeenAt < 30000   // a long poll returns 
 const SESSION_MAX_MS = Number(process.env.SESSION_MAX_MS ?? 8 * 60 * 1000)
 setInterval(() => {
   if (session.live && Date.now() - session.startedAt > SESSION_MAX_MS) {
+    logAdd({ kind: 'session', text: `END    ${session.name || '(no name)'} · timed out after ${Math.round(SESSION_MAX_MS / 60000)} min` })
+    endSession('timeout', session.owner)
     session = { live: false, name: '', consent: false, startedAt: 0, owner: '', lang: 'any' }
     broadcast({ type: 'stop' })
     console.log('session timed out and was released')
@@ -362,7 +389,7 @@ createServer(async (req, res) => {
       ? { 'Set-Cookie': `fkey=${KEY}; Path=/; SameSite=Lax; Max-Age=86400` } : {}
 
     if (p === '/' || p === '/face') return void await page(res, 'index.html', setCookie)
-    if (p === '/join')              return void await page(res, 'join.html', setCookie)
+    if (p === '/join') { scans++; return void await page(res, 'join.html', setCookie) }
 
     if (p === '/api/config') {
       // The QR carries the key, so a guest scans their way in and never sees it.
@@ -396,6 +423,11 @@ createServer(async (req, res) => {
 
     if (p === '/api/state') return json(res, 200, { ...publicState(), seq })
 
+    if (p === '/api/sessions') {
+      // owner is a credential, so it never leaves the server.
+      return json(res, 200, { now: Date.now(), scans, live: session.live, liveSince: session.startedAt,
+        sessions: sessions.map(({ owner, ...rest }) => ({ ...rest, active: !rest.endedAt })).slice(-60).reverse() })
+    }
     if (p === '/api/log') {
       const since = Number(url.searchParams.get('since') ?? 0) || 0
       return json(res, 200, { now: Date.now(), state: publicState(),
@@ -435,6 +467,7 @@ createServer(async (req, res) => {
       try { body = JSON.parse(await readBody(req) || '{}') }
       catch (e) { return json(res, 400, { error: `body is not JSON: ${e.message}` }) }
       brainSeenAt = Date.now()
+      if (body.stack && typeof body.stack === 'object') stack = body.stack
       // The heartbeat refreshes the lease too, so a dead brain's claim
       // lapses in seconds rather than outliving it by half a minute.
       const holdsIt = claimLease(String(body.bid ?? ''))
@@ -483,6 +516,8 @@ createServer(async (req, res) => {
            The cost is that someone can be cut off mid-sentence; the
            alternative is a robot nobody else can use. */
         const superseded = session.live && body.owner !== session.owner
+        const previousOwner = session.owner
+        const previousName = session.name
         const owner = (body.owner && body.owner === session.owner)
           ? body.owner
           : Math.random().toString(36).slice(2, 12)
@@ -491,7 +526,13 @@ createServer(async (req, res) => {
                     startedAt: Date.now(), owner, lang }
         // Tear the old call down before opening the new one, so the robot
         // does not greet the new guest in the old guest's language.
-        if (superseded) broadcast({ type: 'stop' })
+        if (superseded) {
+          logAdd({ kind: 'session', text: `END    ${previousName || '(no name)'} · cut off, the next guest scanned` })
+          endSession('superseded', previousOwner)
+          broadcast({ type: 'stop' })
+        }
+        startSession(session.name, lang, owner)
+        logAdd({ kind: 'session', text: `START  ${session.name || '(no name)'} · ${lang}${superseded ? '  (took over from the previous guest)' : ''}` })
         broadcast({ type: 'start', name: session.name, lang })
         standUp()   // get it on its feet before the first word, not after a refusal
         // `owner` goes to this guest alone; it is what lets them stop their
@@ -517,6 +558,8 @@ createServer(async (req, res) => {
         // Anyone may stop. A Stop that checks credentials is a Stop that
         // fails when it is most needed, and the worst case here is a session
         // ending early next to a machine that can walk.
+        logAdd({ kind: 'session', text: `END    ${session.name || '(no name)'} · finished on their phone` })
+        endSession('guest', session.owner)
         session = { live: false, name: '', consent: false, startedAt: 0, owner: '', lang: 'any' }
         broadcast({ type: 'stop' })
         return json(res, 200, publicState())
