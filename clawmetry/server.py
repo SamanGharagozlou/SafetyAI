@@ -42,6 +42,7 @@ from pathlib import Path
 
 from correlate import Correlator, Policy
 from ledger import Ledger
+import compliance as compliance_mod
 import venue as venue_mod
 from frame import FrameGrabber
 from predict import BrainJudge, CosmosJudge, kinematic_predict, verify
@@ -69,6 +70,7 @@ class Hub:
         # the document the venue signs, not from code defaults.
         self.frames = FrameGrabber(args.rtsp)
         self.venue = venue_mod.load(args.venue) if args.venue else None
+        self.comp = compliance_mod.load(args.compliance) if args.compliance else None
         self.zones = self._venue_zones() if self.venue else self._load_zones(args.zones)
         self._call_id = ""
         self.subs: list[queue.Queue] = []
@@ -151,6 +153,18 @@ class Hub:
         return ev
 
     def _record_breach(self, b: dict):
+        # The regulatory label and the reporting clock go INTO the record, not
+        # onto a dashboard beside it. A deadline that exists only in a UI is a
+        # deadline nobody can prove was known.
+        if self.comp:
+            lab = self.comp.label(b.get("rule", ""))
+            b = {**b, "compliance": {
+                "labels": lab["labels"], "reportable": lab["reportable"],
+                "obligations": [{"citation": o["citation"], "audience": o["audience"],
+                                 "report_by": o["report_by"],
+                                 "report_by_text": o["report_by_text"],
+                                 "confidence": o["confidence"]}
+                                for o in lab["obligations"]]}}
         ev = self.led.append("breach", actor="system", data=b, corr=b.get("corr", ""))
         self.breaches.insert(0, ev["data"] | {"seq": ev["seq"], "ts": ev["ts"]})
         del self.breaches[200:]
@@ -329,6 +343,23 @@ class Hub:
 
     # -- snapshot ---------------------------------------------------------
 
+    def evidence(self) -> dict:
+        """What the running system can actually demonstrate, right now."""
+        return {
+            "ledger_chained": self.led.verify()["ok"],
+            "ledger_signed": False,          # chaining proves consistency, not origin
+            "venue_signed": bool(self.venue and self.venue.signed),
+            "zones_measured": bool(self.venue and self.venue.zones
+                                   and all(z.is_verified for z in self.venue.zones.values())),
+            "approval_path": False,          # ClawMetry Approve/Deny not wired to this tap yet
+            "ai_disclosure": False,          # the assistant says it, nothing here proves it
+            "child_detector_tested": False,  # the rule is enforced; the sensing is unproven
+            "performance_level": False,      # no PL/SIL determination exists
+            "risk_assessment": False,
+            "dpia": False,
+            "clocks_running": bool(self.comp),
+        }
+
     def snapshot(self) -> dict:
         now = time.time()
         return {
@@ -345,6 +376,13 @@ class Hub:
             "breaches": self.breaches[:40],
             "counts": self._counts(),
             "cosmos": {"configured": self.judge.configured, "enabled": bool(self.args.judge)},
+            "compliance": ({"configured": True,
+                            "reportable_open": len([c for c in
+                                self.comp.evidence_pack(self.led.read(), self.evidence())["clocks"]
+                                if not c["overdue"]]),
+                            "overdue": len(self.comp.evidence_pack(
+                                self.led.read(), self.evidence())["overdue"])}
+                           if self.comp else {"configured": False}),
             "venue": ({"name": self.venue.name, "area": self.venue.area,
                        "signed": self.venue.signed, "signed_by": self.venue.signed_off_by,
                        "zones": len(self.venue.zones),
@@ -388,6 +426,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"events": self.hub.led.read(limit=300)})
         if p == "/api/verify":
             return self._json(200, self.hub.led.verify())
+        if p == "/api/compliance":
+            if not self.hub.comp:
+                return self._json(200, {"configured": False,
+                                        "hint": "start with --compliance clawmetry/compliance.yaml"})
+            pack = self.hub.comp.evidence_pack(self.hub.led.read(), self.hub.evidence())
+            return self._json(200, {"configured": True, **pack})
         if p == "/api/events":
             return self._sse()
         return self._json(404, {"error": "not found"})
@@ -481,6 +525,9 @@ def main():
     ap.add_argument("--robot-id", default="leukerbad-d1w")
     ap.add_argument("--ledger", default="./clawmetry-ledger.jsonl")
     ap.add_argument("--zones", default="", help="JSON list of zone boxes (legacy)")
+    ap.add_argument("--compliance", default="",
+                    help="regulatory label + reporting-clock registry, e.g. "
+                         "clawmetry/compliance.yaml. A drafting aid, not legal advice.")
     ap.add_argument("--venue", default="",
                     help="the operator's guardrail file, e.g. "
                          "clawmetry/venue/leukerbad_therme.yaml. Overrides --zones "

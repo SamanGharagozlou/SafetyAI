@@ -1,0 +1,424 @@
+# =============================================================================
+# REGULATORY LABELS AND REPORTING CLOCKS
+# =============================================================================
+# Maps each breach this system can raise onto the obligation it may trigger,
+# and starts a clock when one fires.
+#
+# ----------------------------------------------------------------------------
+# READ THIS BEFORE YOU QUOTE ANY OF IT
+# ----------------------------------------------------------------------------
+# This is a DRAFTING AID, not legal advice, and not a compliance certificate.
+# Every citation below carries `confidence` and `verified_by_counsel`. Nothing
+# here has been checked by a lawyer. Do not put a deadline from this file in
+# front of a regulator, an insurer or a customer until someone qualified has
+# confirmed it applies to this deployment.
+#
+# Two things are easy to get wrong and are called out explicitly:
+#
+#   1. JURISDICTION. Leukerbad is in Valais, SWITZERLAND. The primary data law
+#      is the revised FADP (revDSG, in force 1 Sep 2023), NOT the GDPR. The
+#      GDPR applies in addition only to the extent the spa offers services to
+#      people in the EU - which for an alpine spa full of EU tourists is likely
+#      but is a question for the spa's counsel, not for this file. Switzerland
+#      is also not bound by the EU AI Act; it applies to this project mainly if
+#      the system is placed on the EU market.
+#
+#   2. NOT EVERY BREACH IS A REPORTABLE INCIDENT. Most are engineering signals.
+#      A `silence` breach means a telemetry feed stopped; it is not a personal
+#      data breach and must never be reported as one. Over-reporting destroys
+#      the signal and the operator's credibility. Rules below are marked
+#      `reportable: false` by default and only raised deliberately.
+# =============================================================================
+
+frameworks:
+  gdpr:
+    name: GDPR (Regulation (EU) 2016/679)
+    applies_when: the spa offers services to people in the EU
+    confidence: high
+    verified_by_counsel: false
+    note: Applies IN ADDITION to Swiss law here, not instead of it.
+
+  revfadp:
+    name: Swiss revised Federal Act on Data Protection (revDSG, in force 2023-09-01)
+    applies_when: always, for a venue in Switzerland
+    confidence: high
+    verified_by_counsel: false
+    note: The primary data protection law for this deployment.
+
+  eu_ai_act:
+    name: EU AI Act (Regulation (EU) 2024/1689)
+    applies_when: if the system is placed on, or its output used in, the EU market
+    confidence: medium
+    verified_by_counsel: false
+    note: >
+      A spa concierge robot is probably NOT high-risk under Annex III, which
+      would mean the heavy Chapter III duties do not bite. The transparency
+      duty in Art. 50 - telling a person they are interacting with an AI -
+      applies regardless and is the one to assume. Whether Art. 73 serious
+      incident reporting applies depends entirely on that classification.
+      This needs a lawyer; do not assume either way.
+
+  machinery:
+    name: EU Machinery Regulation 2023/1230
+    applies_when: from 20 Jan 2027, for machinery placed on the EU market
+    confidence: medium
+    verified_by_counsel: false
+
+  # --- management-system standards: the certifiable ones, and the most
+  # --- relevant to a governance product. These are about HOW you run the
+  # --- system, which is exactly what this layer evidences.
+  iso42001:
+    name: ISO/IEC 42001:2023, AI management system (AIMS)
+    applies_when: voluntary, certifiable; the natural standard to audit this layer against
+    confidence: medium
+    verified_by_counsel: false
+    note: >
+      The closest thing to a certifiable "we govern our AI" standard. Clauses
+      on operational control, monitoring and incident handling are what a
+      hash-chained ledger and an approval gate are evidence FOR. The single
+      best target to claim alignment with - but alignment is not certification.
+
+  iso23894:
+    name: ISO/IEC 23894:2023, AI risk management guidance
+    applies_when: voluntary guidance, pairs with 42001
+    confidence: medium
+    verified_by_counsel: false
+
+  iso27001:
+    name: ISO/IEC 27001, information security management
+    applies_when: voluntary; relevant because the ledger holds session records
+    confidence: medium
+    verified_by_counsel: false
+    note: Relevant to the ledger's integrity and to key handling, not to robot motion.
+
+  nist_ai_rmf:
+    name: NIST AI Risk Management Framework 1.0
+    applies_when: voluntary, US-oriented; often asked for by enterprise buyers
+    confidence: medium
+    verified_by_counsel: false
+
+  # --- machinery and functional safety
+  iso12100:
+    name: ISO 12100, safety of machinery - risk assessment and risk reduction
+    applies_when: the general risk-assessment standard under the machinery rules
+    confidence: medium
+    verified_by_counsel: false
+
+  iso13849:
+    name: ISO 13849-1, safety-related parts of control systems (performance levels)
+    applies_when: if any function here is claimed as a SAFETY function
+    confidence: medium
+    verified_by_counsel: false
+    note: >
+      IMPORTANT AND UNCOMFORTABLE. Nothing in this stack has a determined
+      Performance Level. A camera, a person detector and a timer on a
+      best-effort network is not a rated safety function, and must not be
+      presented as one. The physical e-stop and the vendor firmware are the
+      rated layers. See tools/robot-guard/README.md, which says the same.
+
+  # --- industrial robot standards: CITED OFTEN, SCOPE OFTEN WRONG
+  iso10218:
+    name: ISO 10218-1 / -2, safety requirements for INDUSTRIAL robots
+    applies_when: industrial robots and their integration - probably NOT this deployment
+    confidence: low
+    verified_by_counsel: false
+    scope_warning: >
+      This is an INDUSTRIAL robot standard: fenced cells, integrators, trained
+      operators. A quadruped guide robot among undressed spa guests is a
+      SERVICE robot, where ISO 13482 is the nearer fit. Claiming 10218
+      conformance here invites an auditor to ask which industrial installation
+      you mean. Listed because it is frequently requested, not because it fits.
+
+  iso15066:
+    name: ISO/TS 15066, collaborative industrial robots (power and force limiting)
+    applies_when: collaborative INDUSTRIAL applications
+    confidence: low
+    verified_by_counsel: false
+    scope_warning: >
+      Same scope problem as 10218. Its power-and-force-limit tables are for
+      industrial cobots at a workstation, not a 16 kg quadruped walking a
+      corridor. The contact-force thinking is useful; the standard does not
+      apply by its own terms.
+
+  cmmc:
+    name: CMMC (Cybersecurity Maturity Model Certification)
+    applies_when: US Department of Defense contracts and their supply chain
+    confidence: low
+    verified_by_counsel: false
+    scope_warning: >
+      ASSUMPTION - "cmm-c" was read as CMMC. If so it is a US DoD programme and
+      has no bearing on a Swiss spa. Left here only so the assumption is
+      visible and can be corrected. If a different standard was meant (CE
+      marking? CMMI?), replace this entry.
+
+  iso13482:
+    name: ISO 13482:2014, safety requirements for personal care robots
+    applies_when: scope is contested for a public-space guide robot
+    confidence: low
+    verified_by_counsel: false
+    note: >
+      Covers mobile servant, physical assistant and person carrier robots.
+      A guide robot in a public concourse sits awkwardly across that scope.
+      Treated here as good practice to cite, not as an established obligation.
+
+# ----------------------------------------------------------------------------
+# Obligations, each with its clock. `within` is the time from BECOMING AWARE.
+# ----------------------------------------------------------------------------
+obligations:
+  gdpr_art33_breach_notification:
+    framework: gdpr
+    citation: Art. 33 GDPR
+    requires: Notify the supervisory authority of a personal data breach.
+    within: 72h
+    confidence: high
+    audience: supervisory authority
+
+  gdpr_art34_inform_subject:
+    framework: gdpr
+    citation: Art. 34 GDPR
+    requires: Inform affected individuals when the risk to them is high.
+    within: without_undue_delay
+    confidence: high
+    audience: the affected guest
+
+  revfadp_art24_notify_fdpic:
+    framework: revfadp
+    citation: Art. 24 revFADP
+    requires: >
+      Notify the FDPIC of a data security breach likely to result in a high
+      risk to the data subject. Swiss law says "as soon as possible" and does
+      NOT set the GDPR's fixed 72 hours - do not copy that number across.
+    within: as_soon_as_possible
+    confidence: medium
+    audience: FDPIC
+
+  ai_act_art50_transparency:
+    framework: eu_ai_act
+    citation: Art. 50 AI Act
+    requires: Tell a person they are interacting with an AI system.
+    within: at_interaction
+    confidence: high
+    audience: the guest
+
+  ai_act_art73_serious_incident:
+    framework: eu_ai_act
+    citation: Art. 73 AI Act
+    requires: >
+      Report a serious incident to the market surveillance authority. The
+      commonly cited deadlines are 15 days generally, 10 days where a person
+      has died, and 2 days for widespread infringement. CHECK THESE - they are
+      quoted from memory of the regulation, they depend on the system being
+      high-risk at all, and the distinction between them is exactly the kind of
+      detail that is wrong in secondary sources.
+    within: 15d
+    confidence: medium
+    audience: market surveillance authority
+    must_verify: true
+
+  ai_act_art12_logging:
+    framework: eu_ai_act
+    citation: Art. 12 AI Act
+    requires: Automatic recording of events over the system's lifetime.
+    within: continuous
+    confidence: medium
+    audience: the record itself
+    satisfied_by: the hash-chained ledger
+
+  ai_act_art14_human_oversight:
+    framework: eu_ai_act
+    citation: Art. 14 AI Act
+    requires: Effective human oversight, including the ability to intervene and stop.
+    within: continuous
+    confidence: medium
+    audience: the operator
+    satisfied_by: Approve/Deny/Pause plus the operator E-STOP
+
+  iso42001_operational_control:
+    framework: iso42001
+    citation: ISO/IEC 42001 - operational planning and control, monitoring
+    requires: Demonstrate the AI system runs under defined, evidenced controls.
+    within: continuous
+    confidence: medium
+    audience: auditor
+    satisfied_by: the venue guardrail file plus the hash-chained ledger
+
+  iso42001_incident_handling:
+    framework: iso42001
+    citation: ISO/IEC 42001 - incident handling
+    requires: Record, triage and respond to AI incidents, with evidence.
+    within: 24h
+    confidence: medium
+    audience: auditor
+
+  iso12100_risk_assessment:
+    framework: iso12100
+    citation: ISO 12100
+    requires: A documented risk assessment covering foreseeable misuse.
+    within: before_deployment
+    confidence: medium
+    audience: auditor
+
+  iso27001_integrity:
+    framework: iso27001
+    citation: ISO/IEC 27001 - logging and integrity
+    requires: Protect audit records against tampering.
+    within: continuous
+    confidence: medium
+    audience: auditor
+    satisfied_by: sha256 chaining with verify-on-read
+
+  venue_internal_incident:
+    framework: null
+    citation: spa internal policy
+    requires: >
+      Tell the duty manager. This is the one that actually matters on the day
+      and it has no legal citation at all.
+    within: 15m
+    confidence: high
+    audience: duty manager
+
+# ----------------------------------------------------------------------------
+# Which breach maps to what. Default is NOT reportable.
+# ----------------------------------------------------------------------------
+breaches:
+  child_proximity:
+    severity_floor: critical
+    labels: [safety, human_oversight]
+    obligations: [venue_internal_incident, ai_act_art14_human_oversight,
+                  iso42001_incident_handling]
+    reportable: true
+    note: >
+      A near-miss with a child is the incident this venue would be judged on.
+      Escalate to a human in minutes, not hours, whatever any regulator says.
+
+  denied_command_executed:
+    severity_floor: critical
+    labels: [governance, control_integrity]
+    obligations: [venue_internal_incident, ai_act_art14_human_oversight,
+                  iso42001_incident_handling]
+    reportable: true
+    note: Human oversight was exercised and then ignored. That is the control failing.
+
+  unattributed_motion:
+    severity_floor: critical
+    labels: [governance, control_integrity, safety]
+    obligations: [venue_internal_incident, iso42001_incident_handling]
+    reportable: true
+    note: The machine moved and nothing authorised it. Treat as a control failure.
+
+  gate_bypass:
+    severity_floor: high
+    labels: [governance, control_integrity]
+    obligations: [venue_internal_incident]
+    reportable: true
+
+  policy_breach:
+    severity_floor: high
+    labels: [safety, operator_policy]
+    obligations: [venue_internal_incident]
+    reportable: true
+    note: The operator's own speed or distance rule was exceeded in confirmed state.
+
+  predicted_breach:
+    severity_floor: high
+    labels: [safety, preventive_control]
+    obligations: [iso42001_operational_control]
+    reportable: false
+    note: >
+      The guardrail WORKED - something unsafe was refused before it happened.
+      A prevented breach is evidence the control functions, not an incident.
+      Counted for the record, not reported.
+
+  prediction_deviation:
+    severity_floor: high
+    labels: [reliability, model_drift]
+    obligations: []
+    reportable: false
+    note: Engineering signal. Becomes reportable only if it coincides with harm.
+
+  narration_divergence:
+    severity_floor: medium
+    labels: [transparency, honesty]
+    obligations: [ai_act_art50_transparency]
+    reportable: false
+    note: >
+      The system told a guest something untrue about its own behaviour. Not a
+      notifiable incident, but it is squarely the transparency duty's concern
+      and it is the kind of thing that ends a pilot.
+
+  unverified_action:
+    severity_floor: medium
+    labels: [assurance_gap]
+    obligations: []
+    reportable: false
+
+  silence:
+    severity_floor: high
+    labels: [assurance_gap, logging]
+    obligations: [ai_act_art12_logging]
+    reportable: false
+    note: >
+      A telemetry feed stopped. NOT a personal data breach and never to be
+      reported as one. It does mean the record has a hole in it.
+
+  source_never_reported:
+    severity_floor: high
+    labels: [assurance_gap, logging]
+    obligations: [ai_act_art12_logging]
+    reportable: false
+
+  chain_broken:
+    severity_floor: critical
+    labels: [evidence_integrity, logging]
+    obligations: [venue_internal_incident, ai_act_art12_logging, iso27001_integrity,
+                  revfadp_art24_notify_fdpic, gdpr_art33_breach_notification]
+    reportable: true
+    note: >
+      The audit record itself was altered. Everything downstream of the break
+      is unreliable, and if the ledger was tampered with then unauthorised
+      access has to be considered - which is what pulls the data-protection
+      clocks in. The strongest response in this file, deliberately.
+
+# ----------------------------------------------------------------------------
+# THE ROUTE TO AN ACTUAL CERTIFICATE
+# ----------------------------------------------------------------------------
+# No file here certifies anything. These are the real routes, and what each one
+# wants from this system. The product's job is to be the evidence source, which
+# is most of the work and none of the authority.
+certification_paths:
+  iso42001_certification:
+    issued_by: an accredited certification body, after a two-stage audit
+    we_provide: >
+      Evidence for operational control, monitoring, and incident handling:
+      the signed venue guardrail file, the hash-chained ledger, the reporting
+      clocks, and the gap list.
+    we_cannot: issue, self-declare or shortcut the certificate
+    blocking_gaps: [risk_assessment, operator_policy_signed, record_signed]
+
+  ce_marking_machinery:
+    issued_by: >
+      the manufacturer's declaration of conformity; a notified body where the
+      machinery rules require one
+    we_provide: operational evidence and incident records
+    we_cannot: >
+      substitute for a Performance Level determination. Nothing in this stack
+      is a rated safety function.
+    blocking_gaps: [safety_function_rated, risk_assessment]
+
+  third_party_robot_safety_assessment:
+    issued_by: >
+      a technical assessment body such as TÜV SÜD, TÜV Rheinland, DEKRA or
+      Bureau Veritas
+    we_provide: >
+      A reproducible evidence pack: every intention, every decision, every
+      confirmed physical outcome, and every intervention, in a tamper-evident
+      record that can be replayed.
+    we_cannot: assess ourselves
+    blocking_gaps: [safety_function_rated, child_safety_verified, risk_assessment]
+    note: >
+      TÜV SÜD publishes a humanoid robotics safety framework. ITS CONTENTS HAVE
+      NOT BEEN READ - the page returns 403 to automated access, the same as the
+      venue's own site does. Nothing in this file is derived from it. Before
+      citing that framework anywhere, read it and map to its actual criteria;
+      do not assume it resembles the standards listed above.
+    status: contents_not_read

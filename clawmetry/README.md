@@ -87,6 +87,62 @@ privacy. The robot has no ingress rating and no wet-floor traction data.
 `tools/robot-guard/guard_core.py`** - a unit that is `inactive` on the Jetson -
 and neither venue policy in PR #1 mentions children at all.
 
+## Regulatory labels and reporting clocks
+
+```bash
+python3 clawmetry/server.py --compliance clawmetry/compliance.yaml ... 
+curl localhost:8901/api/compliance
+```
+
+Each breach is labelled with the obligation it may trigger, and a reportable
+one starts a clock that is written **into the ledger**, not onto a dashboard
+beside it — a deadline that exists only in a UI is one nobody can prove was
+known.
+
+```
+child_proximity   spa internal policy                 -> duty manager      15 min left
+                  ISO/IEC 42001 incident handling     -> auditor         1440 min left
+chain_broken      Art. 33 GDPR + Art. 24 revFADP      -> DPA / FDPIC        72h / asap
+```
+
+Two decisions in that mapping matter more than the list of standards:
+
+**Not every breach is reportable.** Six of twelve are deliberately
+`reportable: false`. A `silence` breach is a telemetry gap, not a personal data
+breach, and reporting it as one would destroy both the signal and the
+operator's credibility. A `predicted_breach` means the guardrail *worked* —
+evidence the control functions, not an incident.
+
+**Jurisdiction is Swiss, not EU.** Leukerbad is in Valais, so the primary data
+law is the **revFADP**, whose Art. 24 says "as soon as possible" and pointedly
+does *not* set the GDPR's 72 hours. GDPR applies on top only for EU guests.
+Copying the 72-hour figure across would be the easy, wrong answer.
+
+### This is not a certificate, and cannot become one
+
+No software issues conformity. ISO/IEC 42001 and 27001 certificates come from
+accredited certification bodies after an audit; CE marking is a manufacturer's
+declaration. What this produces is the evidence pack an assessor asks for, and
+— more usefully — the gap list that would fail the audit today:
+
+| blocking gap | why |
+|---|---|
+| `safety_function_rated` | No PL/SIL determination. A camera, a detector and a timer on a best-effort network is **not** a rated safety function and must not be sold as one. |
+| `child_safety_verified` | The child rule is enforced; the detector behind it has never been tested against a child. |
+| `operator_policy_signed` | Nobody has signed the venue guardrail file. |
+| `risk_assessment` | No documented ISO 12100-style assessment. |
+| `dpia` | None, in a venue that forbids photography. |
+
+`readiness()` returns gaps and never a score, because a percentage invites
+rounding up and a gap list does not.
+
+**Every citation carries `confidence` and `verified_by_counsel: false`.**
+Nothing in `compliance.yaml` has been checked by a lawyer. ISO 10218 and
+ISO/TS 15066 carry explicit `scope_warning`s: they are *industrial* robot
+standards, and a guide robot among undressed spa guests is a service robot
+where ISO 13482 is the nearer fit — claiming 10218 invites an auditor to ask
+which industrial installation you mean.
+
 ## Why a tap and not an SDK client
 
 The D1 permits **one SDK client**, which the team bridge already holds. Anything

@@ -522,6 +522,72 @@ class TestChildProximity(unittest.TestCase):
         self.assertEqual([x for x in out if x["rule"] == "child_proximity"], [])
 
 
+class TestCompliance(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import compliance
+        cls.c = compliance.load(str(Path(__file__).parent / "compliance.yaml"))
+
+    def test_a_child_near_miss_is_reportable_and_starts_a_clock(self):
+        l = self.c.label("child_proximity", now=1000.0)
+        self.assertTrue(l["reportable"])
+        clocks = [o for o in l["obligations"] if o["report_by"]]
+        self.assertTrue(clocks)
+        self.assertLessEqual(min(o["report_by"] for o in clocks), 1000.0 + 3600)
+
+    def test_a_telemetry_gap_is_not_a_data_breach(self):
+        """Over-reporting destroys the signal. `silence` must never notify a DPA."""
+        l = self.c.label("silence")
+        self.assertFalse(l["reportable"])
+        cites = " ".join(o["citation"] for o in l["obligations"]).lower()
+        self.assertNotIn("art. 33", cites)
+        self.assertNotIn("fadp", cites)
+
+    def test_a_prevented_breach_is_evidence_not_an_incident(self):
+        l = self.c.label("predicted_breach")
+        self.assertFalse(l["reportable"])
+
+    def test_tampering_with_the_record_pulls_the_data_protection_clocks(self):
+        l = self.c.label("chain_broken")
+        self.assertTrue(l["reportable"])
+        cites = " ".join(o["citation"] for o in l["obligations"]).lower()
+        self.assertIn("33", cites)      # GDPR notification
+        self.assertIn("fadp", cites)    # and the Swiss one, which is primary here
+
+    def test_an_unmapped_rule_is_not_assumed_harmless(self):
+        l = self.c.label("brand_new_detector")
+        self.assertIsNone(l["reportable"])
+        self.assertIn("unmapped", l["labels"])
+
+    def test_non_numeric_deadlines_never_become_zero(self):
+        """'as soon as possible' must not silently turn into 'now' or 'never'."""
+        import compliance
+        self.assertIsNone(compliance.parse_within("as_soon_as_possible"))
+        self.assertIsNone(compliance.parse_within("without_undue_delay"))
+        self.assertEqual(compliance.parse_within("72h"), 72 * 3600)
+
+    def test_readiness_reports_gaps_not_a_score(self):
+        r = self.c.readiness({"ledger_chained": True})
+        self.assertNotIn("score", r)
+        self.assertNotIn("percent", json.dumps(r).lower())
+        self.assertTrue(r["gaps"])
+        self.assertIn("not a certificate", r["statement"])
+
+    def test_the_unproven_child_detector_is_named_as_a_blocking_gap(self):
+        r = self.c.readiness({"ledger_chained": True})
+        blocking = [g["control"] for g in r["blocking_certification"]]
+        self.assertIn("child_safety_verified", blocking)
+        self.assertIn("safety_function_rated", [g["control"] for g in r["gaps"]])
+
+    def test_every_framework_is_flagged_unverified_by_counsel(self):
+        self.assertEqual(len(self.c.readiness({})["frameworks_unverified_by_counsel"]),
+                         len(self.c.frameworks))
+
+    def test_industrial_robot_standards_carry_a_scope_warning(self):
+        for f in ("iso10218", "iso15066"):
+            self.assertIn("scope_warning", self.c.frameworks[f], f)
+
+
 class TestFrameGrabber(unittest.TestCase):
     def test_camera_off_zone_refuses_to_read_at_all(self):
         """pool_deck and the changing rooms are not 'blur it later' - no frame

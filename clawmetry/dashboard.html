@@ -71,6 +71,10 @@ h2{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)
       <h2>Sources · silence is a finding</h2>
       <div id="sources"><div class="empty">no sources yet</div></div>
     </section>
+    <section style="margin-top:14px" id="compwrap" hidden>
+      <h2>Reporting clocks · evidence, not a certificate</h2>
+      <div id="compliance"></div>
+    </section>
   </div>
 </main>
 
@@ -162,6 +166,23 @@ function renderState(s) {
   $('sources').innerHTML = src.length ? src.map(([k, v]) =>
     `<div class="src"><span>${esc(k)}</span><span class="age ${v.age_s > 2 ? 'old' : ''}">${v.age_s}s ago</span></div>`
   ).join('') : '<div class="empty">no sources yet</div>';
+
+  const cw = $('compwrap'), cp = s.compliance || {};
+  if (cp.configured) {
+    cw.hidden = false;
+    fetch('/api/compliance').then(r => r.json()).then(c => {
+      const clocks = (c.clocks || []).slice(0, 6);
+      const gaps = (c.readiness?.blocking_certification || []);
+      $('compliance').innerHTML =
+        (clocks.length
+          ? clocks.map(k => `<div class="src"><span>${esc(k.citation)} <span class=t>${esc(k.rule)}</span></span>` +
+              `<span class="age ${k.overdue ? 'old' : ''}">${k.overdue ? 'OVERDUE' : Math.round(k.remaining_s / 60) + 'm left'}</span></div>`).join('')
+          : '<div class="empty">no reportable breach has started a clock</div>') +
+        `<div class="src" style="border-top:1px solid var(--line)"><span class=t>blocking certification</span>` +
+        `<span style="color:var(--amber)">${gaps.length} gaps</span></div>` +
+        gaps.map(g => `<div class="b medium"><div class="r">${esc(g.control)}</div><div class="d">${esc(g.gap)}</div></div>`).join('');
+    }).catch(() => {});
+  } else { cw.hidden = true; }
 
   if (s.breaches.length) $('breaches').innerHTML = s.breaches.map(b =>
     `<div class="b ${esc(b.severity)}"><div class="r">${esc(b.rule)}</div>
