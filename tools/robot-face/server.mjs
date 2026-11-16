@@ -131,6 +131,11 @@ const publicState = () => ({
   busy: session.live,
   robot: { reachable: robot.reachable, connected: robot.connected, standing: robot.standing,
            moving: robot.moving, gesture: robot.gesture, battery: robot.battery },
+  // Whether anything is actually able to talk. Without this a guest can tap
+  // Start, tap six buttons and get silence with nothing on screen to explain
+  // it - which is exactly what happened the first time this ran.
+  brain: { connected: brainUp() },
+  face: faceState,
 })
 
 /**
@@ -149,10 +154,43 @@ const publicState = () => ({
  */
 let seq = 0
 const events = []
+
+/**
+ * LONG POLLING, not SSE and not a fixed interval.
+ *
+ * SSE was tried first and a Cloudflare quick tunnel buffered it to nothing.
+ * A fixed 700 ms interval was fine for a Start button but is far too slow
+ * for a mouth: the face now lives on a different device from the audio, and
+ * a mouth that starts moving 700 ms after the voice is worse than one that
+ * does not move at all.
+ *
+ * A long poll is a normal, complete HTTP response, so no proxy can decide to
+ * buffer it the way it can a stream, and a waiting client hears about an
+ * event within milliseconds of it happening.
+ */
+const waiters = new Set()
+const wake = () => {
+  for (const w of waiters) { clearTimeout(w.timer); try { w.send() } catch {} }
+  waiters.clear()
+}
 const broadcast = event => {
   events.push({ seq: ++seq, ...event })
   if (events.length > 40) events.splice(0, events.length - 40)   // a demo, not an audit log
+  wake()
 }
+
+/**
+ * What the brain reports about the conversation, for the screen to draw.
+ *
+ * Only onsets travel: "speaking", "listening", and the line being said. The
+ * syllable flutter is generated on the screen itself. Nobody can tell a real
+ * envelope from a plausible one, but everybody notices a mouth moving in
+ * silence - so the wire carries the thing that must be right and the device
+ * drawing generates the thing that merely has to look right.
+ */
+let faceState = { state: 'idle', caption: '', at: 0 }
+let brainSeenAt = 0
+const brainUp = () => Date.now() - brainSeenAt < 30000   // a long poll returns at 20s
 
 const json = (res, code, body) => {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
@@ -206,7 +244,40 @@ createServer(async (req, res) => {
     // a dropped request costs nothing: the next one still carries the event.
     if (p === '/api/events') {
       const since = Number(url.searchParams.get('since') ?? 0) || 0
-      return json(res, 200, { seq, session: publicState(), events: events.filter(e => e.seq > since) })
+      // The brain's poll doubles as its heartbeat. Timers get throttled when
+      // a page is backgrounded; a request that actually arrives does not.
+      if (url.searchParams.get('role') === 'brain') brainSeenAt = Date.now()
+      const reply = () => json(res, 200, { seq, session: publicState(), events: events.filter(e => e.seq > since) })
+      const pending = events.some(e => e.seq > since)
+      // wait=1 asks to be held until something happens. Anything that has
+      // never polled before gets an immediate answer so it can sync.
+      if (pending || url.searchParams.get('wait') !== '1') return reply()
+      const w = { send: reply, timer: null }
+      w.timer = setTimeout(() => { waiters.delete(w); reply() }, 20000)
+      waiters.add(w)
+      res.on('close', () => { clearTimeout(w.timer); waiters.delete(w) })
+      return
+    }
+
+    // The brain reports what the conversation is doing, so the screen on the
+    // robot can draw it. Separate from /api/session because this is the
+    // machine talking about itself, not a guest asking for something.
+    if (p === '/api/face' && req.method === 'POST') {
+      let body
+      try { body = JSON.parse(await readBody(req) || '{}') }
+      catch (e) { return json(res, 400, { error: `body is not JSON: ${e.message}` }) }
+      brainSeenAt = Date.now()
+      const next = {
+        state: ['idle', 'listening', 'thinking', 'speaking', 'happy'].includes(body.state) ? body.state : 'idle',
+        caption: String(body.caption ?? '').slice(0, 300),
+        at: Date.now(),
+      }
+      // Only wake the screens when something actually changed, or a heartbeat
+      // every few seconds would restart every long poll for nothing.
+      const changed = next.state !== faceState.state || next.caption !== faceState.caption
+      faceState = next
+      if (changed) broadcast({ type: 'face', state: next.state, caption: next.caption })
+      return json(res, 200, { ok: true, live: session.live, name: session.name })
     }
 
     if (p === '/api/session' && req.method === 'POST') {
@@ -223,6 +294,9 @@ createServer(async (req, res) => {
         // One robot, one guest. Without this, a second person scanning the
         // QR mid-conversation silently takes over the first person's session
         // - and the first person is standing right there, still talking.
+        if (!brainUp()) {
+          return json(res, 503, { error: 'The robot is not awake yet — its voice is not connected.', ...publicState() })
+        }
         if (session.live && body.owner !== session.owner) {
           return json(res, 409, { error: 'The robot is with another guest just now.', busy: true, ...publicState() })
         }

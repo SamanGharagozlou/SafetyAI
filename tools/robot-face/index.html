@@ -399,148 +399,167 @@ if (DEMO) {
 }
 
 /* ------------------------------------------------------------------ *
- * LIVE
+ * TWO ROLES, ONE FILE
+ *
+ *   ?brain=1   the Jetson. Runs the Vapi call against the DJI microphone
+ *              and the Bluetooth speaker, and reports what the
+ *              conversation is doing. Nobody looks at it; it runs headless.
+ *   (default)  the phone on the robot's back. Draws the face and the QR.
+ *              Never opens a microphone and never joins a call.
+ *
+ * Splitting them is what lets the robot keep its own voice and ears: a
+ * Linux box can hold a USB mic and an A2DP speaker at once, which no phone
+ * can. The cost is that the mouth is now driven across a network, so only
+ * onsets travel and the syllables are generated here. People notice a mouth
+ * moving in silence; nobody can tell a real envelope from a plausible one.
  * ------------------------------------------------------------------ */
-async function live() {
-  let cfg
-  try { cfg = await (await fetch('/api/config')).json() }
-  catch (e) { return void fault(`cannot reach the server for config: ${e.message}`) }
+const BRAIN = qs.get('brain') === '1'
+const cfg = async () => (await fetch('/api/config')).json()
 
-  await renderQR(qs.get('qr') || cfg.joinUrl)
-
+/* ------------------------------ BRAIN ------------------------------ */
+async function brain() {
+  let c
+  try { c = await cfg() } catch (e) { return void fault(`no config: ${e.message}`) }
   const { default: Vapi } = await import('https://cdn.jsdelivr.net/npm/@vapi-ai/web@3.1.0/+esm')
-  const vapi = new Vapi(cfg.publicKey)
-  let calling = false, analyserOn = false
+  const vapi = new Vapi(c.publicKey)
 
-  vapi.on('call-start',   () => { calling = true; ready = true; stopIdleCycle(); setState('listening', ''); fault(''); flush() })
-  vapi.on('speech-start', () => setState('speaking'))
-  vapi.on('speech-end',   () => setState('listening', ''))
-  vapi.on('volume-level', v => { if (!analyserOn) face.openTarget = clamp(v * 1.6, 0, 1) })
-  vapi.on('message', m => {
-    if (m?.type === 'transcript' && m.transcriptType === 'final' && m.role === 'assistant') {
-      $('caption').textContent = m.transcript
-    }
-  })
-  vapi.on('error', e => fault(`voice error: ${e?.message ?? e}`))
-  vapi.on('call-end', () => { calling = false; ready = false; analyserOn = false; pending.length = 0; setState('idle'); $('caption').textContent = ''; startIdleCycle() })
-  vapi.on('daily-participant-updated', p => {
-    const track = p?.tracks?.audio?.persistentTrack
-    if (!track || analyserOn) return
-    try { attachAnalyser(new MediaStream([track])); analyserOn = true } catch { /* keep the fallback */ }
-  })
-
-  const start = async name => {
-    if (calling) return
-    calling = true                    // claim it before awaiting, or two polls race into two calls
-    // A start that never reaches call-start used to wedge the face for ever.
-    // Give up out loud instead, so the next poll can try again.
-    const wedged = setTimeout(() => {
-      if (!ready) { calling = false; fault('the call did not connect — retrying') }
-    }, 20000)
-    try {
-      // The microphone is this device's own. Default audioSource, default
-      // echo cancellation: mic and speaker on one device is the case AEC
-      // handles well, which is the entire reason the audio lives here.
-      await vapi.start(cfg.assistantId, name ? { variableValues: { name } } : undefined)
-    } catch (e) {
-      calling = false; clearTimeout(wedged)
-      fault(`could not start the call: ${e?.message ?? e}`)
-    }
-  }
-  const stop = () => {
-    try { vapi.stop() } catch {}
-    calling = false; ready = false; pending.length = 0
-    setState('idle'); $('caption').textContent = ''; startIdleCycle()
-  }
-
-  /* The guest's phone decides when a session begins, and this polls to find
-     out. Server-Sent Events were the obvious choice and work perfectly on
-     the LAN, but a Cloudflare quick tunnel buffers text/event-stream so
-     completely that nothing arrives at all - so the Start button worked in
-     testing and would have done nothing on the deployed URL. Polling cannot
-     be broken by a proxy's opinion about long-lived responses, and the only
-     latency-critical path here, the lip sync, never leaves this device. */
-  /* `calling` means "a call is being created or is up"; `ready` means
-     call-start has actually fired. Conflating the two is what broke this
-     the first time: a sentence sent before the call existed threw, aborted
-     the poll, and left `calling` true for ever - after which every poll
-     skipped start() and every tap was silently dropped. */
-  let ready = false
+  let calling = false, ready = false, state = 'idle', caption = ''
   const pending = []
 
+  // Posted on every change AND on a heartbeat, so the server can tell the
+  // guest's phone whether anything is actually able to talk. A Start button
+  // that works when nothing is listening is how you get silence with no
+  // explanation on screen.
+  const report = () => fetch('/api/face', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state, caption }),
+  }).catch(() => {})
+  const set = (s, cap) => { state = s; if (cap !== undefined) caption = cap; report() }
+  setInterval(report, 3000)
+  report()
+
   const sendText = text => {
-    if (!ready) { pending.push(text); return }        // tapped before it was up
+    if (!ready) { pending.push(text); return }
     try {
-      // Injected as the GUEST's turn, not as a line for the robot to read
-      // out, so the assistant answers in character and calls its own tools -
-      // a tap and a spoken request cannot drift apart.
-      vapi.send({ type: 'add-message', message: { role: 'user', content: text },
-                  triggerResponseEnabled: true })
+      vapi.send({ type: 'add-message', message: { role: 'user', content: text }, triggerResponseEnabled: true })
     } catch (e) { fault(`could not send that: ${e?.message ?? e}`) }
   }
   const flush = () => { while (pending.length && ready) sendText(pending.shift()) }
 
-  let since = null, failures = 0
+  vapi.on('call-start',   () => { calling = true; ready = true; set('listening', ''); flush() })
+  vapi.on('speech-start', () => set('speaking'))
+  vapi.on('speech-end',   () => set('listening', ''))
+  vapi.on('call-end',     () => { calling = false; ready = false; pending.length = 0; set('idle', '') })
+  vapi.on('error',        e => fault(`voice error: ${e?.message ?? e}`))
+  vapi.on('message', m => {
+    if (m?.type === 'transcript' && m.transcriptType === 'final' && m.role === 'assistant') set(state, m.transcript)
+  })
 
-  const apply = async m => {
-    if (m.type === 'start') await start(m.name)
-    else if (m.type === 'stop') stop()
-    else if (m.type === 'say') sendText(m.text)
-  }
-
-  const poll = async () => {
+  const start = async name => {
+    if (calling) return
+    calling = true
+    const wedged = setTimeout(() => {
+      if (!ready) { calling = false; fault('the call did not connect — retrying') }
+    }, 20000)
     try {
-      const r = await fetch(`/api/events?since=${since ?? 0}`, { cache: 'no-store' })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      const d = await r.json()
-
-      if (since === null) {
-        // FIRST POLL: adopt the log position without replaying it. The
-        // history is someone else's conversation - every past start, stop
-        // and sentence - and replaying it tears down the call being set up.
-        since = d.seq ?? 0
-      } else {
-        // Awaited, so a start and a stop in the same batch cannot interleave.
-        for (const e of d.events ?? []) await apply(e)
-        since = d.seq ?? since
-      }
-
-      // A session already running when this screen loads - or after the
-      // phone slept - is joined rather than waited for.
-      if (d.session?.live && !calling) await start(d.session.name)
-      if (!d.session?.live && calling) stop()
-      if (failures) { failures = 0; fault('') }
-    } catch (e) {
-      // One dropped poll on a phone radio is normal; say so only once it is
-      // a pattern, or the face cries wolf at every tunnel hiccup.
-      if (++failures === 4) fault('lost the link to the server — retrying')
-    } finally {
-      setTimeout(poll, 700)
-    }
+      // The DJI microphone and the Bluetooth speaker both belong to this
+      // machine. Default audioSource and default echo cancellation: one
+      // device holding both is the case AEC is built for.
+      await vapi.start(c.assistantId, name ? { variableValues: { name } } : undefined)
+    } catch (e) { calling = false; clearTimeout(wedged); fault(`could not start: ${e?.message ?? e}`) }
+  }
+  const stop = () => {
+    try { vapi.stop() } catch {}
+    calling = false; ready = false; pending.length = 0; set('idle', '')
   }
 
-  poll()
-
-  show('stage')
-  startIdleCycle()
+  await pump(async (d, first) => {
+    if (!first) for (const e of d.events ?? []) {
+      if (e.type === 'start') await start(e.name)
+      else if (e.type === 'stop') stop()
+      else if (e.type === 'say') sendText(e.text)
+    }
+    if (d.session?.live && !calling) await start(d.session.name)
+    if (!d.session?.live && calling) stop()
+  }, '&role=brain')
 }
 
-/* Arm once, by hand, at setup. After this tap the page may take the
-   microphone and play sound for the rest of its life. */
-if (!DEMO) {
-  $('arm').addEventListener('click', async () => {
+/* ----------------------------- DISPLAY ----------------------------- *
+ * The phone on the robot's back. It is DECORATION, and deliberately so.
+ *
+ * It holds no microphone, joins no call and syncs with nothing. Earlier it
+ * mirrored the conversation so the mouth moved in time with the voice, and
+ * that is lovely when the audio is on the same device - but once the audio
+ * moved to the laptop, keeping a mouth in step across a network bought a
+ * standing risk of a face that lies about what the robot is doing, in
+ * exchange for a detail nobody standing two metres away is checking.
+ *
+ * So it blinks, it looks around, it sways, and every so often it shows the
+ * QR. Nothing it draws can be wrong, because it never claims anything.
+ * ------------------------------------------------------------------ */
+async function display() {
+  let c
+  try { c = await cfg() } catch (e) { return void fault(`no config: ${e.message}`) }
+  await renderQR(qs.get('qr') || c.joinUrl)
+  show('stage')
+  startIdleCycle()
+
+  // A little life beyond the blink: now and then it looks pleased about
+  // nothing, which is what stops a looping idle reading as a screensaver.
+  const pleased = () => {
+    setState('happy')
+    setTimeout(() => setState('idle'), 1400 + Math.random() * 1200)
+    setTimeout(pleased, 14000 + Math.random() * 20000)
+  }
+  setTimeout(pleased, 9000)
+}
+
+/* ------------------------------ SHARED ----------------------------- *
+ * One long-polling loop for both roles. The first response only syncs the
+ * log position: replaying history tore down the call it was setting up and
+ * wedged the whole thing, so history is read once and never acted on.
+ * ------------------------------------------------------------------ */
+async function pump(handle, role = '') {
+  let since = null, failures = 0
+  for (;;) {
     try {
-      // Ask for the microphone now rather than mid-demo, and release it
-      // again immediately: we only want the permission, Vapi takes the
-      // real stream later.
-      const s = await navigator.mediaDevices.getUserMedia({ audio: true })
-      s.getTracks().forEach(t => t.stop())
+      const wait = since === null ? '' : '&wait=1'
+      const r = await fetch(`/api/events?since=${since ?? 0}${wait}${role}`, { cache: 'no-store' })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const d = await r.json()
+      const first = since === null
+      await handle(d, first)
+      since = d.seq ?? since ?? 0
+      if (failures) { failures = 0; fault('') }
     } catch (e) {
-      fault(`no microphone: ${e.message}. This page must be served over HTTPS for a phone to allow it.`)
+      // One dropped poll on a phone radio is normal; only a pattern is worth
+      // saying out loud, or the face cries wolf at every hiccup.
+      if (++failures === 4) fault('lost the link to the robot — retrying')
+      await new Promise(r => setTimeout(r, 1000))
     }
-    try { await new (window.AudioContext || window.webkitAudioContext)().resume() } catch {}
-    live()
-  }, { once: true })
+  }
+}
+
+if (!DEMO) {
+  if (BRAIN) {
+    // The brain takes the microphone and plays the audio, and no browser
+    // allows either until something has been tapped. One tap when you open
+    // it on the laptop, and it is armed for the rest of the session.
+    $('arm').addEventListener('click', async () => {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true })
+        s.getTracks().forEach(t => t.stop())       // we only wanted the permission
+      } catch (e) {
+        fault(`no microphone: ${e.message}. This page must be served over HTTPS.`)
+      }
+      show('stage')
+      brain()
+    }, { once: true })
+  } else {
+    // The screen asks for nothing, so it needs no tap. One less thing to
+    // forget while strapping a phone to a robot.
+    display()
+  }
 }
 </script>
 </body>

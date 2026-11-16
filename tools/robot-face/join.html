@@ -157,10 +157,16 @@ const post = (body) => fetch('/api/session', {
 async function refreshRobot() {
   try {
     const d = await (await fetch('/api/state', { cache: 'no-store' })).json()
-    const ok = d.robot?.reachable && d.robot?.connected
-    const busyElsewhere = d.busy && d.owner !== owner && !during()
-    $('robot-state').textContent = !ok
-      ? 'The robot is not responding right now.'
+    // Two different kinds of "not ready", and they need different words: the
+    // robot's legs can be fine while its voice is not running, and a guest
+    // told only "not responding" would go and find the legs.
+    const voice = d.brain?.connected === true
+    const body_ = d.robot?.reachable && d.robot?.connected
+    const busyElsewhere = d.busy && !during()
+    const ok = voice && body_
+    $('robot-state').textContent =
+        !voice ? 'The robot is not awake yet — its voice is not connected.'
+      : !body_ ? 'The robot is not responding right now.'
       : busyElsewhere ? 'The robot is with another guest just now.'
       : d.robot.battery != null ? `Ready · battery ${Math.round(d.robot.battery)}%` : 'Ready'
     $('robot-state').style.color = ok && !busyElsewhere ? 'var(--pale)' : '#ffb4ad'

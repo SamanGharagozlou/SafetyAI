@@ -35,6 +35,15 @@ if (!BASE) {
   })
   await new Promise(r => agent.listen(5191, r))
   spawned.push(() => agent.close())
+  // A crashed earlier run can leave its server listening, and then this
+  // suite silently tests THAT one - stale code, passing or failing for
+  // reasons nothing to do with the working tree. Refuse instead.
+  const taken = await fetch('http://127.0.0.1:5189/api/state').then(() => true).catch(() => false)
+  if (taken) {
+    console.error('\nport 5189 is already serving. A previous run left a server behind.')
+    console.error('kill it first:  kill $(lsof -ti tcp:5189)\n')
+    process.exit(2)
+  }
   const srv = spawn(process.execPath, [join(HERE, 'server.mjs')], {
     env: { ...process.env, PORT: '5189', AGENT_URL: 'http://127.0.0.1:5191',
            PUBLIC_URL: 'http://127.0.0.1:5189', FACE_KEY: '' },
@@ -42,18 +51,36 @@ if (!BASE) {
   })
   spawned.push(() => srv.kill())
   BASE = 'http://127.0.0.1:5189'
+  // A crash must not leave the server running, or the NEXT run either tests
+  // stale code or refuses to start. This is how 5189 got stuck twice.
+  const cleanup = () => { for (const k of spawned) { try { k() } catch {} } }
+  process.on('exit', cleanup)
+  process.on('uncaughtException', e => { cleanup(); console.error(e); process.exit(1) })
+  process.on('unhandledRejection', e => { cleanup(); console.error(e); process.exit(1) })
   await new Promise(r => setTimeout(r, 1200))
 }
 // The deployed server is key-guarded; a local one usually is not. The first
 // page load carries the key and the server sets a cookie for the rest.
 const K = process.env.BASE && process.env.FACE_KEY ? `?k=${encodeURIComponent(process.env.FACE_KEY)}` : ''
 const wait = ms => new Promise(r => setTimeout(r, ms))
+/* Wait for the thing you care about, not for a guess at how long it takes.
+   Fixed sleeps here were producing failures that had nothing to do with the
+   code - the slowest page in a four-page suite is not the robot. */
+const until = async (fn, ms = 8000) => {
+  const end = Date.now() + ms
+  for (;;) {
+    try { if (await fn()) return true } catch {}
+    if (Date.now() > end) return false
+    await wait(120)
+  }
+}
 
 // A fake SDK. The real one would place a billable call to an assistant whose
 // robot tools point at the live Jetson - a test must not be able to move a robot.
 const STUB = `
 export default class Vapi {
-  constructor(k){ window.__log = []; this.h = {}; this.up = false; window.__log.push(['ctor', k]) }
+  constructor(k){ window.__log = []; this.h = {}; this.up = false; window.__log.push(['ctor', k])
+    window.__vapiEmit = (e,...a) => this.emit(e,...a) }
   on(e,f){ (this.h[e] ||= []).push(f) }
   emit(e,...a){ (this.h[e]||[]).forEach(f=>f(...a)) }
   async start(id, ov){
@@ -65,6 +92,7 @@ export default class Vapi {
     return {}
   }
   async stop(){ this.up = false; window.__log.push(['stop']); this.emit('call-end') }
+  // test hook: let the suite drive speech events the way the real SDK would
   send(m){
     if (!this.up) throw new Error('call is not up yet')
     window.__log.push(['send', JSON.stringify(m)])
@@ -75,9 +103,19 @@ const CHROME = process.env.CHROME ?? (process.platform === 'darwin'
   ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '/usr/bin/google-chrome')
 const b = await chromium.launch({
   ...(existsSync(CHROME) ? { executablePath: CHROME } : {}),
-  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream',
+         '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
+         '--disable-renderer-backgrounding'],
 })
 const ctx = await b.newContext({ permissions: ['microphone'] })
+// Tripwire: the screen must never ask for a microphone. On a phone that
+// single call drops the Bluetooth speaker from A2DP to HFP and kills the
+// sound, so it is worth asserting rather than trusting.
+await ctx.addInitScript(() => {
+  window.__gumCalled = false
+  const real = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices)
+  if (real) navigator.mediaDevices.getUserMedia = (...a) => { window.__gumCalled = true; return real(...a) }
+})
 const errs = []
 const pass = []
 
@@ -94,16 +132,28 @@ const guest = await ctx.newPage()
 guest.on('pageerror', e => errs.push('guest: ' + e.message))
 
 // --- face phone: arm it
-await face.goto(BASE + '/face' + K, { waitUntil: 'networkidle' })
-pass.push(['face opens on the arm screen', !(await face.isHidden('#arm'))])
-await face.click('#arm')
-await wait(1500)
-pass.push(['arming shows the stage', !(await face.isHidden('#stage'))])
+// The BRAIN: headless on the Jetson in real life, so it needs no tap.
+await face.goto(BASE + '/face' + (K ? K + '&' : '?') + 'brain=1', { waitUntil: 'domcontentloaded' })
+await face.click('#arm')          // the brain takes the mic, so it needs one tap
+pass.push(['the brain comes up after its tap',
+  await until(async () => (await face.evaluate(() => window.__log ?? [])).length > 0)])
+pass.push(['the brain tells the server it is awake',
+  await until(async () => (await (await fetch(BASE + '/api/state' + K)).json()).brain?.connected === true)])
+
+// The DISPLAY: the phone on the robot. Takes no microphone, joins no call.
+const screen = await ctx.newPage({ viewport: { width: 420, height: 860 } })
+screen.on('pageerror', e => errs.push('screen: ' + e.message))
+await screen.goto(BASE + '/face' + K, { waitUntil: 'domcontentloaded' })
+// No tap: the screen asks for nothing, so there is nothing to grant. One
+// less thing to forget while strapping a phone to a robot.
+pass.push(['the screen comes up with no tap',
+  await until(async () => !(await screen.isHidden('#stage')))])
+pass.push(['the screen never shows an arming prompt', await screen.isHidden('#arm')])
 pass.push(['the cycle opens on the QR, so it can be scanned at once',
-  await face.evaluate(() => document.getElementById('qrpanel').classList.contains('on'))])
+  await screen.evaluate(() => document.getElementById('qrpanel').classList.contains('on'))])
 // A QR nobody can scan is worse than no QR: it was `example.invalid` once,
 // and every phone rejected it as a bad URL.
-const qrText = await face.evaluate(async () => {
+const qrText = await screen.evaluate(async () => {
   const c = document.querySelector('#qr canvas'); if (!c) return ''
   const m = await import('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/+esm')
   const d = c.getContext('2d').getImageData(0, 0, c.width, c.height)
@@ -111,11 +161,11 @@ const qrText = await face.evaluate(async () => {
 })
 pass.push(['the QR decodes to a reachable join URL on this origin',
   qrText.startsWith(BASE) && qrText.includes('/join') && !/\.invalid/.test(qrText), qrText])
-pass.push(['QR encodes the join URL', (await face.locator('#qr canvas').count()) === 1
-           || (await face.textContent('#qr-fallback'))?.includes('/join')])
+pass.push(['QR encodes the join URL', (await screen.locator('#qr canvas').count()) === 1
+           || (await screen.textContent('#qr-fallback'))?.includes('/join')])
 
 // --- guest phone
-await guest.goto(BASE + '/join' + K, { waitUntil: 'networkidle' })
+await guest.goto(BASE + '/join' + K, { waitUntil: 'domcontentloaded' })
 pass.push(['Start is disabled before consent', await guest.isDisabled('#start')])
 await guest.fill('#name', 'Anna')
 await guest.check('#consent')
@@ -137,9 +187,13 @@ pass.push(['guest is greeted by name', (await guest.textContent('#greet'))?.incl
 // --- the face should have started a call, carrying the name
 let log = await face.evaluate(() => window.__log ?? [])
 pass.push(['face started a call on the guest tap', log.some(l => l[0] === 'start'), JSON.stringify(log.find(l=>l[0]==='start')||'')])
-pass.push(['face is on stage during the call', !(await face.isHidden('#stage'))])
-pass.push(['the QR never covers a live conversation',
-  !(await face.evaluate(() => document.getElementById('qrpanel').classList.contains('on')))])
+pass.push(['the screen is on stage during the call', !(await screen.isHidden('#stage'))])
+// The screen is independent by design, so the QR cycle keeps running
+// through a conversation. The trade is deliberate: nothing the screen draws
+// can contradict what the robot is doing, because it never consults it.
+pass.push(['the screen runs its own cycle regardless of the call',
+  await until(async () => await screen.evaluate(() =>
+    document.getElementById('qrpanel').classList.contains('on')), 30000)])
 
 // --- a shortcut becomes the guest's own sentence
 await guest.click('#places button[data-i="2"]')      // sauna world
@@ -162,7 +216,7 @@ if (OUT) await face.screenshot({ path: OUT + 'face-live.png' })
 
 // --- a second guest must not be able to take the session over
 const other = await ctx.newPage()
-await other.goto(BASE + '/join' + K, { waitUntil: 'networkidle' })
+await other.goto(BASE + '/join' + K, { waitUntil: 'domcontentloaded' })
 await other.waitForTimeout(1200)
 const secondStart = await other.evaluate(async () => {
   const r = await fetch('/api/session', { method: 'POST', headers: {'Content-Type':'application/json'},
@@ -171,7 +225,8 @@ const secondStart = await other.evaluate(async () => {
 })
 pass.push(['second guest is told the robot is busy', secondStart.status === 409 && secondStart.body.busy === true,
   JSON.stringify(secondStart.body.error ?? '')])
-pass.push(['second guest sees it on screen', /another guest/i.test(await other.textContent('#robot-state') ?? ''),
+pass.push(['second guest sees it on screen',
+  await until(async () => /another guest/i.test(await other.textContent('#robot-state') ?? '')),
   await other.textContent('#robot-state')])
 // Assert the contract, not the fixture: this suite also runs against the
 // real Jetson, where the battery is whatever it is.
@@ -186,6 +241,22 @@ const steal = await other.evaluate(async () => (await fetch('/api/session', { me
 pass.push(['second guest cannot speak into it', steal === 403, 'HTTP ' + steal])
 await other.close()
 
+// --- the screen is decoration: it must stay lively and stay OUT of the call
+await face.evaluate(() => window.__vapiEmit('speech-start'))
+await wait(1200)
+pass.push(['the screen never opens a microphone',
+  await screen.evaluate(() => !window.__gumCalled)])
+pass.push(['the screen joins no call',
+  await screen.evaluate(() => window.__log === undefined), JSON.stringify(await screen.evaluate(() => window.__log ?? null))])
+pass.push(['the screen keeps animating regardless of the call',
+  await until(async () => {
+    const a = await screen.evaluate(() => document.getElementById('drop').getAttribute('transform'))
+    await wait(220)
+    const b2 = await screen.evaluate(() => document.getElementById('drop').getAttribute('transform'))
+    return a !== b2
+  }), 'the drop keeps moving'])
+await face.evaluate(() => window.__vapiEmit('speech-end'))
+
 // --- THE REGRESSION: a face phone opening against a dirty event log.
 // The log now holds this run's starts, stops and sentences. A face that
 // replays them tears down the call it is setting up and wedges itself.
@@ -193,7 +264,7 @@ const fresh = await ctx.newPage()
 await fresh.route('**/@vapi-ai/web@**', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: STUB }))
 const freshErrs = []
 fresh.on('pageerror', e => freshErrs.push(e.message))
-await fresh.goto(BASE + '/face' + K, { waitUntil: 'networkidle' })
+await fresh.goto(BASE + '/face' + (K ? K + '&' : '?') + 'brain=1', { waitUntil: 'domcontentloaded' })
 await fresh.click('#arm')
 await wait(3000)
 const flog = await fresh.evaluate(() => window.__log ?? [])
@@ -218,8 +289,12 @@ await guest.click('#stop')
 await wait(900)
 log = await face.evaluate(() => window.__log ?? [])
 pass.push(['stop ends the call', log.some(l => l[0] === 'stop')])
-pass.push(['the QR cycle resumes after the call',
-  await face.evaluate(() => document.getElementById('qrpanel').classList.contains('on'))])
+pass.push(['the screen is still alive after the call ends',
+  await until(async () => {
+    const a = await screen.evaluate(() => document.getElementById('drop').getAttribute('transform'))
+    await wait(220)
+    return a !== await screen.evaluate(() => document.getElementById('drop').getAttribute('transform'))
+  })])
 
 // a say with no session must be refused
 const late = await guest.evaluate(async () => (await fetch('/api/session', { method:'POST',
@@ -227,6 +302,8 @@ const late = await guest.evaluate(async () => (await fetch('/api/session', { met
 pass.push(['say is refused with no session', late === 409, 'HTTP ' + late])
 
 if (OUT) await guest.screenshot({ path: OUT + 'guest.png', fullPage: true })
+
+await screen.close()
 
 let bad = 0
 for (const [n, ok, note] of pass) { if (!ok) bad++; console.log(`${ok?'PASS':'FAIL'}  ${n}${note?'  ('+note+')':''}`) }

@@ -2,10 +2,12 @@
 
 Two screens and one wire between them.
 
-| | |
-|---|---|
-| `/face` | The phone strapped to the robot. A living face by default; the QR comes over it every so often. **Owns the microphone, the loudspeaker and the Vapi call.** |
-| `/join` | What the guest's phone opens after scanning. Consent, Start, Stop, and tap-shortcuts. **No audio role at all.** |
+| Where | URL | Job |
+|---|---|---|
+| **Your laptop** | `/face?brain=1&k=…` | The voice. Holds the DJI mic and the Bluetooth speaker and runs the Vapi call. Tap once to arm. |
+| **Phone on the robot** | `/face?k=…` | The look. A blinking face, and the QR every so often. No tap, no mic, no call. |
+| **Guest's phone** | scans the QR | Consent, Start, Stop, tap-shortcuts. No audio role. |
+| **Jetson** | hosts all three | The server and the robot-state source. No audio hardware. |
 
 ```bash
 node tools/robot-face/server.mjs          # :5180
@@ -15,6 +17,34 @@ node tools/robot-face/server.mjs          # :5180
 
 Env: `VAPI_PUBLIC_KEY`, `VAPI_ASSISTANT_ID` (defaults to the Leukerbad greeter
 `a366d544`, never the robot-only assistant), `PORT`, `PUBLIC_URL`.
+
+## Why the audio lives on the laptop
+
+A phone can hold a Bluetooth speaker **or** a microphone, never both:
+`getUserMedia` drops it from A2DP to HFP, and most Bluetooth *speakers* have
+no usable HFP. A laptop has no such problem — macOS routes input and output
+independently — so one machine can hold the DJI mic and the speaker at once,
+which is also the case browser echo cancellation is built for. Split mic and
+speaker across two devices and the speaker's 100–200 ms latency puts the echo
+beyond what AEC can cancel, and the assistant starts interrupting itself.
+
+The Jetson was the obvious home for this and is not: it has no browser (the
+Vapi SDK needs one), the USB mic was not enumerating, and the speaker would
+not pair. The laptop already works. It stays the Jetson's job to host the
+pages and report robot state.
+
+## The screen is decoration, on purpose
+
+It syncs with nothing. It blinks, looks around, sways, and shows the QR every
+so often. An earlier version mirrored the conversation so the mouth moved in
+time with the voice — which is lovely when the audio is on the same device,
+and a standing risk of a face that *lies* about what the robot is doing once
+the audio is a network away.
+
+One visible consequence: **the QR can appear mid-conversation**, because the
+screen does not know one is happening. That is the trade. If it grates, the
+fix is a two-second poll of `/api/state` to pause the cycle while
+`live` is true — a few lines, and the only sync that would be worth having.
 
 ## The face is the default, the QR is the interruption
 
