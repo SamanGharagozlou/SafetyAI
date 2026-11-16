@@ -420,7 +420,15 @@ const cfg = async () => (await fetch('/api/config')).json()
 async function brain() {
   let c
   try { c = await cfg() } catch (e) { return void fault(`no config: ${e.message}`) }
-  const { default: Vapi } = await import('https://cdn.jsdelivr.net/npm/@vapi-ai/web@3.1.0/+esm')
+  /* The npm package is CommonJS, so the CDN's ESM wrapper nests the class
+     differently depending on the build: taking `mod.default` straight gives
+     "Vapi is not a constructor", which is exactly how this failed at 5am
+     with nothing on screen but a working-looking page. tools/robot-console
+     already carried this workaround; it is repeated here rather than
+     assumed. */
+  const mod = await import('https://cdn.jsdelivr.net/npm/@vapi-ai/web@3.1.0/+esm')
+  const Vapi = [mod.default?.default, mod.default, mod.Vapi, mod].find(c => typeof c === 'function')
+  if (!Vapi) return void fault('the voice SDK loaded but exposes no constructor')
   const vapi = new Vapi(c.publicKey)
 
   let calling = false, ready = false, state = 'idle', caption = ''
