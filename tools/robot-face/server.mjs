@@ -294,6 +294,9 @@ createServer(async (req, res) => {
         // One robot, one guest. Without this, a second person scanning the
         // QR mid-conversation silently takes over the first person's session
         // - and the first person is standing right there, still talking.
+        // Only the voice is required. A robot with a flat battery can still
+        // hold a conversation; it simply refuses to move, which the
+        // assistant already handles.
         if (!brainUp()) {
           return json(res, 503, { error: 'The robot is not awake yet — its voice is not connected.', ...publicState() })
         }

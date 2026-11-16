@@ -157,20 +157,22 @@ const post = (body) => fetch('/api/session', {
 async function refreshRobot() {
   try {
     const d = await (await fetch('/api/state', { cache: 'no-store' })).json()
-    // Two different kinds of "not ready", and they need different words: the
-    // robot's legs can be fine while its voice is not running, and a guest
-    // told only "not responding" would go and find the legs.
+    /* Only ONE thing actually blocks a conversation: nothing able to talk.
+       The voice runs on the laptop and is independent of the robot, so a
+       robot with a flat battery can still greet you perfectly well - it just
+       cannot walk, and the assistant already handles a refused movement
+       gracefully. Blocking Start on the legs would have meant no demo at all
+       on a dead battery, which is precisely when you most want one. */
     const voice = d.brain?.connected === true
     const body_ = d.robot?.reachable && d.robot?.connected
     const busyElsewhere = d.busy && !during()
-    const ok = voice && body_
     $('robot-state').textContent =
         !voice ? 'The robot is not awake yet — its voice is not connected.'
-      : !body_ ? 'The robot is not responding right now.'
       : busyElsewhere ? 'The robot is with another guest just now.'
+      : !body_ ? 'I can talk, but I cannot move right now.'
       : d.robot.battery != null ? `Ready · battery ${Math.round(d.robot.battery)}%` : 'Ready'
-    $('robot-state').style.color = ok && !busyElsewhere ? 'var(--pale)' : '#ffb4ad'
-    if (!during()) $('start').disabled = !$('consent').checked || !ok || busyElsewhere
+    $('robot-state').style.color = voice && body_ && !busyElsewhere ? 'var(--pale)' : '#ffb4ad'
+    if (!during()) $('start').disabled = !$('consent').checked || !voice || busyElsewhere
   } catch { /* a missed poll is not worth a message */ }
 }
 const during = () => !$('during').classList.contains('hide')

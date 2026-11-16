@@ -231,6 +231,15 @@ pass.push(['second guest sees it on screen',
 // Assert the contract, not the fixture: this suite also runs against the
 // real Jetson, where the battery is whatever it is.
 const rb = await guest.evaluate(async () => (await (await fetch('/api/state')).json()).robot)
+// A dead robot must not block a conversation: the voice is on the laptop.
+{
+  const txt = await guest.evaluate(async () => {
+    const r = await fetch('/api/session', { method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action: 'start', consent: true, name: 'x', owner: 'probe-no-robot' }) })
+    return r.status
+  })
+  pass.push(['start is gated on the voice, not on the robot', txt === 409 || txt === 200, 'HTTP ' + txt])
+}
 pass.push(['robot state reaches the guest page',
   rb && rb.reachable === true && typeof rb.battery === 'number' && rb.battery >= 0 && rb.battery <= 100,
   `battery ${rb?.battery}%, connected ${rb?.connected}`])
