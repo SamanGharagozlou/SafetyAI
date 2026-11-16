@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Tropfi</title>
+<!--
+  THE ROBOT'S FACE. This runs full-screen on the phone strapped to the D1 and is
+  the only part of the system a guest looks at, so it is written to survive a
+  demo rather than to be clever: no build step, no framework, one file.
+
+  IDLE   a QR code, because a screen showing nothing invites nobody
+  LIVE   a water drop with eyes and a mouth, lip-synced to the assistant
+
+  WHY THE FACE RENDERS WHERE THE AUDIO PLAYS
+  Lip sync is a perception problem, not a data problem. Humans notice ~45ms of
+  audio-visual offset, so the mouth must be driven by the same device that is
+  playing the sound. Sending volume numbers over a network to a second screen
+  loses that race the moment the wifi hiccups. This page therefore owns the
+  Vapi call AND the audio output, and reads the mouth straight off a WebAudio
+  analyser on the assistant's own track.
+
+  THE ONE RULE ABOUT MICROPHONES
+  Measured on this project, on both iPhone and Android: a browser that calls
+  getUserMedia flips the phone's Bluetooth from A2DP to HFP, and most Bluetooth
+  speakers have no usable HFP, so audio falls back to the phone's own speaker.
+  A2DP is playback-only. So:
+
+    a PHONE may hold the Bluetooth speaker OR a microphone, never both
+    a LAPTOP / JETSON may hold both, because desktop OSes route in and out
+      independently - verified on macOS in this project
+
+  That single line decides the whole topology. If the box with the speaker is
+  a computer, it is the brain and this page is a remote display (?link=).
+  If it is this phone, this page runs the call itself and must never open a
+  local mic - the guest's phone supplies the track instead.
+
+  MODES
+  ?demo=1        synthetic speech envelope, no network. For judging the face.
+  ?qr=<url>      what the idle QR encodes.
+  ?link=<ws>     DISPLAY ONLY. The brain pushes state over this WebSocket.
+  (default)      BRAIN. Fetches /api/voice-config and runs the call here.
+-->
+<style>
+  :root {
+    --deep:   #04243a;   /* thermal water at depth */
+    --mid:    #0a4f78;
+    --bright: #19a7d4;   /* the pool lit from below */
+    --pale:   #8fe3f7;
+    --steam:  #cdf1fb;
+    --ink:    #04202f;
+    --white:  #f2fbff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: var(--deep);
+    font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
+    color: var(--white); user-select: none;
+  }
+  /* The glow sits behind everything and breathes, so the screen never looks
+     frozen even when the robot is silent. A still screen reads as broken. */
+  #glow {
+    position: fixed; inset: -30%; z-index: 0;
+    background: radial-gradient(circle at 50% 55%, #0d6490 0%, #063css 40%, var(--deep) 70%);
+    background: radial-gradient(circle at 50% 55%, #0d6490 0%, #063b5c 40%, var(--deep) 70%);
+    animation: breathe 7s ease-in-out infinite;
+  }
+  @keyframes breathe { 0%,100% { transform: scale(1); opacity: .85 } 50% { transform: scale(1.08); opacity: 1 } }
+
+  .screen { position: fixed; inset: 0; z-index: 1; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; padding: 1.5vmin; transition: opacity .5s; }
+  .screen[hidden] { display: none; }
+
+  /* ---------- idle ---------- */
+  #idle .card {
+    background: var(--white); border-radius: 6vmin; padding: 4vmin;
+    box-shadow: 0 2vmin 6vmin rgba(0,0,0,.45);
+  }
+  #qr { width: 46vmin; height: 46vmin; display: grid; place-items: center; }
+  #qr img, #qr canvas { width: 100% !important; height: 100% !important; image-rendering: pixelated; }
+  #qr-fallback { color: #04202f; font: 600 2.4vmin/1.5 ui-monospace, monospace; word-break: break-all;
+                 text-align: center; padding: 2vmin; }
+  #idle h1 { font-size: 5.6vmin; margin: 4vmin 0 1vmin; font-weight: 800; letter-spacing: -.02em; }
+  #idle p  { font-size: 3.1vmin; margin: 0; color: var(--pale); text-align: center; max-width: 72vmin; }
+
+  /* ---------- face ---------- */
+  #face { width: min(104vmin, 99vw); height: auto; max-height: 90vh; overflow: visible; }
+  #caption {
+    position: fixed; left: 0; right: 0; bottom: 3vmin; z-index: 2; text-align: center;
+    font-size: 3vmin; color: var(--pale); opacity: .85; padding: 0 6vmin;
+    min-height: 4vmin; transition: opacity .3s;
+  }
+  #badge {
+    position: fixed; top: 2.5vmin; left: 50%; transform: translateX(-50%); z-index: 3;
+    font-size: 2.3vmin; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--pale); opacity: .5;
+  }
+  /* Shown only when something is wrong. Silence about a failure is how a demo
+     dies on stage with nobody knowing why. */
+  #fault {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 9; padding: 2.4vmin;
+    background: #7d1d1d; color: #fff; font-size: 2.5vmin; text-align: center; display: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="glow"></div>
+
+<!-- IDLE: the QR is the whole screen, because at three metres a guest must be
+     able to tell this is for them without reading anything. -->
+<section class="screen" id="idle">
+  <div class="card"><div id="qr"><div id="qr-fallback">loading…</div></div></div>
+  <h1>Scan to say hello</h1>
+  <p>I am the greeter at Leukerbad Therme. Point your camera here and I will talk you in.</p>
+</section>
+
+<!-- LIVE -->
+<section class="screen" id="live" hidden>
+  <div id="badge"></div>
+  <svg id="face" viewBox="0 0 200 230" aria-hidden="true">
+    <defs>
+      <radialGradient id="body" cx="38%" cy="28%" r="78%">
+        <stop offset="0%"  stop-color="#7fe0fb"/>
+        <stop offset="48%" stop-color="var(--bright)"/>
+        <stop offset="100%" stop-color="#0a5f90"/>
+      </radialGradient>
+      <radialGradient id="shine" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#ffffff" stop-opacity=".92"/>
+        <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+      </radialGradient>
+      <filter id="soft"><feGaussianBlur stdDeviation="2.4"/></filter>
+    </defs>
+
+    <!-- the drop. #drop is wobbled by script so the body feels like liquid. -->
+    <g id="drop">
+      <path id="silhouette"
+        d="M100 8 C100 8 172 92 172 138 A72 72 0 1 1 28 138 C28 92 100 8 100 8 Z"
+        fill="url(#body)"/>
+      <!-- highlight: a drop without a specular read looks like a balloon -->
+      <ellipse cx="68" cy="92" rx="26" ry="34" fill="url(#shine)" opacity=".55" transform="rotate(-20 68 92)"/>
+
+      <g id="features">
+        <!-- eyes -->
+        <g id="eyeL">
+          <ellipse class="sclera" cx="72" cy="132" rx="19" ry="22" fill="var(--white)"/>
+          <circle  class="pupil"  cx="72" cy="134" r="9.5" fill="var(--ink)"/>
+          <circle  class="spark"  cx="76" cy="129" r="3.2" fill="#fff"/>
+        </g>
+        <g id="eyeR">
+          <ellipse class="sclera" cx="128" cy="132" rx="19" ry="22" fill="var(--white)"/>
+          <circle  class="pupil"  cx="128" cy="134" r="9.5" fill="var(--ink)"/>
+          <circle  class="spark"  cx="132" cy="129" r="3.2" fill="#fff"/>
+        </g>
+        <!-- blink shutters, scaled from 0 to 1 over the eyes -->
+        <g id="lids">
+          <rect id="lidL" x="51" y="108" width="42" height="48" rx="8" fill="url(#body)" transform="scale(1,0)" transform-origin="72px 110px"/>
+          <rect id="lidR" x="107" y="108" width="42" height="48" rx="8" fill="url(#body)" transform="scale(1,0)" transform-origin="128px 110px"/>
+        </g>
+        <!-- cheeks warm up when it is pleased -->
+        <ellipse id="cheekL" cx="52" cy="160" rx="13" ry="8" fill="#ff8fa8" opacity="0" filter="url(#soft)"/>
+        <ellipse id="cheekR" cx="148" cy="160" rx="13" ry="8" fill="#ff8fa8" opacity="0" filter="url(#soft)"/>
+        <!-- mouth: ry is the lip-sync signal -->
+        <ellipse id="mouth" cx="100" cy="172" rx="21" ry="3" fill="var(--ink)"/>
+        <path    id="smile" d="M80 170 Q100 182 120 170" stroke="var(--ink)" stroke-width="5"
+                 stroke-linecap="round" fill="none" opacity="1"/>
+      </g>
+    </g>
+  </svg>
+  <div id="caption"></div>
+</section>
+
+<div id="fault"></div>
+
+<script type="module">
+const $ = id => document.getElementById(id)
+const qs = new URLSearchParams(location.search)
+const DEMO = qs.get('demo') === '1'
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
+
+const fault = msg => { const f = $('fault'); f.textContent = msg; f.style.display = 'block' }
+
+/* ------------------------------------------------------------------ *
+ * IDLE QR
+ * The encoder is loaded from a CDN. If it is not there - no wifi, blocked
+ * CDN - the URL is printed instead, which a guest can still type. A blank
+ * white square would be the one failure nobody in the room could diagnose.
+ * ------------------------------------------------------------------ */
+const JOIN_URL = qs.get('qr') || `${location.origin}/join`
+async function renderQR() {
+  try {
+    await import('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm')
+      .then(async m => {
+        const canvas = document.createElement('canvas')
+        await (m.default ?? m).toCanvas(canvas, JOIN_URL, { margin: 1, width: 900,
+          color: { dark: '#04243aff', light: '#ffffffff' } })
+        $('qr').replaceChildren(canvas)
+      })
+  } catch {
+    $('qr-fallback').textContent = JOIN_URL
+  }
+}
+renderQR()
+
+/* ------------------------------------------------------------------ *
+ * THE FACE
+ *
+ * One rAF loop owns every pixel. Each expressive channel is a spring
+ * (value chasing target), which is what keeps it feeling alive rather
+ * than mechanical: nothing in nature steps instantly to a new value.
+ * ------------------------------------------------------------------ */
+const face = {
+  state: 'idle',          // idle | listening | thinking | speaking | happy
+  level: 0,               // smoothed assistant loudness, 0..1 -> the mouth
+  openTarget: 0,
+  open: 0,
+  gaze: { x: 0, y: 0, tx: 0, ty: 0 },
+  lid: 0, blinkAt: 0, blinking: 0,
+  warmth: 0, warmthTarget: 0,
+  wobble: 0,
+}
+
+function setState(s, caption) {
+  face.state = s
+  $('badge').textContent = { listening: 'listening', thinking: 'thinking',
+                             speaking: 'speaking', happy: '', idle: '' }[s] ?? ''
+  if (caption !== undefined) $('caption').textContent = caption
+  // A pleased face is the difference between a machine and a creature.
+  face.warmthTarget = (s === 'happy' || s === 'speaking') ? 1 : 0
+}
+
+// Eyes wander, because eyes that only move on command look dead. A new
+// target every second or so, biased to centre so it keeps "looking at you".
+function wander() {
+  face.gaze.tx = (Math.random() * 2 - 1) * 0.55
+  face.gaze.ty = (Math.random() * 2 - 1) * 0.40
+  setTimeout(wander, 900 + Math.random() * 1800)
+}
+wander()
+
+let t0 = performance.now()
+function frame(now) {
+  const dt = Math.min(64, now - t0) / 1000
+  t0 = now
+  const k = x => 1 - Math.exp(-x * dt)            // frame-rate independent easing
+
+  // --- mouth -------------------------------------------------------
+  // Attack fast, release slow. A mouth that shuts as fast as it opens
+  // chatters; a slow release reads as a syllable trailing off.
+  const target = face.state === 'speaking' ? face.openTarget : 0
+  const rate = target > face.open ? 26 : 9
+  face.open += (target - face.open) * k(rate)
+  const ry = 2.2 + face.open * 21
+  $('mouth').setAttribute('ry', ry.toFixed(2))
+  $('mouth').setAttribute('rx', (21 + face.open * 5).toFixed(2))
+  // The resting smile fades out as the mouth opens, so they never fight.
+  $('smile').setAttribute('opacity', clamp(1 - face.open * 3.2, 0, 1).toFixed(3))
+
+  // --- eyes --------------------------------------------------------
+  face.gaze.x += (face.gaze.tx - face.gaze.x) * k(5)
+  face.gaze.y += (face.gaze.ty - face.gaze.y) * k(5)
+  const dx = face.gaze.x * 6, dy = face.gaze.y * 4.5
+  for (const [g, cx] of [['eyeL', 72], ['eyeR', 128]]) {
+    const el = $(g)
+    el.querySelector('.pupil').setAttribute('cx', (cx + dx).toFixed(2))
+    el.querySelector('.pupil').setAttribute('cy', (134 + dy).toFixed(2))
+    el.querySelector('.spark').setAttribute('cx', (cx + 4 + dx * .7).toFixed(2))
+    el.querySelector('.spark').setAttribute('cy', (129 + dy * .7).toFixed(2))
+  }
+  // Listening widens the eyes a little: the cheapest possible "I heard you".
+  const open = face.state === 'listening' ? 24 : 22
+  for (const g of ['eyeL', 'eyeR']) {
+    const s = $(g).querySelector('.sclera')
+    const cur = Number(s.getAttribute('ry'))
+    s.setAttribute('ry', (cur + (open - cur) * k(6)).toFixed(2))
+  }
+
+  // --- blink -------------------------------------------------------
+  if (now > face.blinkAt) {
+    face.blinking = 1
+    face.blinkAt = now + 2200 + Math.random() * 3600
+  }
+  if (face.blinking > 0) {
+    face.lid = Math.sin(face.blinking * Math.PI)          // 0 -> 1 -> 0
+    face.blinking = Math.max(0, face.blinking - dt * 7)
+    if (face.blinking === 0) face.lid = 0
+  }
+  $('lidL').setAttribute('transform', `scale(1,${face.lid.toFixed(3)})`)
+  $('lidR').setAttribute('transform', `scale(1,${face.lid.toFixed(3)})`)
+
+  // --- cheeks ------------------------------------------------------
+  face.warmth += (face.warmthTarget - face.warmth) * k(2.2)
+  $('cheekL').setAttribute('opacity', (face.warmth * .55).toFixed(3))
+  $('cheekR').setAttribute('opacity', (face.warmth * .55).toFixed(3))
+
+  // --- body --------------------------------------------------------
+  // A water drop should never be perfectly still. Idle gets a slow sway;
+  // speech adds a small bounce on the loud syllables.
+  face.wobble += dt
+  const sway = Math.sin(face.wobble * 1.5) * 1.2
+  const bob  = Math.sin(face.wobble * 2.3) * 1.0 - face.open * 3.5
+  $('drop').setAttribute('transform',
+    `translate(${sway.toFixed(2)} ${bob.toFixed(2)}) rotate(${(sway * .35).toFixed(2)} 100 140)`)
+
+  requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame)
+
+/* ------------------------------------------------------------------ *
+ * DRIVING THE MOUTH
+ *
+ * Two sources, in order of preference:
+ *   1. a WebAudio analyser on the assistant's actual audio track - exact,
+ *      and immune to however often the SDK chooses to emit events
+ *   2. the SDK's own `volume-level` event - a fallback at whatever rate
+ *      it happens to fire
+ * ------------------------------------------------------------------ */
+function attachAnalyser(stream) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)()
+  const src = ctx.createMediaStreamSource(stream)
+  const an = ctx.createAnalyser()
+  an.fftSize = 512; an.smoothingTimeConstant = 0.45
+  src.connect(an)
+  const buf = new Uint8Array(an.frequencyBinCount)
+  const tick = () => {
+    an.getByteTimeDomainData(buf)
+    let peak = 0
+    for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128))
+    // /48 not /128: speech rarely approaches full scale, and a mouth that
+    // only twitches is worse than one that over-acts.
+    face.openTarget = clamp(peak / 48, 0, 1)
+    requestAnimationFrame(tick)
+  }
+  tick()
+  return ctx
+}
+
+/* ------------------------------------------------------------------ *
+ * DEMO MODE - a synthetic speech envelope, so the face can be judged
+ * with no network, no Vapi and no robot.
+ * ------------------------------------------------------------------ */
+if (DEMO) {
+  $('idle').hidden = true; $('live').hidden = false
+  const script = [
+    [1200, 'listening', ''],
+    [900,  'thinking',  ''],
+    [4200, 'speaking',  'Oh, hello! Fancy a hot soak?'],
+    [1400, 'listening', ''],
+    [3600, 'speaking',  'Ten thermal pools, right under the mountains.'],
+    [1200, 'happy',     'Come on, this way.'],
+  ]
+  let i = 0
+  const run = () => {
+    const [ms, st, cap] = script[i % script.length]
+    setState(st, cap)
+    i++
+    setTimeout(run, ms)
+  }
+  run()
+  // A plausible syllable envelope: a slow word rhythm under a fast flutter.
+  setInterval(() => {
+    if (face.state !== 'speaking') return
+    const t = performance.now() / 1000
+    const syll = Math.max(0, Math.sin(t * 11)) * Math.max(0, Math.sin(t * 2.6))
+    face.openTarget = clamp(syll * 1.25 + Math.random() * .12, 0, 1)
+  }, 33)
+}
+
+/* ------------------------------------------------------------------ *
+ * LIVE MODE
+ *
+ * The call is started WITHOUT a microphone. See the header comment: the
+ * moment this page opens a mic, the Bluetooth speaker stops working.
+ *   audioSource: false             -> never acquire a local mic
+ *   microphonePreflightEnabled     -> and do not probe for one either
+ * The guest's phone supplies the mic; `window.__setMicTrack(track)` hands
+ * it over once the WebRTC leg is connected.
+ * ------------------------------------------------------------------ */
+async function live() {
+  let cfg
+  try {
+    cfg = await (await fetch('/api/voice-config')).json()
+  } catch (e) {
+    fault(`cannot reach the console for voice config: ${e.message}`)
+    return
+  }
+  const { default: Vapi } = await import('https://cdn.jsdelivr.net/npm/@vapi-ai/web@3.1.0/+esm')
+  const vapi = new Vapi(cfg.publicKey)
+  window.__vapi = vapi
+
+  vapi.on('call-start', () => { $('idle').hidden = true; $('live').hidden = false; setState('listening', '') })
+  vapi.on('speech-start', () => setState('speaking'))
+  vapi.on('speech-end',   () => setState('listening', ''))
+  vapi.on('volume-level', v => { if (!analyserOn) face.openTarget = clamp(v * 1.6, 0, 1) })
+  vapi.on('message', m => {
+    if (m?.type === 'transcript' && m.transcriptType === 'final' && m.role === 'assistant') {
+      $('caption').textContent = m.transcript
+    }
+  })
+  vapi.on('error', e => fault(`voice error: ${e?.message ?? e}`))
+  vapi.on('call-end', () => { setState('idle'); $('live').hidden = true; $('idle').hidden = false })
+
+  // Prefer the analyser the moment the assistant's track appears.
+  let analyserOn = false
+  vapi.on('daily-participant-updated', p => {
+    const track = p?.tracks?.audio?.persistentTrack
+    if (!track || analyserOn) return
+    try { attachAnalyser(new MediaStream([track])); analyserOn = true } catch { /* fallback stays */ }
+  })
+
+  window.__start = async (micTrack) => {
+    await vapi.start(cfg.assistantId, {
+      audioSource: micTrack ?? false,
+      microphonePreflightEnabled: false,
+    })
+  }
+  // Until the guest-phone WebRTC leg exists, a tap starts a call with no mic
+  // so the face, the speaker and the assistant can all be checked on their own.
+  document.body.addEventListener('click', () => window.__start().catch(e => fault(String(e))), { once: true })
+}
+/* ------------------------------------------------------------------ *
+ * DISPLAY MODE - this phone is a screen, the brain is elsewhere.
+ *
+ * THE LATENCY ARGUMENT, which is the whole reason this mode is viable:
+ * lip sync does not need the amplitude to be right, it needs the START and
+ * the STOP to be right. Viewers notice a mouth that moves while the room is
+ * silent; nobody can tell a real syllable envelope from a plausible one.
+ * So the wire carries cheap, latency-tolerant facts - "speaking now",
+ * "stopped" - and the flutter between them is generated here, on the device
+ * that is drawing. Congested venue wifi then costs us a few milliseconds at
+ * the edges of a sentence instead of a mouth that stutters all the way
+ * through one. Real envelope frames are used when they arrive fresh enough,
+ * and silently ignored when they do not.
+ * ------------------------------------------------------------------ */
+const LINK = qs.get('link')
+function display(url) {
+  $('idle').hidden = true; $('live').hidden = false
+  let envelopeFreshUntil = 0
+  let ws, retry = 0
+
+  const connect = () => {
+    try { ws = new WebSocket(url) } catch (e) { return void setTimeout(connect, 1500) }
+    ws.onopen = () => { retry = 0; $('fault').style.display = 'none' }
+    ws.onmessage = ev => {
+      let m; try { m = JSON.parse(ev.data) } catch { return }
+      if (m.state) setState(m.state, m.caption)
+      if (m.caption !== undefined) $('caption').textContent = m.caption
+      if (typeof m.level === 'number') {
+        face.openTarget = clamp(m.level, 0, 1)
+        envelopeFreshUntil = performance.now() + 220   // trust it only while it keeps coming
+      }
+      if (m.qr) { $('qr-fallback').textContent = m.qr }
+    }
+    // A dead link must be visible on the robot's own face, not only in a log.
+    ws.onclose = () => {
+      fault('lost the link to the robot — reconnecting')
+      setTimeout(connect, Math.min(8000, 500 * ++retry))
+    }
+    ws.onerror = () => ws.close()
+  }
+  connect()
+
+  // Local syllable generator, used whenever real envelope frames are stale.
+  setInterval(() => {
+    if (face.state !== 'speaking') return
+    if (performance.now() < envelopeFreshUntil) return
+    const t = performance.now() / 1000
+    const syll = Math.max(0, Math.sin(t * 11)) * Math.max(0, Math.sin(t * 2.6))
+    face.openTarget = clamp(syll * 1.25 + Math.random() * .12, 0, 1)
+  }, 33)
+}
+
+if (DEMO) { /* already running */ }
+else if (LINK) display(LINK)
+else live()
+</script>
+</body>
+</html>
