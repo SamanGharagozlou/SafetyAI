@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Leukerbad Therme · say hello</title>
+<!--
+  THE GUEST'S PHONE. It is small on purpose.
+
+  The guest should be looking at the dog, not at this. So this page carries
+  only what genuinely cannot live on the robot:
+
+    the consent they have to give themselves
+    a Stop button, which belongs in the hand of the person standing next to
+      a moving machine
+    shortcuts, for the much larger number of people who will tap a button
+      than will talk to a robot in front of strangers
+
+  IT HAS NO AUDIO ROLE AT ALL. No microphone, no playback. The robot has one
+  microphone and one speaker, like any humanoid robot, and you talk to the
+  robot. Putting a second microphone here would split the audio across two
+  devices, which breaks echo cancellation and lip sync both.
+
+  WHY THE SHORTCUTS ARE SENTENCES
+  Each button sends the exact words a guest would have said. The assistant
+  answers in character and calls its own tools, so a tap and a spoken
+  request behave identically and there is no second command path to keep in
+  step with the persona.
+-->
+<style>
+  :root {
+    --deep: #04243a; --panel: #0b3a57; --line: #17557d;
+    --bright: #19a7d4; --pale: #8fe3f7; --white: #f2fbff; --stop: #da3633;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; min-height: 100dvh; background: var(--deep); color: var(--white);
+    font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
+    padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  h1 { font-size: 28px; margin: 0; letter-spacing: -.02em; }
+  .sub { color: var(--pale); font-size: 15px; margin: 0; line-height: 1.5; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+  label { display: block; font-size: 13px; color: var(--pale); margin-bottom: 7px; }
+  input[type=text] {
+    width: 100%; padding: 14px; font-size: 17px; border-radius: 11px;
+    border: 1px solid var(--line); background: #072e47; color: var(--white);
+  }
+  .consent { display: flex; gap: 12px; align-items: flex-start; margin-top: 16px; font-size: 14px; line-height: 1.5; }
+  .consent input { width: 22px; height: 22px; accent-color: var(--bright); flex: 0 0 auto; margin-top: 1px; }
+  button {
+    font: inherit; font-weight: 700; color: var(--white); border: 1px solid var(--line);
+    background: #10496e; border-radius: 13px; padding: 16px; cursor: pointer; width: 100%;
+  }
+  button:disabled { opacity: .4; }
+  button.go { background: var(--bright); border-color: #4fc8ef; color: #03202f; font-size: 19px; padding: 19px; }
+  button.stop { background: var(--stop); border-color: #ff6b63; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid button { padding: 15px 10px; font-size: 15px; text-align: left; line-height: 1.3; }
+  .grid .em { font-size: 21px; display: block; margin-bottom: 5px; }
+  h2 { font-size: 12px; letter-spacing: .13em; text-transform: uppercase; color: var(--pale);
+       opacity: .75; margin: 6px 0 0; }
+  #status { font-size: 14px; color: var(--pale); min-height: 20px; text-align: center; }
+  .hide { display: none !important; }
+  .privacy { font-size: 12px; color: var(--pale); opacity: .7; line-height: 1.5; margin: 0; }
+</style>
+</head>
+<body>
+
+<div id="before">
+  <h1>Hello from Leukerbad Therme</h1>
+  <p class="sub">I am the greeter outside. Tell me your name and I will walk you in.</p>
+
+  <div class="card" style="margin-top:18px">
+    <label for="name">Your name <span style="opacity:.6">(optional)</span></label>
+    <input type="text" id="name" maxlength="24" autocomplete="given-name" placeholder="e.g. Anna">
+    <div class="consent">
+      <input type="checkbox" id="consent">
+      <label for="consent" style="margin:0;color:var(--white)">
+        I am happy to talk to the robot. My voice is used only to hold this
+        conversation and is not kept afterwards.
+      </label>
+    </div>
+  </div>
+
+  <button class="go" id="start" disabled style="margin-top:16px">Start</button>
+  <p class="privacy" style="margin-top:14px">
+    You speak to the robot itself — this phone does not listen and does not play sound.
+    No camera, no photos. Nothing is stored after you finish.
+  </p>
+</div>
+
+<div id="during" class="hide">
+  <h1 id="greet">Talk to me</h1>
+  <p class="sub">Just speak — I am listening from up here on the robot. Or tap one of these.</p>
+
+  <h2>Take me to</h2>
+  <div class="grid" id="places"></div>
+
+  <h2>For fun</h2>
+  <div class="grid" id="fun"></div>
+
+  <div id="status"></div>
+  <button class="stop" id="stop">Stop · finish</button>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id)
+
+/* Each shortcut is the sentence the guest would have said. Keep them in the
+   guest's own voice: the assistant is tuned to answer people, not commands. */
+const PLACES = [
+  ['🍽️', 'Restaurant',     'Can you take me to the restaurant?'],
+  ['♨️', 'Thermal pools',  'Can you take me to the thermal pools?'],
+  ['🧖', 'Sauna world',    'Can you take me to the sauna world?'],
+  ['🚻', 'Changing rooms', 'Can you take me to the changing rooms?'],
+  ['🎫', 'Reception',      'Can you take me to the reception desk?'],
+  ['🧺', 'Shop',           'Where can I buy a towel?'],
+]
+const FUN = [
+  ['💃', 'Do a dance',       'Can you do a little dance for me?'],
+  ['🎄', 'A Christmas song', 'Can you sing me a Christmas song?'],
+  ['🤝', 'Shake hands',      'Can we shake hands?'],
+  ['🐕', 'Say hello',        'Say hello to me!'],
+  ['💰', 'What does it cost','What does a ticket cost?'],
+  ['🍴', 'What is for lunch','What can I eat here?'],
+]
+
+const render = (el, items) => {
+  el.innerHTML = items
+    .map(([em, label], i) => `<button data-i="${i}"><span class="em">${em}</span>${label}</button>`)
+    .join('')
+}
+render($('places'), PLACES)
+render($('fun'), FUN)
+
+const post = (body) => fetch('/api/session', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+}).then(async r => {
+  const d = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`)
+  return d
+})
+
+$('consent').addEventListener('change', e => { $('start').disabled = !e.target.checked })
+
+$('start').addEventListener('click', async () => {
+  $('start').disabled = true
+  $('start').textContent = 'Waking the robot…'
+  try {
+    const name = $('name').value.trim()
+    await post({ action: 'start', consent: true, name })
+    $('before').classList.add('hide')
+    $('during').classList.remove('hide')
+    $('greet').textContent = name ? `Hello, ${name}` : 'Talk to me'
+  } catch (e) {
+    // Say what failed. "Something went wrong" in front of a guest is worse
+    // than the failure itself.
+    $('start').disabled = false
+    $('start').textContent = 'Start'
+    $('status').textContent = `Could not start: ${e.message}`
+  }
+})
+
+// A tap is only a request to speak; the robot's reply is the feedback that
+// matters, so the button goes quiet again quickly rather than claiming
+// anything about what the robot did.
+const tapped = async (text, btn) => {
+  const was = btn.style.opacity
+  btn.style.opacity = '.45'
+  try { await post({ action: 'say', text }) ; $('status').textContent = '' }
+  catch (e) { $('status').textContent = `Could not send that: ${e.message}` }
+  setTimeout(() => { btn.style.opacity = was }, 600)
+}
+$('places').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (b) tapped(PLACES[b.dataset.i][2], b)
+})
+$('fun').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (b) tapped(FUN[b.dataset.i][2], b)
+})
+
+$('stop').addEventListener('click', async () => {
+  try { await post({ action: 'stop' }) } catch {}
+  $('during').classList.add('hide')
+  $('before').classList.remove('hide')
+  $('start').disabled = !$('consent').checked
+  $('start').textContent = 'Start'
+})
+</script>
+</body>
+</html>
