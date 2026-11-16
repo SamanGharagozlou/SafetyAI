@@ -211,12 +211,11 @@ pass.push(['face started a call on the guest tap', log.some(l => l[0] === 'start
     JSON.stringify(fm)])
 }
 pass.push(['the screen is on stage during the call', !(await screen.isHidden('#stage'))])
-// The screen is independent by design, so the QR cycle keeps running
-// through a conversation. The trade is deliberate: nothing the screen draws
-// can contradict what the robot is doing, because it never consults it.
-pass.push(['the screen runs its own cycle regardless of the call',
+// Once a guest is talking to it the code is clutter - and an invitation for
+// a second person to scan and take the robot off them mid-sentence.
+pass.push(['the QR disappears while a guest is talking',
   await until(async () => await screen.evaluate(() =>
-    document.getElementById('qrpanel').classList.contains('on')), 30000)])
+    document.getElementById('pair').classList.contains('solo')), 8000)])
 
 // --- a shortcut becomes the guest's own sentence
 await guest.click('#places button[data-i="2"]')      // sauna world
@@ -356,6 +355,9 @@ await wait(900)
 log = await fresh.evaluate(() => window.__log ?? [])
 pass.push(['stop ends the call', log.some(l => l[0] === 'stop')])
 await fresh.close()
+pass.push(['the QR comes back when the session ends',
+  await until(async () => await screen.evaluate(() =>
+    !document.getElementById('pair').classList.contains('solo')), 8000)])
 pass.push(['the screen is still alive after the call ends',
   await until(async () => {
     const a = await screen.evaluate(() => document.getElementById('drop').getAttribute('transform'))

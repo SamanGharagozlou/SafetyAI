@@ -106,8 +106,12 @@
   @media (orientation: portrait) { .pair { flex-direction: column; gap: 2vmin; } }
 
   #qrpanel { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center;
-             transition: width .9s cubic-bezier(.4,0,.2,1); width: 30vmin; }
+             transition: width .9s cubic-bezier(.4,0,.2,1), opacity .5s; width: 30vmin; }
   #qrpanel.on { width: 52vmin; }                 /* the "look at me" half of the cycle */
+  /* Someone is talking to it: the code is clutter, and an invitation to a
+     second person to interrupt. The face takes the whole screen instead. */
+  .pair.solo #qrpanel { width: 0; opacity: 0; pointer-events: none; overflow: hidden; }
+  .pair.solo #facesvg { width: 76vmin; }
   .qrcap { font-size: 2.4vmin; margin: 1.6vmin 0 0; color: var(--pale); text-align: center;
            white-space: nowrap; transition: font-size .9s; }
   #qrpanel.on .qrcap { font-size: 3.2vmin; }
@@ -671,6 +675,22 @@ async function display() {
   await renderQR(qs.get('qr') || c.joinUrl)
   show('stage')
   startIdleCycle()
+
+  /* The ONE thing the screen asks the server: is someone talking to it?
+     Not the conversation, not the mouth - just whether to show the code.
+     A plain GET every two seconds, because being a couple of seconds late
+     to hide a QR costs nothing, and the screen still cannot contradict the
+     robot: it is drawing a face either way. */
+  let live = null
+  setInterval(async () => {
+    try {
+      const d = await (await fetch('/api/state', { cache: 'no-store' })).json()
+      if (d.live === live) return
+      live = d.live
+      $('pair').classList.toggle('solo', live)
+      if (live) stopIdleCycle(); else startIdleCycle()
+    } catch { /* a missed poll just leaves the screen as it was */ }
+  }, 2000)
 
   // A little life beyond the blink: now and then it looks pleased about
   // nothing, which is what stops a looping idle reading as a screensaver.
