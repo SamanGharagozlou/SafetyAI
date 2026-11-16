@@ -374,12 +374,15 @@ async function live() {
   }
   const stop = () => { try { vapi.stop() } catch {} calling = false; show('idle') }
 
-  /* The guest's phone decides when a session begins. SSE because it is one
-     direction, it is in the standard library at both ends, and it reconnects
-     on its own after a phone radio sleeps. */
-  const events = new EventSource('/api/events')
-  events.onmessage = e => {
-    let m; try { m = JSON.parse(e.data) } catch { return }
+  /* The guest's phone decides when a session begins, and this polls to find
+     out. Server-Sent Events were the obvious choice and work perfectly on
+     the LAN, but a Cloudflare quick tunnel buffers text/event-stream so
+     completely that nothing arrives at all - so the Start button worked in
+     testing and would have done nothing on the deployed URL. Polling cannot
+     be broken by a proxy's opinion about long-lived responses, and the only
+     latency-critical path here, the lip sync, never leaves this device. */
+  let since = 0, failures = 0
+  const apply = m => {
     if (m.type === 'start') start(m.name)
     else if (m.type === 'stop') stop()
     else if (m.type === 'state' && m.live && !calling) start(m.name)
@@ -395,8 +398,28 @@ async function live() {
       })
     }
   }
-  events.onerror = () => fault('lost the link to the server — reconnecting')
-  events.onopen = () => fault('')
+
+  const poll = async () => {
+    try {
+      const r = await fetch(`/api/events?since=${since}`, { cache: 'no-store' })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const d = await r.json()
+      since = d.seq ?? since
+      for (const e of d.events ?? []) apply(e)
+      // A session that is already running when this screen (re)loads - after
+      // a phone sleeps, say - must be rejoined, not waited on.
+      if (d.session?.live && !calling) start(d.session.name)
+      if (!d.session?.live && calling) stop()
+      if (failures) { failures = 0; fault('') }
+    } catch (e) {
+      // One dropped poll on a phone radio is normal; say so only once it is
+      // a pattern, or the face cries wolf through every tunnel hiccup.
+      if (++failures === 4) fault('lost the link to the server — retrying')
+    } finally {
+      setTimeout(poll, 700)
+    }
+  }
+  poll()
 
   show('idle')
 }

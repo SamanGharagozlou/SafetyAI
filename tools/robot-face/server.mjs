@@ -45,6 +45,22 @@ const PUBLIC_KEY = process.env.VAPI_PUBLIC_KEY ?? '2cdfae81-9e4a-4215-a17b-7ec2b
 // env var silently costing the spa persona has already happened once here.
 const ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID ?? 'a366d544-fcf3-4b98-a436-d1b8c458891a'
 
+/**
+ * FACE_KEY guards the whole thing when it is exposed on a tunnel.
+ *
+ * This is not a page that merely shows information: anyone who opens /join
+ * can start a billable call to an assistant whose tools move a real robot.
+ * A tunnel hostname is obscure, not secret, so it is not a control.
+ *
+ * The guest never meets the key - it is baked into the QR - so the cost of
+ * having it is zero and the cost of not having it is a stranger walking the
+ * dog. Unset it and everything is open, which is the right default on a
+ * laptop bound to loopback.
+ */
+const KEY = process.env.FACE_KEY
+const cookieOf = req => /(?:^|;\s*)fkey=([^;]+)/.exec(req.headers.cookie ?? '')?.[1]
+const authed = (req, url) => !KEY || url.searchParams.get('k') === KEY || cookieOf(req) === KEY
+
 /** The LAN address a phone can actually reach, for the QR. */
 function lanAddress() {
   for (const list of Object.values(networkInterfaces())) {
@@ -64,10 +80,25 @@ const PUBLIC_URL = (process.env.PUBLIC_URL ?? `http://${lanAddress()}:${PORT}`).
  */
 let session = { live: false, name: '', consent: false, startedAt: 0 }
 
-const clients = new Set()
+/**
+ * A sequenced event log, polled - NOT Server-Sent Events.
+ *
+ * SSE was the obvious choice and it works perfectly on the LAN, but a
+ * Cloudflare quick tunnel buffers `text/event-stream` so completely that
+ * nothing arrives at all: measured here, zero bytes in twelve seconds,
+ * including the frames the server writes on connect. The guest's Start
+ * button would have done nothing, and only on the deployed URL.
+ *
+ * Polling is immune to whatever a proxy decides to do with a long-lived
+ * response. The only latency-critical thing in this system is lip sync, and
+ * that never leaves the robot phone - a Start button or a tapped shortcut is
+ * perfectly happy with a sub-second poll.
+ */
+let seq = 0
+const events = []
 const broadcast = event => {
-  const line = `data: ${JSON.stringify(event)}\n\n`
-  for (const res of clients) { try { res.write(line) } catch { clients.delete(res) } }
+  events.push({ seq: ++seq, ...event })
+  if (events.length > 40) events.splice(0, events.length - 40)   // a demo, not an audit log
 }
 
 const json = (res, code, body) => {
@@ -82,10 +113,10 @@ const readBody = req => new Promise((resolve, reject) => {
   req.on('error', reject)
 })
 
-async function page(res, file) {
+async function page(res, file, extra = {}) {
   try {
     const html = await readFile(join(HERE, file), 'utf8')
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...extra })
     res.end(html)
   } catch (e) {
     res.writeHead(500, { 'Content-Type': 'text/plain' })
@@ -98,31 +129,31 @@ createServer(async (req, res) => {
   const p = url.pathname
 
   try {
-    if (p === '/' || p === '/face') return void await page(res, 'index.html')
-    if (p === '/join')              return void await page(res, 'join.html')
+    if (!authed(req, url)) {
+      return json(res, 401, { error: 'unauthorized: this URL needs its key (?k=...)' })
+    }
+    // Hand back a cookie so the page's own fetches and the SSE stream work
+    // without the key being repeated on every request - EventSource cannot
+    // carry headers, and a key in every URL ends up in logs.
+    const setCookie = url.searchParams.get('k') === KEY
+      ? { 'Set-Cookie': `fkey=${KEY}; Path=/; SameSite=Lax; Max-Age=86400` } : {}
+
+    if (p === '/' || p === '/face') return void await page(res, 'index.html', setCookie)
+    if (p === '/join')              return void await page(res, 'join.html', setCookie)
 
     if (p === '/api/config') {
-      return json(res, 200, { publicKey: PUBLIC_KEY, assistantId: ASSISTANT_ID, joinUrl: `${PUBLIC_URL}/join` })
+      // The QR carries the key, so a guest scans their way in and never sees it.
+      const joinUrl = `${PUBLIC_URL}/join${KEY ? `?k=${encodeURIComponent(KEY)}` : ''}`
+      return json(res, 200, { publicKey: PUBLIC_KEY, assistantId: ASSISTANT_ID, joinUrl })
     }
 
-    if (p === '/api/state') return json(res, 200, session)
+    if (p === '/api/state') return json(res, 200, { ...session, seq })
 
-    // The face phone subscribes here and is told when to start and stop.
+    // The face phone polls this. `since` is the last seq it has acted on, so
+    // a dropped request costs nothing: the next one still carries the event.
     if (p === '/api/events') {
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-store',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      })
-      res.write(`retry: 1000\n\n`)
-      res.write(`data: ${JSON.stringify({ type: 'state', ...session })}\n\n`)
-      clients.add(res)
-      // Proxies and phone radios drop an idle stream; a comment every 15 s is
-      // cheap and keeps it open. Without it the face silently stops listening.
-      const beat = setInterval(() => { try { res.write(': ping\n\n') } catch {} }, 15000)
-      req.on('close', () => { clearInterval(beat); clients.delete(res) })
-      return
+      const since = Number(url.searchParams.get('since') ?? 0) || 0
+      return json(res, 200, { seq, session, events: events.filter(e => e.seq > since) })
     }
 
     if (p === '/api/session' && req.method === 'POST') {
@@ -167,8 +198,10 @@ createServer(async (req, res) => {
     json(res, 500, { error: e.message })
   }
 }).listen(PORT, () => {
-  console.log(`\nRobot face   ->  ${PUBLIC_URL}/face     (the phone on the robot)`)
-  console.log(`Guest join   ->  ${PUBLIC_URL}/join     (what the QR encodes)`)
+  const k = KEY ? `?k=${encodeURIComponent(KEY)}` : ''
+  console.log(`\nRobot face   ->  ${PUBLIC_URL}/face${k}`)
+  console.log(`Guest join   ->  ${PUBLIC_URL}/join${k}   (what the QR encodes)`)
+  console.log(`Key          ->  ${KEY ? 'set' : 'NOT SET - anyone with the URL can start the robot'}`)
   console.log(`Assistant    ->  ${ASSISTANT_ID}`)
   console.log(`\nOpen /face on the robot phone and tap once to arm it.`)
   console.log(`Browsers only allow a page to take the microphone after a tap,`)

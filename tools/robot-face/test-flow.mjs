@@ -21,6 +21,9 @@ const require = createRequire(join(HERE, '../../frontend/package.json'))
 const { chromium } = require('playwright')
 const OUT = process.env.SHOTS ? process.env.SHOTS.replace(/\/?$/, '/') : ''
 const BASE = process.env.BASE ?? 'http://127.0.0.1:5180'
+// The deployed server is key-guarded; a local one usually is not. The first
+// page load carries the key and the server sets a cookie for the rest.
+const K = process.env.FACE_KEY ? `?k=${encodeURIComponent(process.env.FACE_KEY)}` : ''
 const wait = ms => new Promise(r => setTimeout(r, ms))
 
 // A fake SDK. The real one would place a billable call to an assistant whose
@@ -48,7 +51,7 @@ const pass = []
 // The server keeps one session, so a previous run (or a stray browser tab)
 // can leave one live and the face would auto-join it. Reset before asserting
 // anything: a test that depends on how the last one ended is not a test.
-await fetch(BASE + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+await fetch(BASE + '/api/session' + K, { method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ action: 'stop' }) }).catch(() => {})
 
 const face = await ctx.newPage({ })
@@ -58,7 +61,7 @@ const guest = await ctx.newPage()
 guest.on('pageerror', e => errs.push('guest: ' + e.message))
 
 // --- face phone: arm it
-await face.goto(BASE + '/face', { waitUntil: 'networkidle' })
+await face.goto(BASE + '/face' + K, { waitUntil: 'networkidle' })
 pass.push(['face opens on the arm screen', !(await face.isHidden('#arm'))])
 await face.click('#arm')
 await wait(1500)
@@ -67,7 +70,7 @@ pass.push(['QR encodes the join URL', (await face.locator('#qr canvas').count())
            || (await face.textContent('#qr-fallback'))?.includes('/join')])
 
 // --- guest phone
-await guest.goto(BASE + '/join', { waitUntil: 'networkidle' })
+await guest.goto(BASE + '/join' + K, { waitUntil: 'networkidle' })
 pass.push(['Start is disabled before consent', await guest.isDisabled('#start')])
 await guest.fill('#name', 'Anna')
 await guest.check('#consent')
