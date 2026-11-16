@@ -53,12 +53,22 @@ const wait = ms => new Promise(r => setTimeout(r, ms))
 // robot tools point at the live Jetson - a test must not be able to move a robot.
 const STUB = `
 export default class Vapi {
-  constructor(k){ window.__log = []; this.h = {} ; window.__log.push(['ctor', k]) }
+  constructor(k){ window.__log = []; this.h = {}; this.up = false; window.__log.push(['ctor', k]) }
   on(e,f){ (this.h[e] ||= []).push(f) }
   emit(e,...a){ (this.h[e]||[]).forEach(f=>f(...a)) }
-  async start(id, ov){ window.__log.push(['start', id, JSON.stringify(ov ?? null)]); this.emit('call-start'); return {} }
-  async stop(){ window.__log.push(['stop']); this.emit('call-end') }
-  send(m){ window.__log.push(['send', JSON.stringify(m)]) }
+  async start(id, ov){
+    window.__log.push(['start', id, JSON.stringify(ov ?? null)])
+    // call-start is ASYNC in the real SDK. Emitting it synchronously is what
+    // hid a deadlock: anything sent in the gap throws, and the old code let
+    // that abort the poll loop with its "in a call" flag stuck on.
+    setTimeout(() => { this.up = true; this.emit('call-start') }, 150)
+    return {}
+  }
+  async stop(){ this.up = false; window.__log.push(['stop']); this.emit('call-end') }
+  send(m){
+    if (!this.up) throw new Error('call is not up yet')
+    window.__log.push(['send', JSON.stringify(m)])
+  }
 }`
 
 const CHROME = process.env.CHROME ?? (process.platform === 'darwin'
@@ -175,6 +185,33 @@ const steal = await other.evaluate(async () => (await fetch('/api/session', { me
   body: JSON.stringify({ action:'say', text:'walk forward', owner:'not-the-owner' }) })).status)
 pass.push(['second guest cannot speak into it', steal === 403, 'HTTP ' + steal])
 await other.close()
+
+// --- THE REGRESSION: a face phone opening against a dirty event log.
+// The log now holds this run's starts, stops and sentences. A face that
+// replays them tears down the call it is setting up and wedges itself.
+const fresh = await ctx.newPage()
+await fresh.route('**/@vapi-ai/web@**', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: STUB }))
+const freshErrs = []
+fresh.on('pageerror', e => freshErrs.push(e.message))
+await fresh.goto(BASE + '/face' + K, { waitUntil: 'networkidle' })
+await fresh.click('#arm')
+await wait(3000)
+const flog = await fresh.evaluate(() => window.__log ?? [])
+pass.push(['a fresh face joins the live session with exactly one call',
+  flog.filter(l => l[0] === 'start').length === 1, JSON.stringify(flog.map(l => l[0]))])
+pass.push(['it does not replay the old conversation',
+  !flog.some(l => l[0] === 'send'), JSON.stringify(flog.filter(l => l[0] === 'send'))])
+pass.push(['it does not tear its own call down', !flog.some(l => l[0] === 'stop')])
+pass.push(['no page errors while joining', freshErrs.length === 0, freshErrs.join('; ')])
+
+// and a sentence tapped from here must now reach it
+await guest.click('#places button[data-i="0"]')      // restaurant
+await wait(1200)
+const flog2 = await fresh.evaluate(() => window.__log ?? [])
+pass.push(['a tap after joining reaches the robot',
+  flog2.some(l => l[0] === 'send' && /restaurant/i.test(l[1])),
+  JSON.stringify(flog2.filter(l => l[0] === 'send').map(l => JSON.parse(l[1]).message.content))])
+await fresh.close()
 
 // --- stop
 await guest.click('#stop')
