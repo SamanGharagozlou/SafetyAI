@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sepazu · Leukerbad Robotics Hackathon</title>
+
+<!-- Font: Montserrat only. One family, weights 400-800.
+     Bundled in assets/fonts so the deck works offline; Google Fonts is a fallback. -->
+<link rel="stylesheet" href="assets/fonts/fonts.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!--
+  Built from pitch_deck/template/pitch_template.html (frontend-slides fixed-stage pattern)
+  with content from pitch_deck/docs/sepazu_pitch_master_brief.md.
+
+  MEDIA: every image/video sits in a slot that shows a dashed, labelled placeholder until the
+  real file exists. To fill a slot, drop the file at the path printed on the placeholder.
+  Missing today: assets/event_square.jpg, assets/spa_reception.jpg, assets/demo.mp4,
+  assets/qr_code.png, assets/clawmetry_dashboard.png, assets/jetson_mounted.jpg,
+  assets/nav_still.jpg, assets/escort_still.jpg, assets/voice_still.jpg, assets/gesture_still.jpg,
+  assets/tourist_info_point.jpg, assets/team.jpg
+
+  RULE FROM THE BRIEF: no hyphen or dash characters in visible slide text (this is why asset
+  file names use underscores).
+
+  KEYS: arrows / space / PageUp / PageDown · Home / End · N = speaker notes · E = edit text
+-->
+
+<style>
+/* ===========================================
+   THEME: "Alpine Night + Swiss Red" (from the template)
+   Change these variables to re-skin the whole deck.
+   =========================================== */
+:root {
+    --night:   #0b1620;   /* deep alpine night */
+    --dusk:    #16303d;   /* glacier shadow */
+    --mist:    #cfe6ee;   /* glacier mist */
+    --text:    #eef6f8;
+    --text-dim:#9db4bd;
+    --accent:  #DA291C;   /* Swiss red: Pantone 485 C as shown on screen */
+    --ember:   #f2b880;   /* warm spa-lamp accent, use sparingly (placeholders, restricted state) */
+    --alert:   #ff6b5e;   /* safety breach / alert state only */
+    --line:    rgba(207,230,238,.16);
+    --card:    rgba(207,230,238,.05);
+
+    --font-display: 'Montserrat', sans-serif;
+    --font-body:    'Montserrat', sans-serif;
+    --font-mono:    'Montserrat', sans-serif; /* same family on purpose */
+
+    --pad: 120px;                         /* slide padding at 1920x1080 */
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --stage-bg: #05090d;
+    --slide-bg: var(--night);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ===========================================
+   FIXED 16:9 STAGE: MANDATORY BASE STYLES (viewport-base.css)
+   =========================================== */
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--stage-bg, #000); }
+.deck-viewport { position: fixed; inset: 0; overflow: hidden; background: var(--stage-bg, #000); }
+.deck-stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; transform-origin: 0 0; background: var(--slide-bg, #fff); }
+.slide { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden; display: block; visibility: hidden; opacity: 0; pointer-events: none; background: var(--slide-bg, #fff); }
+.slide.active, .slide.visible { visibility: visible; opacity: 1; pointer-events: auto; z-index: 1; }
+img, video, canvas, svg { max-width: 100%; max-height: 100%; }
+.deck-controls { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 1000; }
+@media print {
+    @page { size: 1920px 1080px; margin: 0; }
+    html, body { width: 1920px; height: auto; overflow: visible; background: #fff; }
+    .deck-viewport { position: static; overflow: visible; background: #fff; }
+    .deck-stage { position: static; width: auto; height: auto; transform: none !important; background: none; }
+    .slide { position: relative; display: block !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; width: 1920px; height: 1080px; break-after: page; page-break-after: always; }
+    .slide:last-child { break-after: auto; page-break-after: auto; }
+    .deck-controls, .progress, .notes-panel, .edit-hotzone, .edit-toggle, .save-btn { display: none !important; }
+    .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.2s !important; }
+}
+
+/* ===========================================
+   SHARED SLIDE PARTS
+   =========================================== */
+body { font-family: var(--font-body); color: var(--text); }
+
+/* Staggered reveal: add class="reveal" and style="--d:.3s" */
+.reveal { opacity: 0; transform: translateY(36px); transition: opacity 1s var(--ease), transform 1s var(--ease); transition-delay: var(--d, 0s); }
+.slide.visible .reveal { opacity: 1; transform: none; }
+
+.eyebrow { font-family: var(--font-body); font-weight: 600; font-size: 22px; letter-spacing: .16em; text-transform: uppercase; color: var(--mist); }
+.eyebrow::before { content: ''; display: inline-block; width: 14px; height: 14px; background: var(--accent); margin-right: 16px; }
+.src { font-family: var(--font-mono); font-size: 18px; color: var(--text-dim); letter-spacing: .02em; }
+
+/* Slide headline: sentence case, large. <i> picks the accent phrase. */
+.title { font-family: var(--font-display); font-weight: 600; font-size: 72px; line-height: 1.1; letter-spacing: -.005em; }
+.title i { font-style: normal; color: var(--accent); }
+
+/* Small running footer: brand mark bottom right on every content slide */
+.foot { position: absolute; right: var(--pad); bottom: 56px; font-size: 16px; font-weight: 700; letter-spacing: .32em; color: var(--text-dim); }
+.foot::before { content: ''; display: inline-block; width: 10px; height: 10px; background: var(--accent); margin-right: 12px; }
+
+/* Media slot: shows a labelled placeholder until the real file loads.
+   Usage: <div class="media"><div class="ph">label</div><img src="assets/x.jpg" onerror="this.remove()"></div> */
+.media { position: absolute; inset: 0; overflow: hidden; background:
+    radial-gradient(1200px 700px at 78% 22%, rgba(218,41,28,.18), transparent 60%),
+    linear-gradient(180deg, #10242f 0%, var(--night) 70%); }
+.media img, .media video { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: cover; }
+.ph { position: absolute; top: 56px; right: 64px; font-family: var(--font-mono); font-size: 18px; letter-spacing: .08em; color: var(--ember);
+      border: 1px dashed rgba(242,184,128,.6); padding: 12px 18px; border-radius: 6px; z-index: 0; max-width: calc(100% - 64px); }
+/* Centred placeholder for framed (non full-bleed) slots */
+.ph.center { top: 50%; left: 50%; right: auto; transform: translate(-50%, -50%); text-align: center; line-height: 1.5; width: max-content; }
+/* Inline text placeholder for copy the team still has to supply (quotes, prices, contacts) */
+.tbd { color: var(--ember); border-bottom: 1px dashed rgba(242,184,128,.6); }
+
+/* Framed photo: a media slot with a border, used inside layouts */
+.frame { position: absolute; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0,0,0,.45); }
+.frame .media { border-radius: inherit; }
+.frame figcaption { position: absolute; left: 0; right: 0; bottom: 0; padding: 60px 28px 22px; z-index: 2;
+    background: linear-gradient(0deg, rgba(11,22,32,.92), transparent); font-size: 20px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--mist); }
+
+/* Quiet alpine ridgelines (reused as a decorative device) */
+.ridge { position: absolute; left: 0; bottom: 0; width: 1920px; height: 1080px; pointer-events: none; }
+
+/* Status pill: LIVE DEMO, ROADMAP, CONTROLLED TEST */
+.pill { display: inline-flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
+    padding: 10px 20px; border-radius: 999px; border: 1px solid var(--line); background: rgba(11,22,32,.7); color: var(--text); }
+.pill .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+.pill.live .dot { animation: pulse 1.6s ease-in-out infinite; }
+.pill.ember { color: var(--ember); border-color: rgba(242,184,128,.5); }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(218,41,28,.7); } 50% { box-shadow: 0 0 0 10px rgba(218,41,28,0); } }
+
+/* Speaker notes live inside each slide but are never drawn on the stage (press N) */
+.slide .notes { display: none; }
+
+/* ===========================================
+   SLIDE 0: TEAM OPENING
+   =========================================== */
+.s-open .veil { position: absolute; inset: 0;
+    background: linear-gradient(0deg, rgba(11,22,32,.96) 0%, rgba(11,22,32,.7) 42%, rgba(11,22,32,.15) 75%),
+                linear-gradient(90deg, rgba(11,22,32,.55) 0%, transparent 60%); }
+.s-open .eyebrow { position: absolute; left: var(--pad); top: 88px; font-size: 26px; }
+.s-open .brand { position: absolute; left: var(--pad); bottom: 400px; font-weight: 800; font-size: 250px; line-height: .9; letter-spacing: .06em; }
+.s-open .brand span { color: var(--accent); }
+.s-open .track { position: absolute; left: calc(var(--pad) + 8px); bottom: 320px; font-size: 34px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: var(--mist); }
+.s-open .team { position: absolute; left: var(--pad); bottom: 90px; width: 1680px; }
+.s-open .team h3 { font-size: 18px; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 20px;
+    padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.s-open .team ul { list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 40px; }
+.s-open .team li { font-size: 28px; font-weight: 500; line-height: 1.3; }
+
+/* ===========================================
+   SLIDE 1: BROAD HOSPITALITY PROBLEM (template hook, three figures)
+   =========================================== */
+.s-hook .veil { position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(11,22,32,.94) 0%, rgba(11,22,32,.72) 55%, rgba(11,22,32,.4) 100%),
+                linear-gradient(0deg, rgba(11,22,32,.88) 0%, transparent 50%); }
+.s-hook .steam i { position: absolute; border-radius: 50%; filter: blur(70px); background: rgba(218,41,28,.16);
+    animation: drift 18s ease-in-out infinite alternate; }
+.s-hook .steam i:nth-child(1) { width: 520px; height: 520px; right: 160px; top: 140px; }
+.s-hook .steam i:nth-child(2) { width: 380px; height: 380px; right: 520px; top: 420px; animation-duration: 24s; background: rgba(207,230,238,.10); }
+.s-hook .steam i:nth-child(3) { width: 300px; height: 300px; right: 60px; top: 520px; animation-duration: 21s; background: rgba(242,184,128,.09); }
+@keyframes drift { from { transform: translate(0,0) scale(1); } to { transform: translate(-60px,40px) scale(1.15); } }
+
+.s-hook .eyebrow { position: absolute; left: var(--pad); top: 88px; }
+.s-hook .stats { position: absolute; left: var(--pad); top: 200px; display: flex; gap: 120px; }
+.s-hook .num { font-family: var(--font-display); font-weight: 700; font-size: 180px; line-height: .95; letter-spacing: .01em; color: var(--text); white-space: nowrap; }
+.s-hook .num em { font-style: normal; font-weight: 600; color: var(--accent); font-size: 110px; margin-left: 10px; letter-spacing: 0; }
+.s-hook .num b { font-weight: 600; color: var(--accent); font-size: 110px; margin-right: 6px; vertical-align: .18em; }
+.s-hook .stat p { margin-top: 26px; font-size: 30px; line-height: 1.35; color: var(--mist); max-width: 440px; }
+.s-hook .ask { position: absolute; left: var(--pad); bottom: 150px; width: 1600px; font-family: var(--font-display); font-weight: 600;
+    font-size: 84px; line-height: 1.08; letter-spacing: -.005em; }
+.s-hook .ask i { font-style: normal; color: var(--accent); }
+.s-hook .src { position: absolute; left: var(--pad); bottom: 64px; width: 1400px; }
+
+/* ===========================================
+   SLIDE 2: NARROW TO TOURISM GUEST SERVICE (text left, photo right)
+   =========================================== */
+.s-need .side { position: absolute; top: 0; right: 0; width: 820px; height: 1080px; }
+.s-need .side::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, var(--night) 0%, rgba(11,22,32,.25) 30%, transparent 60%); }
+.s-need .eyebrow { position: absolute; left: var(--pad); top: 88px; }
+.s-need .title { position: absolute; left: var(--pad); top: 170px; width: 1000px; }
+.s-need .needs { position: absolute; left: var(--pad); top: 430px; width: 980px; list-style: none; }
+.s-need .needs li { display: grid; grid-template-columns: 300px 1fr; align-items: baseline; padding: 30px 0; border-top: 1px solid var(--line); }
+.s-need .needs li:last-child { border-bottom: 1px solid var(--line); }
+.s-need .needs b { font-size: 28px; font-weight: 700; letter-spacing: .16em; color: var(--mist); }
+.s-need .needs span { font-size: 32px; line-height: 1.35; color: var(--text); }
+.s-need .bottom { position: absolute; left: var(--pad); bottom: 120px; font-size: 54px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+.s-need .bottom i { font-style: normal; color: var(--accent); }
+
+/* ===========================================
+   SLIDE 3: GUEST JOURNEY (photo left, five steps right)
+   =========================================== */
+.s-journey .side { position: absolute; top: 0; left: 0; width: 640px; height: 1080px; }
+.s-journey .side .media img { object-position: 50% 60%; }
+.s-journey .side::after { content: ''; position: absolute; inset: 0; background: linear-gradient(270deg, var(--night) 0%, transparent 35%); }
+.s-journey .eyebrow { position: absolute; left: 760px; top: 88px; }
+.s-journey .title { position: absolute; left: 760px; top: 150px; width: 1040px; font-size: 68px; }
+.s-journey .steps { position: absolute; left: 760px; top: 360px; width: 1040px; list-style: none; counter-reset: step; }
+.s-journey .steps li { display: grid; grid-template-columns: 110px 220px 1fr; align-items: baseline; padding: 24px 0; border-top: 1px solid var(--line); }
+.s-journey .steps li::before { counter-increment: step; content: counter(step, decimal-leading-zero); font-size: 40px; font-weight: 700; color: var(--accent); }
+.s-journey .steps b { font-size: 30px; font-weight: 700; letter-spacing: .14em; }
+.s-journey .steps span { font-size: 28px; line-height: 1.35; color: var(--mist); }
+.s-journey .qr { position: absolute; left: 64px; bottom: 64px; z-index: 2; width: 200px; height: 200px; border-radius: 12px; background: rgba(11,22,32,.85); border: 1px solid var(--line); }
+.s-journey .qr .ph { font-size: 14px; padding: 10px 12px; }
+.s-journey .qr img { position: absolute; inset: 14px; width: calc(100% - 28px); height: calc(100% - 28px); object-fit: contain; background: #fff; border-radius: 6px; }
+.s-journey .next { position: absolute; right: var(--pad); top: 74px; }
+
+/* ===========================================
+   SLIDE 3B: DEMO VIDEO (full bleed, no narration)
+   =========================================== */
+.s-demo .media video { object-fit: contain; background: #000; }
+.s-demo .ph.center { font-size: 26px; padding: 28px 40px; }
+.s-demo .pill { position: absolute; left: 64px; top: 56px; z-index: 3; }
+
+/* ===========================================
+   SLIDE 4: SAFETY MONITORING AND ASSURANCE LAYER
+   =========================================== */
+.s-safe .eyebrow { position: absolute; left: var(--pad); top: 80px; }
+.s-safe .title { position: absolute; left: var(--pad); top: 136px; width: 1680px; font-size: 58px; }
+.s-safe .panel { top: 260px; width: 600px; height: 500px; }
+.s-safe .panel.a { left: var(--pad); }
+.s-safe .panel.b { left: 750px; border: 2px solid var(--ember); }
+.s-safe .panel.a img { object-position: 50% 66%; }
+.s-safe .panel.b img { object-position: 50% 52%; }
+.s-safe .panel figcaption { display: flex; align-items: center; gap: 18px; padding: 70px 28px 24px; }
+.s-safe .panel figcaption svg { flex: 0 0 auto; width: 44px; height: 44px; }
+.s-safe .panel figcaption b { display: block; font-size: 24px; font-weight: 700; letter-spacing: .14em; color: var(--text); }
+.s-safe .panel figcaption small { display: block; margin-top: 6px; font-size: 22px; font-weight: 500; letter-spacing: .02em; text-transform: none; color: var(--mist); }
+.s-safe .panel.b figcaption small { color: var(--ember); }
+.s-safe .verbs { position: absolute; left: 1420px; top: 250px; font-size: 62px; font-weight: 800; line-height: 1.12; letter-spacing: .02em; text-transform: uppercase; }
+.s-safe .verbs span { display: block; }
+.s-safe .verbs span:last-child { color: var(--alert); }
+.s-safe .dash { left: 1420px; top: 500px; width: 380px; height: 260px; }
+.s-safe .dash .ph { font-size: 14px; }
+.s-safe .dash .pill { position: absolute; left: 14px; top: 14px; z-index: 3; font-size: 13px; padding: 6px 12px; }
+.s-safe .strip { position: absolute; left: var(--pad); top: 810px; width: 1680px; display: grid; grid-template-columns: 1fr 64px 1.35fr 64px 1fr; align-items: center; }
+.s-safe .strip .box { height: 110px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--card); font-size: 24px; font-weight: 700; letter-spacing: .14em; }
+.s-safe .strip .box.edge { border: 2px solid var(--mist); background: rgba(207,230,238,.1); }
+.s-safe .strip .box.alert { border-color: rgba(255,107,94,.7); color: var(--alert); }
+.s-safe .strip .arrow { text-align: center; font-size: 40px; color: var(--text-dim); }
+.s-safe .caption { position: absolute; left: var(--pad); top: 950px; font-size: 22px; color: var(--text-dim); letter-spacing: .02em; }
+
+/* ===========================================
+   SLIDE 5: CUSTOMER VALIDATION
+   =========================================== */
+.s-proof .eyebrow { position: absolute; left: var(--pad); top: 88px; }
+.s-proof .title { position: absolute; left: var(--pad); top: 150px; width: 1680px; }
+.s-proof .ph1 { left: var(--pad); top: 300px; width: 400px; height: 640px; }
+.s-proof .ph2 { left: 544px; top: 340px; width: 400px; height: 640px; }
+.s-proof .ph1 img { object-position: 50% 62%; }
+.s-proof .ph2 img { object-position: 50% 60%; }
+.s-proof .points { position: absolute; left: 1040px; top: 300px; width: 760px; list-style: none; }
+.s-proof .points li { padding: 26px 0; border-top: 1px solid var(--line); }
+.s-proof .points b { display: block; font-size: 28px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.s-proof .points li:last-child b { color: var(--accent); }
+.s-proof .points span { display: block; margin-top: 10px; font-size: 28px; line-height: 1.35; color: var(--mist); }
+.s-proof .quote { position: absolute; left: 1040px; top: 790px; width: 760px; padding: 22px 26px; border-left: 4px solid var(--ember); background: var(--card); border-radius: 0 10px 10px 0; }
+.s-proof .quote p { font-size: 26px; line-height: 1.4; }
+.s-proof .quote small { display: block; margin-top: 8px; font-size: 18px; letter-spacing: .06em; }
+
+/* ===========================================
+   SLIDE 6: WHAT WE BUILT (five capability cards)
+   =========================================== */
+.s-build .eyebrow { position: absolute; left: var(--pad); top: 88px; }
+.s-build .title { position: absolute; left: var(--pad); top: 150px; width: 1200px; }
+.s-build .built { position: absolute; left: var(--pad); top: 340px; }
+.s-build .cards { position: absolute; left: var(--pad); top: 420px; width: 1680px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 24px; }
+.s-build .card { border-radius: 14px; border: 1px solid var(--line); background: var(--card); overflow: hidden; }
+.s-build .card .thumb { position: relative; height: 300px; }
+.s-build .card .thumb .ph { top: 18px; right: 18px; left: 18px; font-size: 13px; padding: 8px 10px; letter-spacing: .04em; }
+.s-build .card .body { padding: 26px 24px 30px; }
+.s-build .card b { display: block; font-size: 24px; font-weight: 700; letter-spacing: .14em; }
+.s-build .card b::before { content: ''; display: block; width: 28px; height: 4px; background: var(--accent); margin-bottom: 16px; }
+.s-build .card span { display: block; margin-top: 10px; font-size: 24px; line-height: 1.35; color: var(--mist); }
+
+/* ===========================================
+   SLIDE 7: ROADMAP, LOCAL TOURISM GUIDE (full bleed placeholder + text left)
+   =========================================== */
+.s-road .veil { position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(11,22,32,.96) 0%, rgba(11,22,32,.82) 50%, rgba(11,22,32,.3) 100%); }
+.s-road .moon { position: absolute; right: 260px; top: 170px; width: 150px; height: 150px; border-radius: 50%;
+    box-shadow: inset -34px 10px 0 0 var(--mist); opacity: .55; }
+.s-road .eyebrow { position: absolute; left: var(--pad); top: 88px; }
+.s-road .pill { position: absolute; left: var(--pad); top: 150px; }
+.s-road .title { position: absolute; left: var(--pad); top: 240px; width: 1150px; font-size: 80px; }
+.s-road .sub { position: absolute; left: var(--pad); top: 520px; font-size: 32px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--mist); }
+.s-road .help { position: absolute; left: var(--pad); top: 610px; width: 1100px; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 0 60px; }
+.s-road .help li { padding: 24px 0; border-top: 1px solid var(--line); font-size: 32px; font-weight: 500; }
+.s-road .help li::before { content: ''; display: inline-block; width: 12px; height: 12px; background: var(--accent); margin-right: 20px; vertical-align: .2em; }
+
+/* ===========================================
+   SLIDE 8: BUSINESS MODEL (three cards)
+   =========================================== */
+.s-biz .eyebrow { position: absolute; left: var(--pad); top: 88px; }
+.s-biz .title { position: absolute; left: var(--pad); top: 150px; width: 1680px; }
+.s-biz .cards { position: absolute; left: var(--pad); top: 320px; width: 1680px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 48px; }
+.s-biz .card { position: relative; height: 560px; padding: 48px 44px; border-radius: 16px; border: 1px solid var(--line); background: var(--card); }
+.s-biz .card:first-child { border: 2px solid var(--accent); background: rgba(218,41,28,.07); }
+.s-biz .card .n { font-size: 64px; font-weight: 800; color: var(--accent); line-height: 1; }
+.s-biz .card b { display: block; margin-top: 36px; font-size: 32px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.s-biz .card span { display: block; margin-top: 16px; font-size: 28px; line-height: 1.4; color: var(--mist); }
+.s-biz .card .price { position: absolute; left: 44px; right: 44px; bottom: 40px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 24px; line-height: 1.4; color: var(--text-dim); }
+.s-biz .card .price small { display: block; margin-bottom: 6px; font-size: 16px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+.s-biz .note { position: absolute; left: var(--pad); top: 920px; width: 1500px; font-size: 24px; line-height: 1.4; color: var(--text-dim); }
+
+/* ===========================================
+   SLIDE 9: ASK AND CLOSE (team photo full bleed)
+   =========================================== */
+.s-ask .veil { position: absolute; inset: 0;
+    background: linear-gradient(0deg, rgba(11,22,32,.97) 0%, rgba(11,22,32,.88) 55%, rgba(11,22,32,.45) 100%); }
+.s-ask .eyebrow { position: absolute; left: var(--pad); top: 88px; }
+.s-ask .title { position: absolute; left: var(--pad); top: 160px; width: 1680px; font-size: 84px; }
+.s-ask .asks { position: absolute; left: var(--pad); top: 420px; width: 1680px; list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 48px; }
+.s-ask .asks li { padding-top: 26px; border-top: 3px solid var(--accent); }
+.s-ask .asks b { display: block; font-size: 30px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.s-ask .asks span { display: block; margin-top: 14px; font-size: 28px; line-height: 1.4; color: var(--mist); }
+.s-ask .close { position: absolute; left: var(--pad); top: 760px; width: 1680px; font-size: 46px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+.s-ask .close i { font-style: normal; color: var(--accent); }
+.s-ask .contact { position: absolute; left: var(--pad); top: 880px; font-size: 26px; display: flex; gap: 60px; }
+
+/* ===========================================
+   DECK CHROME (outside the stage design system)
+   =========================================== */
+.deck-controls { display: flex; align-items: center; gap: 18px; font-family: var(--font-mono); font-size: 14px; color: var(--text-dim);
+    background: rgba(5,9,13,.55); padding: 8px 16px; border-radius: 999px; backdrop-filter: blur(6px); opacity: .55; transition: opacity .3s; }
+.deck-controls:hover { opacity: 1; }
+.deck-controls button { background: none; border: 0; color: var(--text); font-size: 18px; cursor: pointer; padding: 2px 8px; }
+.progress { position: fixed; left: 0; bottom: 0; height: 3px; width: 0; background: var(--accent); z-index: 999; transition: width .5s var(--ease); }
+
+/* Speaker notes panel (press N). Shows the script and target time for the current slide. */
+.notes-panel { position: fixed; right: 16px; bottom: 64px; width: min(520px, calc(100vw - 32px)); max-height: 60vh; overflow: auto; z-index: 1001;
+    background: rgba(5,9,13,.92); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; font: 400 15px/1.55 var(--font-body); color: var(--text);
+    display: none; }
+.notes-panel.show { display: block; }
+.notes-panel h4 { font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--ember); margin-bottom: 8px; }
+.notes-panel p + p { margin-top: 10px; }
+
+/* Inline editing (press E, or hover the top-left corner) */
+.edit-hotzone { position: fixed; top: 0; left: 0; width: 80px; height: 80px; z-index: 10000; cursor: pointer; }
+.edit-toggle, .save-btn { position: fixed; top: 14px; left: 14px; z-index: 10001; opacity: 0; pointer-events: none; transition: opacity .3s;
+    font: 500 14px var(--font-mono); background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+.save-btn { left: 90px; display: none; }
+.edit-toggle.show, .edit-toggle.active { opacity: 1; pointer-events: auto; }
+body.editing .save-btn { display: block; opacity: 1; pointer-events: auto; }
+body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); outline-offset: 6px; }
+</style>
+</head>
+<body>
+
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+    <!-- ===== SLIDE 0: TEAM OPENING (0:05) ===== -->
+    <section class="slide s-open active" aria-label="Team opening">
+        <!-- Real event photo: robots and people in the town square. Drop at assets/event_square.jpg -->
+        <div class="media">
+            <div class="ph">PHOTO · assets/event_square.jpg · robots and people in the town square</div>
+            <img src="assets/event_square.jpg" alt="Robots and visitors in the town square during the hackathon" onerror="this.remove()">
+        </div>
+        <div class="veil"></div>
+
+        <p class="eyebrow reveal" style="--d:.1s">Leukerbad Robotics Hackathon</p>
+        <h1 class="brand reveal" style="--d:.3s">SEPAZU<span>.</span></h1>
+        <p class="track reveal" style="--d:.55s">Autonomous Urban Services</p>
+
+        <div class="team reveal" style="--d:.8s">
+            <h3>Team</h3>
+            <ul>
+                <li>Rakesh Dhamodharan</li>
+                <li>Vivek Chand</li>
+                <li>Vivek Sai</li>
+                <li>Sahil Sanjay Rajpurkar</li>
+                <li>Om Prakash Sahu</li>
+                <li>Sam</li>
+                <li>Sai</li>
+            </ul>
+        </div>
+
+        <aside class="notes" data-time="0:05">
+            <p>"We are Sepazu, competing in Autonomous Urban Services."</p>
+            <p>Keep this to one sentence.</p>
+        </aside>
+    </section>
+
+    <!-- ===== SLIDE 1: BROAD HOSPITALITY PROBLEM (0:25) ===== -->
+    <section class="slide s-hook" aria-label="The hospitality problem">
+        <div class="media">
+            <div class="ph">PHOTO · assets/spa_entrance.jpg · thermal spa entrance</div>
+            <img src="assets/web/spa_entrance.jpg" alt="Entrance of the thermal spa at dusk" onerror="this.remove()">
+        </div>
+        <div class="veil"></div>
+
+        <svg class="ridge" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 800 L180 690 L320 760 L520 620 L700 740 L900 650 L1100 780 L1320 630 L1520 740 L1720 670 L1920 760 V1080 H0Z" fill="rgba(255,255,255,.05)"/>
+            <path d="M0 900 L240 810 L420 870 L640 760 L860 860 L1080 790 L1300 880 L1560 770 L1760 840 L1920 800 V1080 H0Z" fill="rgba(207,230,238,.07)"/>
+        </svg>
+        <div class="steam" aria-hidden="true"><i></i><i></i><i></i></div>
+
+        <p class="eyebrow reveal" style="--d:.1s">The problem</p>
+
+        <div class="stats">
+            <div class="stat reveal" style="--d:.35s">
+                <div class="num"><span data-count="43.9" data-dec="1">43.9</span><em>M</em></div>
+                <p>Hotel overnight stays in Switzerland in 2025</p>
+            </div>
+            <div class="stat reveal" style="--d:.55s">
+                <div class="num"><span data-count="44" data-dec="0">44</span><em>%</em></div>
+                <p>Of Swiss hoteliers reported recruitment difficulties in 2023</p>
+            </div>
+            <div class="stat reveal" style="--d:.75s">
+                <div class="num"><b>+</b><span data-count="50" data-dec="0">50</span><em>%</em></div>
+                <p>Projected growth in Switzerland's population aged 65 and over, 2024 to 2055</p>
+            </div>
+        </div>
+
+        <h2 class="ask reveal" style="--d:1s">More guests. <i>Not enough people to serve them.</i></h2>
+        <p class="src reveal" style="--d:1.2s">Sources: Swiss Federal Statistical Office, March 2026; HotellerieSuisse survey, 2023; FSO population scenarios, April 2025.</p>
+
+        <aside class="notes" data-time="0:25">
+            <p>"Tourism is growing, but service teams cannot always keep up. Switzerland recorded 43.9 million hotel overnight stays in 2025. And 44 percent of hoteliers reported recruitment difficulties in 2023. Guests still need answers, directions, and attention, even when staff are already helping someone else."</p>
+            <p>Context only: these figures do not prove every venue is short staffed or that a robot replaces a person.</p>
+        </aside>
+    </section>
+
+    <!-- ===== SLIDE 2: TOURISM GUEST SERVICE PROBLEM (0:20) ===== -->
+    <section class="slide s-need" aria-label="When staff are busy">
+        <div class="side">
+            <!-- Real photo of the spa reception or service area (ideally without the robot). Drop at assets/spa_reception.jpg -->
+            <div class="media">
+                <div class="ph">PHOTO · assets/spa_reception.jpg · spa reception or service area</div>
+                <img src="assets/spa_reception.jpg" alt="Reception area of the thermal spa" onerror="this.remove()">
+            </div>
+        </div>
+
+        <p class="eyebrow reveal" style="--d:.1s">Tourism guest service</p>
+        <h2 class="title reveal" style="--d:.25s">When staff are busy, <i>who helps the guest?</i></h2>
+
+        <ul class="needs">
+            <li class="reveal" style="--d:.45s"><b>INFORMATION</b><span>What is here? What is open? Where do I go?</span></li>
+            <li class="reveal" style="--d:.6s"><b>DIRECTIONS</b><span>How do I get to the pool, service, or facility?</span></li>
+            <li class="reveal" style="--d:.75s"><b>ATTENTION</b><span>Can someone help me while reception is occupied?</span></li>
+        </ul>
+
+        <p class="bottom reveal" style="--d:1s">The guest <i>still needs help.</i></p>
+        <p class="foot">SEPAZU</p>
+
+        <aside class="notes" data-time="0:20">
+            <p>"We chose tourism and hospitality, and tested the idea in a thermal spa. A guest may want to know what is available, where to go, or how to find a service. But reception staff may already be helping another guest. The gap is simple: the guest still needs help."</p>
+            <p>Do not say the reception was actually unattended unless the team observed it.</p>
+        </aside>
+    </section>
+
+    <!-- ===== SLIDE 3: GUEST JOURNEY (0:10 intro before the video) ===== -->
+    <section class="slide s-journey" aria-label="Guest journey">
+        <div class="side">
+            <div class="media">
+                <div class="ph">PHOTO · robot with guests</div>
+                <img src="assets/web/robot_with_guests.jpg" alt="A guest on a phone next to the robot inside the spa" onerror="this.remove()">
+            </div>
+            <!-- Real guest QR code, only if active and safe to show publicly. Drop at assets/qr_code.png -->
+            <div class="qr reveal" style="--d:1s">
+                <div class="ph">QR · assets/qr_code.png</div>
+                <img src="assets/qr_code.png" alt="QR code to connect to the robot" onerror="this.remove()">
+            </div>
+        </div>
+
+        <p class="eyebrow reveal" style="--d:.1s">Guest journey</p>
+        <h2 class="title reveal" style="--d:.25s">Meet the robot. <i>Scan. Connect. Ask. Go.</i></h2>
+
+        <ol class="steps">
+            <li class="reveal" style="--d:.4s"><b>DISCOVER</b><span>A passer by notices the robot.</span></li>
+            <li class="reveal" style="--d:.5s"><b>SCAN</b><span>The guest scans the QR code.</span></li>
+            <li class="reveal" style="--d:.6s"><b>CONNECT</b><span>The guest is connected to the robot through a phone.</span></li>
+            <li class="reveal" style="--d:.7s"><b>ASK</b><span>The guest asks about the thermal spa and its facilities.</span></li>
+            <li class="reveal" style="--d:.8s"><b>GO</b><span>The robot responds, gestures, and can escort the guest.</span></li>
+        </ol>
+
+        <p class="next reveal" style="--d:1.1s"><span class="pill live"><span class="dot"></span>Live demo next</span></p>
+        <p class="foot">SEPAZU</p>
+
+        <aside class="notes" data-time="0:10">
+            <p>"Here is the guest journey. A visitor notices the robot, scans its QR code, connects by phone, and asks for help. The robot can answer questions, respond with gestures, and escort the guest. Let us show you."</p>
+            <p>Then advance to the demo video. Only call a step live if it works in the footage.</p>
+        </aside>
+    </section>
+
+    <!-- ===== SLIDE 3B: DEMO VIDEO (0:45, play without narration) =====
+         Plays automatically when this slide opens and pauses when you leave. Click to pause/resume. -->
+    <section class="slide s-demo" aria-label="Live demo video">
+        <div class="media">
+            <div class="ph center">DEMO VIDEO · assets/demo.mp4<br>45 seconds · 16:9 · captions included</div>
+            <video id="demoVideo" src="assets/demo.mp4" preload="metadata" playsinline onerror="this.remove()"></video>
+        </div>
+        <span class="pill live"><span class="dot"></span>Live demo</span>
+
+        <aside class="notes" data-time="0:45">
+            <p>Do not speak over the video.</p>
+            <p>Shot list: 0 to 6 s passer by notices the robot · 6 to 11 s QR scan · 11 to 17 s phone connects · 17 to 27 s guest asks about the spa · 27 to 34 s robot answers and nods · 34 to 45 s robot escorts the guest.</p>
+        </aside>
+    </section>
+
+    <!-- ===== SLIDE 4: SAFETY MONITORING AND ASSURANCE LAYER (0:35) ===== -->
+    <section class="slide s-safe" aria-label="Safety monitoring and assurance layer">
+        <p class="eyebrow reveal" style="--d:.1s">Safety monitoring and assurance layer</p>
+        <h2 class="title reveal" style="--d:.2s">The robot must adapt to <i>the people around it.</i></h2>
+
+        <figure class="frame panel a reveal" style="--d:.35s">
+            <div class="media">
+                <div class="ph">PHOTO · robot alone</div>
+                <img src="assets/web/robot_alone.jpg" alt="The robot alone in an indoor public area" onerror="this.remove()">
+            </div>
+            <figcaption>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>
+                <span><b>CLEAR AREA</b><small>Full capabilities available</small></span>
+            </figcaption>
+        </figure>
+
+        <figure class="frame panel b reveal" style="--d:.5s">
+            <div class="media">
+                <div class="ph">PHOTO · children with the robot</div>
+                <img src="assets/web/kids_petting.jpg" alt="Two children touching the robot" onerror="this.remove()">
+            </div>
+            <figcaption style="color: var(--ember)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                <span><b>PEOPLE NEARBY</b><small>Restricted control state</small></span>
+            </figcaption>
+        </figure>
+
+        <p class="verbs reveal" style="--d:.65s"><span>Monitor.</span><span>Predict.</span><span>Alert.</span></p>
+
+        <!-- Clawmetry dashboard screenshot showing the alert. Keep the CONTROLLED TEST tag if the alert was staged. -->
+        <figure class="frame dash reveal" style="--d:.8s">
+            <div class="media">
+                <div class="ph center">SCREENSHOT<br>assets/clawmetry_dashboard.png</div>
+                <img src="assets/clawmetry_dashboard.png" alt="Clawmetry dashboard showing a safety alert" onerror="this.remove()">
+            </div>
+            <span class="pill ember">Clawmetry · controlled test</span>
+        </figure>
+
+        <div class="strip reveal" style="--d:.95s">
+            <div class="box">ROBOT STACK</div>
+            <div class="arrow" aria-hidden="true">›</div>
+            <div class="box edge">INDEPENDENT JETSON EDGE LAYER</div>
+            <div class="arrow" aria-hidden="true">›</div>
+            <div class="box alert">FLEET OPERATOR ALERT</div>
+        </div>
+        <p class="caption reveal" style="--d:1.05s">Independent monitoring alongside the robot’s main stack</p>
+        <p class="foot">SEPAZU</p>
+
+        <aside class="notes" data-time="0:35">
+            <p>"A robot in a clear area can operate with its available capabilities. Around people, its behaviour must be more restricted. During the hackathon, we added an independent Jetson computer running at the edge beside the robot's main stack. It monitors robot state and intent, predicts potentially unsafe next states, flags anomalies, and alerts the fleet operator. This is our safety monitoring and assurance layer."</p>
+            <p>Say monitor, predict, flag, alert. Never: certified, fail safe, prevents accidents. Confirm whether the restricted state is enforced on the robot in the demo or only flagged; reword the right panel if it only alerts.</p>
+        </aside>
+    </section>
+
+    <!-- ===== SLIDE 5: CUSTOMER VALIDATION (0:25) ===== -->
+    <section class="slide s-proof" aria-label="Customer validation">
+        <p class="eyebrow reveal" style="--d:.1s">Customer validation</p>
+        <h2 class="title reveal" style="--d:.2s">We took it to <i>a real customer.</i></h2>
+
+        <figure class="frame ph1 reveal" style="--d:.35s">
+            <div class="media">
+                <div class="ph">PHOTO · children with the robot</div>
+                <img src="assets/web/kids_interacting.jpg" alt="Several children crouch around the robot outdoors at night" onerror="this.remove()">
+            </div>
+        </figure>
+        <figure class="frame ph2 reveal" style="--d:.5s">
+            <div class="media">
+                <div class="ph">PHOTO · robot in the venue</div>
+                <img src="assets/web/spa_reception_robot.jpg" alt="People with the robot at the spa reception desk" onerror="this.remove()">
+            </div>
+        </figure>
+
+        <ul class="points">
+            <li class="reveal" style="--d:.6s"><b>Guests engaged</b><span>Visitors approached and spent time with the robot.</span></li>
+            <li class="reveal" style="--d:.75s"><b>The robot attracted attention</b><span>Children and adults wanted to see what it could do.</span></li>
+            <li class="reveal" style="--d:.9s"><b>Staff saw another use case</b><span>Welcome passers by and invite them into the venue.</span></li>
+        </ul>
+
+        <!-- Optional: approved staff quote and a measured interaction count. Replace or delete before presenting. -->
+        <div class="quote reveal" style="--d:1.05s">
+            <p class="tbd">“[APPROVED STAFF QUOTE]”</p>
+            <small class="tbd">[NAME, ROLE, VENUE, PERMISSION CONFIRMED] · [N] guest interactions in [X] hours</small>
+        </div>
+        <p class="foot">SEPAZU</p>
+
+        <aside class="notes" data-time="0:25">
+            <p>"We deployed the robot at a thermal spa and saw strong curiosity. Guests approached, spent time with it, and wanted to discover what it could do. Staff also suggested a new use: placing it outside to welcome passers by and invite them in. That gave us a second, customer suggested use case."</p>
+            <p>Qualitative only. No adoption rates, no "ready to pay". Confirm consent for the children in the photos or blur faces.</p>
+        </aside>
+    </section>
+
+    <!-- ===== SLIDE 6: WHAT WE BUILT (0:20) ===== -->
+    <section class="slide s-build" aria-label="What we built">
+        <p class="eyebrow reveal" style="--d:.1s">What we built</p>
+        <h2 class="title reveal" style="--d:.2s">From robot to <i>service experience.</i></h2>
+        <p class="built src reveal" style="--d:.3s">Built and integrated during the hackathon</p>
+
+        <div class="cards">
+            <div class="card reveal" style="--d:.4s">
+                <div class="thumb"><div class="media">
+                    <div class="ph">PHOTO · assets/jetson_mounted.jpg</div>
+                    <img src="assets/jetson_mounted.jpg" alt="Jetson computer mounted on the robot" onerror="this.remove()">
+                </div></div>
+                <div class="body"><b>EDGE COMPUTER</b><span>Jetson integration</span></div>
+            </div>
+            <div class="card reveal" style="--d:.5s">
+                <div class="thumb"><div class="media">
+                    <div class="ph">STILL · assets/nav_still.jpg</div>
+                    <img src="assets/nav_still.jpg" alt="Robot navigating the venue" onerror="this.remove()">
+                </div></div>
+                <div class="body"><b>NAVIGATION</b><span>Robot movement in the venue</span></div>
+            </div>
+            <div class="card reveal" style="--d:.6s">
+                <div class="thumb"><div class="media">
+                    <div class="ph">STILL · assets/escort_still.jpg</div>
+                    <img src="assets/escort_still.jpg" alt="Robot escorting a person" onerror="this.remove()">
+                </div></div>
+                <div class="body"><b>ESCORT</b><span>Guide a guest to a location</span></div>
+            </div>
+            <div class="card reveal" style="--d:.7s">
+                <div class="thumb"><div class="media">
+                    <div class="ph">STILL · assets/voice_still.jpg</div>
+                    <img src="assets/voice_still.jpg" alt="Guest talking to the robot through a phone" onerror="this.remove()">
+                </div></div>
+                <div class="body"><b>VOICE</b><span>Audio integration and voice interaction</span></div>
+            </div>
+            <div class="card reveal" style="--d:.8s">
+                <div class="thumb"><div class="media">
+                    <div class="ph">STILL · assets/gesture_still.jpg</div>
+                    <img src="assets/gesture_still.jpg" alt="Robot nodding or greeting" onerror="this.remove()">
+                </div></div>
+                <div class="body"><b>GESTURES</b><span>Greeting, nodding, and expressive responses</span></div>
+            </div>
+        </div>
+        <p class="foot">SEPAZU</p>
+
+        <aside class="notes" data-time="0:20">
+            <p>"During the hackathon, we integrated the Jetson edge computer, navigation, escort behaviour, phone based audio and voice interaction, and new gestures including nodding. We connected the pieces into a guest facing service experience."</p>
+            <p>Only show features that were implemented and tested. Label partial ones "prototype" or drop the card.</p>
+        </aside>
+    </section>
+
+    <!-- ===== SLIDE 7: ROADMAP, LOCAL TOURISM GUIDE (0:20) ===== -->
+    <section class="slide s-road" aria-label="Roadmap: local tourism guide">
+        <!-- Real tourist information point or visitor centre (concept location). Drop at assets/tourist_info_point.jpg -->
+        <div class="media">
+            <div class="ph">PHOTO · assets/tourist_info_point.jpg · tourist information point</div>
+            <img src="assets/tourist_info_point.jpg" alt="Tourist information point" onerror="this.remove()">
+        </div>
+        <div class="veil"></div>
+        <div class="moon" aria-hidden="true"></div>
+
+        <p class="eyebrow reveal" style="--d:.1s">Where this can scale</p>
+        <span class="pill ember reveal" style="--d:.2s"><span class="dot" style="background: var(--ember)"></span>Roadmap</span>
+        <h2 class="title reveal" style="--d:.3s">The local guide that is there <i>when the desk isn't.</i></h2>
+        <p class="sub reveal" style="--d:.5s">A 24 hour tourism assistant</p>
+
+        <ul class="help">
+            <li class="reveal" style="--d:.6s">Local information</li>
+            <li class="reveal" style="--d:.7s">Directions and places to visit</li>
+            <li class="reveal" style="--d:.8s">Weather and visitor questions</li>
+            <li class="reveal" style="--d:.9s">Hotel and service discovery</li>
+        </ul>
+        <p class="foot">SEPAZU</p>
+
+        <aside class="notes" data-time="0:20">
+            <p>"The next step is to take this beyond one venue. We want to place the same assistant near tourist information points, helping visitors when the information centre is closed. It can become a local guide for directions, services, weather, and visitor questions. This is our roadmap."</p>
+            <p>Roadmap, not deployed. None of these four are integrated today.</p>
+        </aside>
+    </section>
+
+    <!-- ===== SLIDE 8: BUSINESS MODEL (0:20) ===== -->
+    <section class="slide s-biz" aria-label="Business model">
+        <p class="eyebrow reveal" style="--d:.1s">Business model</p>
+        <h2 class="title reveal" style="--d:.2s">Robots as a service. <i>Not a hardware sale.</i></h2>
+
+        <div class="cards">
+            <div class="card reveal" style="--d:.35s">
+                <div class="n">01</div>
+                <b>Paid pilot</b><span>Short term deployment and evaluation</span>
+                <p class="price"><small>Pilot</small><span class="tbd">CHF [PRICE] for [DURATION]</span></p>
+            </div>
+            <div class="card reveal" style="--d:.5s">
+                <div class="n">02</div>
+                <b>Monthly subscription</b><span>Ongoing service access</span>
+                <p class="price"><small>Monthly</small><span class="tbd">CHF [PRICE] per month</span></p>
+            </div>
+            <div class="card reveal" style="--d:.65s">
+                <div class="n">03</div>
+                <b>Prepaid operating hours</b><span>A block of robot operating time</span>
+                <p class="price"><small>Prepaid use</small><span class="tbd">CHF [PRICE] per operating hour or [HOURS] hour bundle</span></p>
+            </div>
+        </div>
+
+        <p class="note reveal" style="--d:.8s">Hardware, deployment, support, and safety monitoring included according to the selected package.</p>
+        <p class="foot">SEPAZU</p>
+
+        <aside class="notes" data-time="0:20">
+            <p>"We sell the service, not the hardware. A customer can start with a paid pilot, continue with a monthly subscription, or buy prepaid operating hours. The package covers the robot service and the agreed deployment and support. We will validate the price with pilot customers."</p>
+            <p>Never invent CHF figures. Once prices are agreed, label them "pilot pricing hypothesis" if not validated.</p>
+        </aside>
+    </section>
+
+    <!-- ===== SLIDE 9: ASK AND CLOSE (0:15) ===== -->
+    <section class="slide s-ask" aria-label="The ask">
+        <!-- Real team photo, ideally with the robot. Drop at assets/team.jpg -->
+        <div class="media">
+            <div class="ph">PHOTO · assets/team.jpg · Sepazu team with the robot</div>
+            <img src="assets/team.jpg" alt="The Sepazu team with the robot at the hackathon" onerror="this.remove()">
+        </div>
+        <div class="veil"></div>
+
+        <p class="eyebrow reveal" style="--d:.1s">The ask</p>
+        <h2 class="title reveal" style="--d:.2s">Help us take this <i>from pilot to place.</i></h2>
+
+        <ul class="asks">
+            <li class="reveal" style="--d:.4s"><b>Customer partners</b><span>A paid pilot and introductions to other tourism venues</span></li>
+            <li class="reveal" style="--d:.55s"><b>Investor support</b><span>Conversations with investors who understand robotics and hospitality</span></li>
+            <li class="reveal" style="--d:.7s"><b>Deployment partners</b><span>Access to real sites, operating feedback, and measurable pilot goals</span></li>
+        </ul>
+
+        <p class="close reveal" style="--d:.9s">Service robots, ready for <i>real people and real places.</i></p>
+        <p class="contact reveal" style="--d:1.05s"><span class="tbd">[TEAM EMAIL]</span><span class="tbd">[WEBSITE OR QR CODE]</span></p>
+        <p class="foot">SEPAZU</p>
+
+        <aside class="notes" data-time="0:15">
+            <p>"We are looking for a paid pilot partner, introductions to more tourism venues, and investor support to take this further. We are Sepazu. Thank you."</p>
+            <p>Add contact details only once supplied and tested.</p>
+        </aside>
+    </section>
+
+</main>
+</div>
+
+<!-- Chrome: counter + prev/next (outside the stage) -->
+<div class="deck-controls" role="navigation" aria-label="Slide controls">
+    <button id="prev" aria-label="Previous slide">‹</button>
+    <span id="counter">01 / 01</span>
+    <button id="next" aria-label="Next slide">›</button>
+</div>
+<div class="progress" id="progress"></div>
+<div class="notes-panel" id="notesPanel" aria-live="polite"></div>
+
+<!-- Inline editing controls -->
+<div class="edit-hotzone"></div>
+<button class="edit-toggle" id="editToggle" title="Edit mode (E)">✏️ Edit</button>
+<button class="save-btn" id="saveBtn">Save HTML</button>
+
+<script>
+/* ===========================================
+   SLIDE CONTROLLER
+   Keys: arrows / space / PageUp / PageDown · swipe · mouse wheel · E = edit · N = notes
+   =========================================== */
+class SlidePresentation {
+    constructor() {
+        this.stage = document.getElementById('deckStage');
+        this.notes = document.getElementById('notesPanel');
+        this.refresh();
+        this.current = 0;
+        this.setupStageScale();
+        this.setupKeys();
+        this.setupTouch();
+        this.setupWheel();
+        this.setupVideo();
+        document.getElementById('prev').onclick = () => this.go(-1);
+        document.getElementById('next').onclick = () => this.go(1);
+        const start = parseInt(new URLSearchParams(location.search).get('slide') || '1', 10) - 1;
+        this.show(isNaN(start) ? 0 : start);
+    }
+    refresh() { this.slides = this.stage.querySelectorAll('.slide'); }
+
+    /* Scale the whole 1920x1080 stage to fit the window; never reflow */
+    setupStageScale() {
+        const fit = () => {
+            const f = Math.min(innerWidth / 1920, innerHeight / 1080);
+            const x = (innerWidth - 1920 * f) / 2, y = (innerHeight - 1080 * f) / 2;
+            this.stage.style.transform = `translate(${x}px, ${y}px) scale(${f})`;
+        };
+        fit(); addEventListener('resize', fit);
+    }
+    editing() { return document.body.classList.contains('editing'); }
+    setupKeys() {
+        addEventListener('keydown', e => {
+            if (this.editing()) return;
+            if (['ArrowRight','ArrowDown','PageDown',' '].includes(e.key)) { e.preventDefault(); this.go(1); }
+            if (['ArrowLeft','ArrowUp','PageUp'].includes(e.key)) { e.preventDefault(); this.go(-1); }
+            if (e.key === 'Home') this.show(0);
+            if (e.key === 'End') this.show(this.slides.length - 1);
+            if (e.key === 'n' || e.key === 'N') this.notes.classList.toggle('show');
+        });
+    }
+    setupTouch() {
+        let x0 = null;
+        addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
+        addEventListener('touchend', e => {
+            if (x0 === null || this.editing()) return;
+            const dx = e.changedTouches[0].clientX - x0;
+            if (Math.abs(dx) > 50) this.go(dx < 0 ? 1 : -1);
+            x0 = null;
+        });
+    }
+    setupWheel() {
+        let lock = false;
+        addEventListener('wheel', e => {
+            if (lock || this.editing() || Math.abs(e.deltaY) < 30) return;
+            lock = true; this.go(e.deltaY > 0 ? 1 : -1); setTimeout(() => lock = false, 700);
+        }, { passive: true });
+    }
+    /* Demo video: click to pause/resume. Playback is driven by show(). */
+    setupVideo() {
+        const v = document.getElementById('demoVideo');
+        if (v) v.addEventListener('click', () => v.paused ? v.play() : v.pause());
+    }
+    syncVideo(slide) {
+        const v = document.getElementById('demoVideo');
+        if (!v || !v.isConnected) return;
+        if (slide.contains(v)) { v.currentTime = 0; v.play().catch(() => {}); } else { v.pause(); }
+    }
+    go(d) { this.show(this.current + d); }
+    show(i) {
+        this.refresh();
+        this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+        this.slides.forEach((s, k) => { s.classList.toggle('active', k === this.current); s.classList.toggle('visible', k === this.current); });
+        const n = this.slides.length, pad = v => String(v).padStart(2, '0');
+        const slide = this.slides[this.current];
+        document.getElementById('counter').textContent = `${pad(this.current + 1)} / ${pad(n)}`;
+        document.getElementById('progress').style.width = ((this.current + 1) / n * 100) + '%';
+        this.countUp(slide);
+        this.syncVideo(slide);
+        const note = slide.querySelector('.notes');
+        this.notes.innerHTML = note
+            ? `<h4>${pad(this.current + 1)} · ${slide.getAttribute('aria-label')} · ${note.dataset.time || ''}</h4>${note.innerHTML}`
+            : '';
+    }
+    /* Count-up numbers: <span data-count="43.9" data-dec="1"> */
+    countUp(slide) {
+        const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        slide.querySelectorAll('[data-count]').forEach(el => {
+            const end = parseFloat(el.dataset.count), dec = +el.dataset.dec || 0;
+            if (reduce) { el.textContent = end.toFixed(dec); return; }
+            const t0 = performance.now() + 300, dur = 1600;
+            const tick = t => {
+                const p = Math.max(0, Math.min(1, (t - t0) / dur)), e = 1 - Math.pow(1 - p, 3);
+                el.textContent = (end * e).toFixed(dec);
+                if (p < 1) requestAnimationFrame(tick);
+            };
+            el.textContent = (0).toFixed(dec); requestAnimationFrame(tick);
+        });
+    }
+}
+const deck = new SlidePresentation();
+
+/* ===========================================
+   INLINE EDITING: press E (or hover top-left). "Save HTML" downloads the edited deck.
+   Note: copy the saved file over index.html to keep edits.
+   =========================================== */
+const editor = {
+    isActive: false,
+    toggleEditMode() {
+        this.isActive = !this.isActive;
+        document.body.classList.toggle('editing', this.isActive);
+        document.getElementById('editToggle').classList.toggle('active', this.isActive);
+        document.querySelectorAll('.slide h1, .slide h2, .slide h3, .slide p, .slide li, .slide b, .slide span, .slide figcaption, .slide .eyebrow').forEach(el => {
+            if (el.closest('.notes') || el.querySelector('[data-count]') || el.hasAttribute('data-count')) return;
+            this.isActive ? el.setAttribute('contenteditable', 'true') : el.removeAttribute('contenteditable');
+        });
+    },
+    save() {
+        const was = this.isActive; if (was) this.toggleEditMode();
+        const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+        a.download = 'index.html'; a.click();
+        if (was) this.toggleEditMode();
+    }
+};
+const hot = document.querySelector('.edit-hotzone'), tog = document.getElementById('editToggle');
+let hideT = null;
+const hideLater = () => hideT = setTimeout(() => { if (!editor.isActive) tog.classList.remove('show'); }, 400);
+hot.addEventListener('mouseenter', () => { clearTimeout(hideT); tog.classList.add('show'); });
+hot.addEventListener('mouseleave', hideLater);
+tog.addEventListener('mouseenter', () => clearTimeout(hideT));
+tog.addEventListener('mouseleave', hideLater);
+tog.addEventListener('click', () => editor.toggleEditMode());
+hot.addEventListener('click', () => editor.toggleEditMode());
+document.getElementById('saveBtn').addEventListener('click', () => editor.save());
+addEventListener('keydown', e => {
+    if (e.target.getAttribute && e.target.getAttribute('contenteditable')) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); editor.save(); }
+        return;
+    }
+    if (e.key === 'e' || e.key === 'E') editor.toggleEditMode();
+});
+</script>
+</body>
+</html>
