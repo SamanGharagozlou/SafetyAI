@@ -79,6 +79,60 @@ button.go.risk{background:#2a1414;border-color:#5a2222;color:var(--red)}
 svg.plan{display:block;width:100%;height:auto;background:#0a0f15}
 svg.plan text{font-family:ui-monospace,Menlo,monospace;fill:var(--dim)}
 svg.plan text.nm{fill:var(--ink)}
+/* -- trace view --
+   Modelled on tools/robot-face/debug.html: the eye is drawn to the GAP, not
+   to the event, because "it was slow" is only actionable once you know which
+   step was slow. Same 1s/3s colour thresholds as that page, so a person
+   moving between the two reads them the same way. */
+.stats{display:flex;gap:10px;padding:12px;flex-wrap:wrap}
+.stat{flex:1;min-width:132px;border:1px solid var(--line);border-radius:5px;padding:9px 11px;background:#0e141b}
+.stat .n{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.stat .v{font-size:19px;margin-top:3px;font-variant-numeric:tabular-nums}
+.stat .s{font-size:10px;color:var(--dim);margin-top:1px}
+.turn{border:1px solid var(--line);border-left:3px solid var(--violet);border-radius:5px;
+  margin:8px 12px;padding:10px 12px;background:#0e141b}
+.turn.denied{border-left-color:var(--red)}.turn.breached{border-left-color:var(--amber)}
+.turn.done{border-left-color:var(--green)}.turn.watching{border-left-color:var(--dim);border-left-style:dashed}
+.turn .hd{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}
+.turn .hd .q{color:var(--ink);flex:1;min-width:200px}
+.wf{display:flex;gap:2px;margin:8px 0 4px;height:22px}
+.wf .seg{border-radius:2px;display:flex;align-items:center;justify-content:center;
+  font-size:9px;overflow:hidden;white-space:nowrap;min-width:3px;color:#06090d;font-weight:600}
+.wf .seg.fast{background:var(--green)}.wf .seg.slow{background:var(--amber)}
+.wf .seg.vslow{background:var(--red)}.wf .seg.nil{background:#2a3542;color:var(--dim)}
+.wfk{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--dim)}
+.wfk b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+table.pv{width:100%;border-collapse:collapse;font-size:11px;margin-top:9px;
+  font-variant-numeric:tabular-nums}
+table.pv th{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
+  text-align:right;padding:3px 7px;font-weight:400;border-bottom:1px solid var(--line)}
+table.pv th:first-child{text-align:left}
+table.pv td{padding:3px 7px;border-bottom:1px solid #18202a;text-align:right}
+table.pv td:first-child{text-align:left;color:var(--dim)}
+table.pv td.z{color:var(--green)}table.pv td.z.hi{color:var(--red)}
+table.pv td.un{color:var(--amber);text-align:left}
+.why{font-size:10px;color:var(--dim);margin-top:5px;line-height:1.5}
+/* the river. Monospace columns so the gap column can be scanned vertically. */
+table.rv{width:100%;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums}
+table.rv th{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
+  text-align:left;padding:5px 6px;border-bottom:1px solid var(--line);font-weight:400}
+table.rv td{padding:3px 6px;border-bottom:1px solid #141b24;vertical-align:top}
+table.rv tr{cursor:pointer}table.rv tr:hover td{background:#141b24}
+table.rv tr.sel td{background:#16222c}
+td.g{text-align:right;color:var(--dim);width:60px}
+td.g.slow{color:var(--amber);font-weight:600}td.g.vslow{color:var(--red);font-weight:600}
+td.kd{width:84px}td.ac{width:62px;color:var(--dim)}td.cr{width:58px;color:var(--dim);font-size:10px}
+td.dt{color:var(--ink);word-break:break-word}
+.k-utterance{color:var(--cyan)}.k-intent{color:var(--violet)}.k-prediction{color:#7fb3ff}
+.k-decision{color:var(--green)}.k-command{color:var(--ink)}.k-outcome{color:var(--green)}
+.k-breach{color:var(--red)}.k-integrity{color:var(--amber)}.k-policy{color:var(--amber)}
+.k-state{color:var(--dim)}.k-intervention{color:var(--amber)}
+.skew{color:var(--amber);font-size:9px}
+.filt{display:flex;gap:8px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--line);
+  font-size:11px;color:var(--dim);flex-wrap:wrap}
+.filt button{background:none;border:1px solid var(--line);color:var(--dim);font:inherit;
+  font-size:10px;padding:2px 8px;border-radius:3px;cursor:pointer}
+.filt button.on{border-color:var(--cyan);color:var(--cyan)}
 </style>
 
 <header>
@@ -88,11 +142,12 @@ svg.plan text.nm{fill:var(--ink)}
   <span class="badge" id="cosmos">cosmos <b>—</b></span>
   <span class="sp"></span>
   <button class="tab on" data-v="live">Live</button>
+  <button class="tab" data-v="trace">Trace</button>
   <button class="tab" data-v="guard">Guardrails</button>
   <span class="badge" id="run">—</span>
 </header>
 
-<main>
+<main id="lview">
   <div>
     <section>
       <h2>Authority pipeline · who acts, and are they still talking</h2>
@@ -122,6 +177,48 @@ svg.plan text.nm{fill:var(--ink)}
     <section style="margin-top:14px" id="compwrap" hidden>
       <h2>Reporting clocks · evidence, not a certificate</h2>
       <div id="compliance"></div>
+    </section>
+  </div>
+</main>
+
+<main id="tview" hidden style="grid-template-columns:1fr 520px">
+  <div>
+    <section>
+      <h2>Where the time goes · and what oversight costs</h2>
+      <div class="stats" id="tstats"></div>
+      <p class="note" style="border-top:1px solid var(--line);padding-top:9px">
+        <b>guest &rarr; moving</b> is what a person standing next to the robot experiences:
+        from the end of their sentence to the command leaving the gate. <b>oversight</b> is
+        the slice of that this control plane is responsible for — intent recorded, future
+        predicted, verdict given. If the two are far apart, the delay is the voice stack or
+        the robot, not the governing.
+      </p>
+    </section>
+    <section style="margin-top:14px">
+      <h2>Turn by turn · intended &rarr; predicted &rarr; judged &rarr; done</h2>
+      <div class="filt" id="tfilt"></div>
+      <div id="turns" style="max-height:72vh;overflow:auto">
+        <div class="empty">waiting for the first tool call…</div>
+      </div>
+    </section>
+  </div>
+  <div>
+    <section>
+      <h2>Event river · the ledger as it is written</h2>
+      <div class="filt">
+        <span>show</span>
+        <button data-f="state">state samples</button>
+        <button data-f="skew" class="on">clock skew</button>
+        <span class="sp" style="flex:1"></span>
+        <span id="rvn"></span>
+      </div>
+      <div style="max-height:78vh;overflow:auto">
+        <table class="rv">
+          <thead><tr><th>time</th><th style="text-align:right">+gap</th><th>kind</th>
+            <th>actor</th><th>corr</th><th>what</th></tr></thead>
+          <tbody id="river"><tr><td colspan="6" class="empty">no events yet</td></tr></tbody>
+        </table>
+      </div>
     </section>
   </div>
 </main>
@@ -172,15 +269,30 @@ function fold(ev) {
   const c = ev.corr; if (!c) return;
   const a = acts.get(c) || { corr: c, t: ev.ts };
   const d = ev.data || {};
-  if (ev.kind === 'utterance')    { a.asked = d.text; a.lang = d.lang; a.askedAge = d.age_s; }
+  // Stage clocks, for the Trace view. First stamp wins: a second `prediction`
+  // is the world model arriving, not the kinematic one happening again.
+  const st = a.st = a.st || {};
+  const stamp = k => { if (st[k] == null) st[k] = ev.ts; };
+  if (ev.kind === 'utterance')    { a.asked = d.text; a.lang = d.lang; a.askedAge = d.age_s;
+                                    // The sentence is re-entered at command time, so its own
+                                    // ts is not when it was said. `age_s` is, and placing the
+                                    // stage by it is the difference between measuring the
+                                    // guest's wait and measuring our own bookkeeping.
+                                    if (d.age_s != null) st.heard = ev.ts - d.age_s; }
   if (ev.kind === 'intent')       { a.tool = d.tool; a.args = d.args; a.t = ev.ts;
-                                    a.speechSeen = d.speech_seen; }
-  if (ev.kind === 'prediction')   { (a.preds = a.preds || []).push(d); }
-  if (ev.kind === 'decision')     { a.decision = d.decision; a.reason = d.reason; }
-  if (ev.kind === 'intervention') { a.by = d.by; a.human = d.decision; a.hts = ev.ts; }
-  if (ev.kind === 'command')      { a.sent = true; }
-  if (ev.kind === 'outcome')      { a.out = d; }
+                                    a.speechSeen = d.speech_seen; a.src = d.source;
+                                    stamp('intent'); }
+  if (ev.kind === 'prediction')   { (a.preds = a.preds || []).push(d);
+                                    if (d.basis !== 'cosmos') stamp('kin');
+                                    else if (!d.skipped) stamp('cos'); }
+  if (ev.kind === 'decision')     { a.decision = d.decision; a.reason = d.reason;
+                                    a.enforced = d.enforced; stamp('gate'); }
+  if (ev.kind === 'intervention') { a.by = d.by; a.human = d.decision; a.hts = ev.ts;
+                                    stamp('human'); }
+  if (ev.kind === 'command')      { a.sent = true; stamp('sent'); }
+  if (ev.kind === 'outcome')      { a.out = d; stamp('done'); }
   if (ev.kind === 'breach')       { (a.breaches = a.breaches || []).push(d); }
+  if (ev.kind === 'integrity')    { (a.notes = a.notes || []).push(d); }
   acts.set(c, a);
 }
 
@@ -257,12 +369,16 @@ function foldVoice(ev) {
 }
 
 function renderState(s) {
+  BODY = s.body;
   $('body').innerHTML = `body <b>${esc(s.body)}</b>`;
   $('run').innerHTML = `<b>${esc(s.robot_id)}</b> · ${esc(s.run_id)}`;
   const ch = $('chain');
   ch.className = 'badge ' + (s.chain.ok ? 'ok' : 'bad');
-  ch.innerHTML = s.chain.ok ? `chain <b>intact · ${s.chain.count}</b>`
-                            : `chain <b>BROKEN at ${s.chain.broken_at}</b>`;
+  const age = s.chain.checked_age_s;
+  ch.innerHTML = s.chain.ok
+    ? `chain <b>intact · ${s.chain.count}</b>` +
+      (age > 1 ? `<span class="t"> checked ${Math.round(age)}s ago</span>` : '')
+    : `chain <b>BROKEN at ${s.chain.broken_at}</b>`;
   const co = $('cosmos');
   co.className = 'badge ' + (s.cosmos.configured && s.cosmos.enabled ? 'ok' : 'warn');
   co.innerHTML = `cosmos <b>${s.cosmos.configured ? (s.cosmos.enabled ? 'judging' : 'configured, off') : 'not configured'}</b>`;
@@ -307,7 +423,8 @@ function renderState(s) {
 
 new EventSource('/api/events').onmessage = e => {
   const ev = JSON.parse(e.data);
-  fold(ev); foldVoice(ev); renderLedger();
+  if (!fresh(ev)) return;
+  fold(ev); foldVoice(ev); foldRiver(ev); renderLedger(); bumpTrace();
 };
 const poll = () => fetch('/api/state').then(r => r.json()).then(renderState).catch(() => {});
 poll(); setInterval(poll, 1000);
@@ -324,12 +441,13 @@ poll(); setInterval(poll, 1000);
 let VENUE = null;
 const EDITS = new Map();              // "zones.x.speed_cap" -> {path, value}
 
+const VIEWS = { live: 'lview', trace: 'tview', guard: 'gview' };
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   document.querySelectorAll('.tab').forEach(o => o.classList.toggle('on', o === t));
-  const g = t.dataset.v === 'guard';
-  document.querySelector('main').hidden = g;
-  $('gview').hidden = !g;
-  if (g && !VENUE) loadVenue();
+  const v = t.dataset.v;
+  for (const [k, id] of Object.entries(VIEWS)) $(id).hidden = k !== v;
+  if (v === 'guard' && !VENUE) loadVenue();
+  if (v === 'trace') { backfill(); renderTrace(); }
 });
 
 function loadVenue() {
@@ -543,5 +661,334 @@ function renderPending() {
       };
     }).catch(() => { box.innerHTML = '<div class="empty">could not check the change</div>'; });
   }, 220);
+}
+
+/* ===================== TRACE =========================================
+   The Live view answers "what is the latest state of each action". This one
+   answers the two questions that cannot be read off that: WHERE DID THE TIME
+   GO, and WAS THE PREDICTION ANY GOOD.
+
+   Built the same way as tools/robot-face/debug.html, deliberately: that page
+   is already how this robot gets debugged, and it is built around the gap
+   rather than the event, because "it was slow" is unactionable until you know
+   which step was slow. Same 1s / 3s colour thresholds, so somebody moving
+   between the two pages reads them identically.
+
+   What this view adds over that one is the half the greeter cannot see: the
+   prediction made BEFORE the robot moved, and the measured deviation from it.
+   A control plane that only recorded what happened would be a logger; the
+   claim being evidenced here is "intention vs action", and intention has to
+   be written down first to be worth anything afterwards.
+   ===================================================================== */
+const river = [];                      // raw ledger events, oldest first
+const seenSeq = new Set();
+let rvState = false, rvSkew = true, pickCorr = '', backfilled = false;
+let BODY = '';                         // which calibration profile this run uses
+
+const f2 = v => v == null ? '?' : (+v).toFixed(2);
+const dur = s => s == null ? '—'
+  : s >= 10 ? s.toFixed(1) + 's' : s >= 1 ? s.toFixed(2) + 's' : Math.round(s * 1000) + 'ms';
+const band = s => s > 3 ? 'vslow' : s > 1 ? 'slow' : 'fast';
+const argstr = a => a && Object.keys(a).length ? esc(JSON.stringify(a)) : '';
+const med = xs => { if (!xs.length) return null;
+  const v = [...xs].sort((a, b) => a - b); const h = v.length >> 1;
+  return v.length % 2 ? v[h] : (v[h - 1] + v[h]) / 2; };
+
+/* The SSE replay and the trace backfill deliberately overlap, so the same
+   event arrives twice and `fold` appends to lists - every breach was being
+   listed twice on its card. One guard in front of all the folding.
+   State samples are exempt: they are never backfilled, so they cannot double,
+   and at 2 Hz they would be the only thing in this set. */
+function fresh(ev) {
+  if (ev.kind === 'state' || ev.seq == null) return true;
+  if (seenSeq.has(ev.seq)) return false;
+  seenSeq.add(ev.seq);
+  return true;
+}
+
+function foldRiver(ev) {
+  river.push(ev);
+  while (river.length > 900) river.shift();
+}
+
+/* The SSE replay carries 80 actions, which is the right budget for a live
+   panel and too short a history for a trace. Fetched once, when the view is
+   first opened, so a dashboard sitting on the Live tab costs nothing - the
+   ledger is read whole on the robot to answer this, and the Orin is not idle. */
+function backfill() {
+  if (backfilled) return;
+  backfilled = true;
+  fetch('/api/ledger?limit=600&skip=state').then(r => r.json()).then(d => {
+    (d.events || []).filter(fresh).forEach(ev => { fold(ev); foldRiver(ev); });
+    river.sort((a, b) => a.seq - b.seq);               // a batch landing after live events
+    renderTrace(); renderLedger();
+  }).catch(() => {});
+}
+
+/* The stages of one action, in the order they must happen. The label on each
+   is the meaning of the gap ENDING there - the wait before `intent` is the
+   voice stack thinking, the wait before `done` is the robot moving. */
+const STAGES = [
+  ['heard',  'guest spoke', 'placed by the age Vapi reported for the sentence, not by when we filed it'],
+  ['intent', 'transcribe + think', 'endpointing, STT settling, and the model deciding to move the robot'],
+  ['kin',    'predict', 'the kinematic forward model: where this command puts the robot'],
+  ['cos',    'world model', 'Cosmos looking at the scene and answering whether that is safe'],
+  ['gate',   'verdict', 'allow or deny'],
+  ['sent',   'dispatch', 'handing the command to the edge'],
+  ['done',   'robot', 'the robot actually executing it'],
+];
+
+function segs(a) {
+  const st = a.st || {};
+  const pts = STAGES.filter(([k]) => st[k] != null)
+                    .map(([k, label, why]) => ({ k, label, why, t: st[k] }));
+  const out = [];
+  for (let i = 1; i < pts.length; i++)
+    out.push({ ...pts[i], d: Math.max(0, pts[i].t - pts[i - 1].t) });
+  return out;
+}
+
+function waterfall(a) {
+  const ss = segs(a);
+  if (!ss.length) return '';
+  const total = ss.reduce((t, s) => t + s.d, 0);
+  const bars = ss.map(s => {
+    const pct = total > 0 ? (s.d / total) * 100 : 100 / ss.length;
+    const cls = total > 0 && s.d / total < 0.04 ? 'nil' : band(s.d);
+    return `<div class="seg ${cls}" style="flex:0 0 ${pct.toFixed(2)}%" ` +
+           `title="${esc(s.label)}: ${esc(s.why)}">${pct > 9 ? dur(s.d) : ''}</div>`;
+  }).join('');
+  const keys = ss.map(s => `<span>${esc(s.label)} <b>${dur(s.d)}</b></span>`).join('');
+  return `<div class="wf">${bars}</div><div class="wfk">${keys}` +
+         `<span style="margin-left:auto">total <b>${dur(total)}</b></span></div>`;
+}
+
+/* Predicted vs actual, side by side, with the sigma AND whether it was scored
+   at all. `null` deviation is not a pass: it means nothing was comparable,
+   which is a finding about the instrumentation rather than about the robot. */
+function predVsActual(a) {
+  const kin = (a.preds || []).find(p => p.basis === 'kinematic');
+  if (!kin) return a.tool
+    ? `<div class="why">no prediction was made — <code>${esc(a.tool)}</code> is ungated, so there was nothing to forecast or score</div>` : '';
+  const o = a.out || null;
+  const pp = kin.end_pose || [], ap = o && Array.isArray(o.end_pose) ? o.end_pose : null;
+  const z = (v, scored) => scored
+    ? `<td class="z ${v >= 3 ? 'hi' : ''}">${v == null ? '—' : v + 'σ'}</td>`
+    : '<td class="un">not scored</td>';
+  const rows = [
+    ['end pose', `x ${f2(pp[0])}  y ${f2(pp[1])}`,
+      ap && ap[0] != null ? `x ${f2(ap[0])}  y ${f2(ap[1])}` : '<span class="t">no pose</span>',
+      o && o.position_error_m != null ? o.position_error_m + ' m' : '—',
+      z(o && o.z_position, !!(o && o.position_scored))],
+    ['duration', kin.duration_s + ' s', o ? o.duration_s + ' s' : '—',
+      o && o.duration_error_s != null ? o.duration_error_s + ' s' : '—',
+      z(o && o.z_duration, !!(o && o.duration_scored))],
+  ];
+  const head = `<table class="pv"><tr><th>forecast</th><th>predicted</th><th>actual</th>` +
+               `<th>&Delta;</th><th>deviation</th></tr>`;
+  const body = rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td>` +
+                             `<td>${r[3]}</td>${r[4]}</tr>`).join('');
+  const facts = [
+    `distance <b>${kin.distance_m} m</b>`,
+    kin.zones_crossed && kin.zones_crossed.length
+      ? `zones <b>${kin.zones_crossed.map(esc).join(' → ')}</b>` : null,
+    `confidence <b>${kin.confidence}</b>`,
+    o && o.deviation_z != null
+      ? `worst <b style="color:${o.deviation_z >= 3 ? 'var(--red)' : 'var(--green)'}">${o.deviation_z}σ</b>`
+      : (o ? '<b style="color:var(--amber)">unverified</b>' : null),
+  ].filter(Boolean).join(' · ');
+  const why = [];
+  if (o && !o.position_scored)
+    why.push('Position was not scored: the robot published no odometry for this action, so "where it ended up" is unknown rather than correct.');
+  if (o && !o.duration_scored)
+    why.push('Duration was not scored: the <code>' + esc(BODY || 'body') + '</code> profile is not calibrated, so the predicted duration is a guess and scoring against it would manufacture anomalies.');
+  if (kin.predicted_breach)
+    why.push('The forecast itself broke a rule before anything moved: ' + esc(kin.reason));
+  return head + body + '</table>' +
+    `<div class="wfk" style="margin-top:6px">${facts}</div>` +
+    (why.length ? `<div class="why">${why.join(' ')}</div>` : '');
+}
+
+function cosmosLine(a) {
+  const c = (a.preds || []).find(p => p.basis === 'cosmos');
+  if (!c) return '';
+  if (c.skipped) return `<div class="why">world model not asked — ${esc(c.reason)}</div>`;
+  if (!c.available) return `<div class="why" style="color:var(--amber)">world model unavailable — ${esc(c.reason || 'no reason given')}</div>`;
+  const v = c.contradiction
+    ? `<span style="color:var(--red)">unsafe (self-contradictory: flags said clear, reasoning did not)</span>`
+    : c.unsafe ? '<span style="color:var(--red)">unsafe</span>' : '<span style="color:var(--green)">clear</span>';
+  return `<div class="why">world model ${v} in ${c.latency_s}s — ${esc(c.reason || '')}</div>`;
+}
+
+function renderTurns() {
+  let list = [...acts.values()].sort((x, y) => y.t - x.t);
+  if (pickCorr) list = list.filter(a => a.corr === pickCorr);
+  list = list.slice(0, 20);
+  $('tfilt').innerHTML = pickCorr
+    ? `<span>one turn · <b style="color:var(--cyan)">${esc(pickCorr)}</b></span>` +
+      `<button id="tclear" class="on">show all</button>`
+    : `<span>${acts.size} action${acts.size === 1 ? '' : 's'} recorded · newest first` +
+      `<span class="t"> · click a row in the river to isolate one</span></span>`;
+  if ($('tclear')) $('tclear').onclick = () => { pickCorr = ''; renderTrace(); };
+
+  if (!list.length) {
+    $('turns').innerHTML = '<div class="empty">no actions recorded yet — the ledger has telemetry but no tool calls</div>';
+    return;
+  }
+  $('turns').innerHTML = list.map(a => {
+    const cls = a.enforced === false ? 'watching'
+      : a.decision === 'deny' ? 'denied' : a.breaches?.length ? 'breached' : a.out ? 'done' : '';
+    const verdict = !a.decision ? `<span class="dir">in flight</span>`
+      : a.enforced === false
+        ? (a.decision === 'deny'
+            ? `<span class="dir loosen">would have refused</span>`
+            : `<span class="dir">not enforced</span>`)
+        : a.decision === 'deny'
+          ? `<span class="dir loosen">denied</span>`
+          : `<span class="dir tighten">allowed</span>`;
+    const head = `<div class="hd"><span class="t">${clock(a.t)}</span>` +
+      `<span class="tool">${esc(a.tool || 'unknown tool')}</span>` +
+      `<span class="t">${argstr(a.args)}</span>${verdict}` +
+      (a.src ? `<span class="t">via ${esc(a.src)}</span>` : '') +
+      `<span class="q">${a.asked ? '“' + esc(a.asked) + '”' : '<span class="t">no sentence bound to this command</span>'}</span>` +
+      `<span class="t">${esc(a.corr)}</span></div>`;
+    const watch = a.enforced === false
+      ? `<div class="why" style="color:var(--amber)">Watching only: the edge ran this and reported it afterwards, so the verdict above is an opinion, not a control. It could not have stopped this.</div>`
+      : '';
+    const deny = a.decision === 'deny' ? `<div class="why" style="color:var(--red)">refused — ${esc(a.reason)}</div>` : '';
+    const notes = (a.notes || []).map(n =>
+      `<div class="why" style="color:var(--amber)">${esc(n.event)} — ${esc(n.detail || '')}</div>`).join('');
+    const brs = (a.breaches || []).map(b =>
+      `<div class="why" style="color:var(--red)">breach · ${esc(b.rule)} — ${esc(b.detail)}</div>`).join('');
+    return `<div class="turn ${cls}">${head}${waterfall(a)}${predVsActual(a)}` +
+           `${cosmosLine(a)}${deny}${watch}${notes}${brs}</div>`;
+  }).join('');
+}
+
+function riverDetail(ev) {
+  const d = ev.data || {};
+  switch (ev.kind) {
+    case 'utterance':
+      return (d.text ? '“' + esc(d.text) + '”' : esc(d.type || 'voice event')) +
+        (d.replayed ? ' <span class="t">(re-entered against this action)</span>' : '');
+    case 'intent':
+      return `<span class="tool">${esc(d.tool)}</span> ${argstr(d.args)}` +
+        (d.source ? ` <span class="t">via ${esc(d.source)}</span>` : '');
+    case 'prediction':
+      if (d.basis === 'cosmos')
+        return d.skipped ? `<span class="t">cosmos not asked — ${esc(d.reason)}</span>`
+          : d.available
+            ? `cosmos ${d.unsafe ? '<span style="color:var(--red)">unsafe</span>'
+                                 : '<span style="color:var(--green)">clear</span>'}` +
+              ` <span class="t">${esc(d.reason || '')} · ${d.latency_s}s</span>`
+            : `<span style="color:var(--amber)">cosmos unavailable</span> <span class="t">${esc(d.reason || '')}</span>`;
+      return `→ x ${f2((d.end_pose || [])[0])} y ${f2((d.end_pose || [])[1])}` +
+        ` <span class="t">${d.duration_s}s · ${d.distance_m}m</span>` +
+        (d.predicted_breach ? ` <span style="color:var(--red)">BREACH ${esc(d.reason)}</span>` : '');
+    case 'decision':
+      return (d.decision === 'deny'
+        ? `<span style="color:var(--red)">DENY</span> ${esc(d.reason)}`
+        : '<span style="color:var(--green)">allow</span>') +
+        (d.enforced === false ? ' <span style="color:var(--amber)">· watching only</span>' : '');
+    case 'command':  return `sent <span class="tool">${esc(d.tool)}</span>`;
+    case 'outcome':
+      return `${d.duration_s}s · ` +
+        (d.deviation_z == null ? '<span style="color:var(--amber)">unverified</span>'
+                               : `<b style="color:${d.deviation_z >= 3 ? 'var(--red)' : 'var(--green)'}">${d.deviation_z}σ</b>`) +
+        (d.error ? ` <span style="color:var(--red)">${esc(d.error)}</span>` : '');
+    case 'state':
+      return d.has_pose
+        ? `x ${f2(d.x)} y ${f2(d.y)} yaw ${f2(d.yaw)}${d.moving ? ' · moving' : ''}` +
+          (d.battery_pct != null ? ` · ${d.battery_pct}%` : '')
+        : `<span class="t">${d.source || 'bridge'} · ${d.connected === false ? 'robot not connected' : (d.moving ? 'moving' : 'still')}` +
+          `${d.battery_pct != null ? ' · ' + d.battery_pct + '%' : ''}${d.zone ? ' · ' + esc(d.zone) : ''}</span>`;
+    case 'breach':   return `<span style="color:var(--red)">${esc(d.rule)}</span> ${esc(d.detail)}`;
+    case 'integrity': return `${esc(d.event)} <span class="t">${esc(d.detail || d.error || '')}</span>`;
+    case 'intervention': return `<span style="color:var(--amber)">${esc(d.by)} tapped ${esc(String(d.decision)).toUpperCase()}</span>`;
+    case 'policy':
+      return `<span style="color:var(--amber)">${esc(d.event)}</span> by ${esc(d.by || '?')} · ` +
+        (d.changes || []).map(c => `${esc(c.key || c.path)} ${esc(String(c.before))}→${esc(String(c.after))}` +
+          ` <span class="dir ${esc(c.direction)}">${esc(c.direction)}</span>`).join(', ');
+  }
+  return `<span class="t">${esc(JSON.stringify(d).slice(0, 140))}</span>`;
+}
+function renderRiver() {
+  const rows = river.filter(e => rvState || e.kind !== 'state');
+  $('rvn').textContent = rows.length + ' of ' + river.length + ' events';
+  const view = rows.slice(-220).reverse();
+  if (!view.length) {
+    $('river').innerHTML = '<tr><td colspan="6" class="empty">no events yet</td></tr>';
+    return;
+  }
+  // The gap is measured against the row ABOVE IT IN THIS TABLE, not against
+  // the previous ledger line. With state samples hidden, a gap taken from the
+  // hidden neighbour would read 0.5s on a row that actually followed 30s of
+  // silence - the one number on this page people will act on, quietly wrong.
+  $('river').innerHTML = view.map((e, i) => {
+    const prev = view[i + 1];
+    const gap = prev ? e.ts - prev.ts : 0;
+    const sel = pickCorr && e.corr === pickCorr ? ' class="sel"' : '';
+    return `<tr${sel} data-c="${esc(e.corr || '')}">` +
+      `<td>${clock(e.ts)}</td>` +
+      `<td class="g ${gap ? band(gap) : ''}">${gap ? '+' + dur(gap) : ''}</td>` +
+      `<td class="kd k-${esc(e.kind)}">${esc(e.kind)}</td>` +
+      `<td class="ac">${esc(e.actor)}` +
+        (rvSkew && e.skew_s != null && Math.abs(e.skew_s) > 1
+          ? `<div class="skew">skew ${e.skew_s}s</div>` : '') + `</td>` +
+      `<td class="cr">${esc((e.corr || '').slice(-6))}</td>` +
+      `<td class="dt">${riverDetail(e)}</td></tr>`;
+  }).join('');
+  $('river').querySelectorAll('tr[data-c]').forEach(tr => tr.onclick = () => {
+    const c = tr.dataset.c;
+    pickCorr = (c && c !== pickCorr) ? c : '';
+    renderTrace();
+  });
+}
+
+function renderStats() {
+  const all = [...acts.values()];
+  const waits = [], over = [], devs = [];
+  for (const a of all) {
+    const st = a.st || {};
+    if (st.heard != null && st.sent != null) waits.push(st.sent - st.heard);
+    if (st.intent != null && st.gate != null) over.push(st.gate - st.intent);
+    if (a.out && a.out.deviation_z != null) devs.push(a.out.deviation_z);
+  }
+  const denied = all.filter(a => a.decision === 'deny').length;
+  const watching = all.filter(a => a.enforced === false).length;
+  const worst = devs.length ? Math.max(...devs) : null;
+  const unver = all.filter(a => a.out && a.out.deviation_z == null).length;
+  const colour = s => s == null ? 'var(--dim)'
+    : s > 3 ? 'var(--red)' : s > 1 ? 'var(--amber)' : 'var(--green)';
+  const cards = [
+    ['guest → moving', waits.length ? dur(waits.at(-1)) : '—', colour(waits.at(-1)),
+      waits.length ? `median ${dur(med(waits))} over ${waits.length}` : 'no sentence bound to a command yet'],
+    ['oversight', over.length ? dur(over.at(-1)) : '—', colour(over.at(-1)),
+      over.length ? `median ${dur(med(over))} · intent → verdict` : 'no verdict recorded yet'],
+    ['worst deviation', worst == null ? '—' : worst + 'σ',
+      worst == null ? 'var(--dim)' : worst >= 3 ? 'var(--red)' : 'var(--green)',
+      devs.length ? `${devs.length} scored · ${unver} unverified` : `${unver} unverified, none scored`],
+    ['actions', String(acts.size), 'var(--ink)',
+      `${denied} denied · ${watching} watched only`],
+  ];
+  $('tstats').innerHTML = cards.map(([n, v, c, s]) =>
+    `<div class="stat"><div class="n">${n}</div>` +
+    `<div class="v" style="color:${c}">${v}</div><div class="s">${s}</div></div>`).join('');
+}
+
+function renderTrace() { renderStats(); renderTurns(); renderRiver(); }
+
+document.querySelectorAll('.filt button[data-f]').forEach(b => b.onclick = () => {
+  if (b.dataset.f === 'state') rvState = !rvState, b.classList.toggle('on', rvState);
+  if (b.dataset.f === 'skew')  rvSkew = !rvSkew,  b.classList.toggle('on', rvSkew);
+  renderRiver();
+});
+
+/* Coalesced: state samples arrive at 2 Hz and a full re-render per event is
+   wasted work on a Jetson-served page that is already redrawing the Live view. */
+let tpend = 0;
+function bumpTrace() {
+  if ($('tview').hidden || tpend) return;
+  tpend = setTimeout(() => { tpend = 0; renderTrace(); }, 200);
 }
 </script>

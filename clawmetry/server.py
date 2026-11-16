@@ -125,6 +125,7 @@ class Hub:
         self.breaches: list[dict] = []
         self.sources: dict = {}
         self._n = 0
+        self._pack: tuple = (0.0, None)      # cached compliance pack, see snapshot()
         self.last_said: dict | None = None   # newest guest transcript, for attribution
         self._voice_dropped = 0              # partials and chatter: counted, not stored
         self._apply_venue()
@@ -785,12 +786,23 @@ class Hub:
         }
 
     def snapshot(self) -> dict:
+        """The 1 Hz dashboard poll. Everything here is O(1) or cached.
+
+        It is read on a loop by a page watching a robot, so anything that
+        walks the ledger belongs behind a cache or an explicit endpoint. The
+        chain check carries its own age so the page can say how fresh it is.
+        """
         now = time.time()
+        pack = (self.comp.evidence_pack(self.led.read(), self.evidence())
+                if self.comp and now - self._pack[0] > 30 else None)
+        if pack:
+            self._pack = (now, pack)
+        pack = self._pack[1]
         return {
             "ts": round(now, 3),
             "run_id": self.led.run_id, "robot_id": self.led.robot_id,
             "body": self.args.body,
-            "chain": self.led.verify(),
+            "chain": self.led.verify(max_age_s=20.0),
             "sources": {k: {**v, "age_s": round(now - v["last_ts"], 1)}
                         for k, v in self.sources.items()},
             "robot": self.last_state,
@@ -801,12 +813,11 @@ class Hub:
             "counts": self._counts(),
             "cosmos": {"configured": self.judge.configured, "enabled": bool(self.args.judge)},
             "compliance": ({"configured": True,
-                            "reportable_open": len([c for c in
-                                self.comp.evidence_pack(self.led.read(), self.evidence())["clocks"]
-                                if not c["overdue"]]),
-                            "overdue": len(self.comp.evidence_pack(
-                                self.led.read(), self.evidence())["overdue"])}
-                           if self.comp else {"configured": False}),
+                            "reportable_open": len([c for c in pack["clocks"]
+                                                    if not c["overdue"]]),
+                            "overdue": len(pack["overdue"]),
+                            "checked_age_s": round(now - self._pack[0], 1)}
+                           if pack else {"configured": bool(self.comp)}),
             "venue": ({"name": self.venue.name, "area": self.venue.area,
                        "signed": self.venue.signed, "signed_by": self.venue.signed_off_by,
                        "zones": len(self.venue.zones),
@@ -816,10 +827,9 @@ class Hub:
         }
 
     def _counts(self) -> dict:
-        c: dict = {}
-        for ev in self.led.read():
-            c[ev["kind"]] = c.get(ev["kind"], 0) + 1
-        return c
+        # The ledger counts as it writes; re-reading 10 MB of JSON once a
+        # second to produce nine integers is what this replaced.
+        return dict(self.led.counts)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -884,7 +894,19 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/state":
             return self._json(200, self.hub.snapshot())
         if p == "/api/ledger":
-            return self._json(200, {"events": self.hub.led.read(limit=300)})
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                limit = int((q.get("limit") or ["300"])[0])
+            except ValueError:
+                return self._json(400, {"error": "limit must be a number"})
+            limit = max(1, min(limit, 2000))
+            # `skip=state` is the difference between a trace and a heartbeat.
+            # State samples arrive at 2 Hz, so an unfiltered tail of 400 is
+            # three minutes of telemetry carrying none of the decisions - the
+            # same reason the SSE replay sends actions and one state sample.
+            skip = {k for k in (q.get("skip") or [""])[0].split(",") if k}
+            evs = [e for e in self.hub.led.read() if e["kind"] not in skip]
+            return self._json(200, {"events": evs[-limit:], "skipped": sorted(skip)})
         if p == "/api/verify":
             return self._json(200, self.hub.led.verify())
         if p == "/api/compliance":

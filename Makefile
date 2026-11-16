@@ -10,6 +10,9 @@
 #   make down | make logs | make shell | make test
 #   On a Jetson the same commands use the GPU image (default source=d1-camera, detector_gpu).
 #
+#   make audit-secrets                   scan the repo for committed credentials
+#   make install-hooks                   run that scan on every commit (opt-in)
+#
 # Variables (all optional):
 #   rviz=false|true        start rviz2 (default false)
 #   source=webcam          webcam | d1-wifi | d1-ethernet | d1-camera | rtsp | file | wsl-webcam
@@ -104,7 +107,7 @@ COMPOSE_ENV = $(JETSON_ENV) SOURCE_TYPE='$(SOURCE_TYPE)' WEBCAM_DEVICE='$(webcam
 	MODEL_NAME='$(model)' DEVICE='$(device)' RVIZ='$(rviz)' DISPLAY='$(display)' \
 	ROS_DOMAIN_ID='$(domain)' FOLLOW='$(follow)' AUTO_LOCK='$(auto_lock)' EMBEDDER='$(embedder)'
 
-.PHONY: help build up down restart logs shell test
+.PHONY: help build up down restart logs shell test audit-secrets install-hooks
 
 help:
 	@sed -n '1,36p' Makefile | grep '^#' | sed 's/^# \{0,1\}//'
@@ -142,3 +145,12 @@ test:
 		 --event-handlers console_direct- >/dev/null && source install/setup.bash && \
 		 ROS_DOMAIN_ID=77 colcon test --packages-select human_perception d1_follow --event-handlers console_direct- --pytest-args -p no:anyio >/dev/null; \
 		 colcon test-result --verbose'
+
+# Credential hygiene. Needs no Docker, no ROS and no network, so it is the one
+# check that always runs: see scripts/audit_secrets.py for what it looks for
+# and what it deliberately cannot prove.
+audit-secrets:
+	@python3 scripts/audit_secrets.py
+
+install-hooks:
+	@scripts/install-git-hooks.sh
