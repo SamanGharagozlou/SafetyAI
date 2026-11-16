@@ -74,6 +74,10 @@ img, video, canvas, svg { max-width: 100%; max-height: 100%; }
     .slide:last-child { break-after: auto; page-break-after: auto; }
     .deck-controls, .progress, .notes-panel, .edit-hotzone, .edit-toggle, .save-btn { display: none !important; }
     .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+    .slide { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* PDF: no player, so the demo slide carries a clickable link instead of the click hint */
+    .s-demo .yt, .s-demo .demo-hit, .s-demo .hint { display: none !important; }
+    .s-demo .vlink { display: block !important; }
 }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.2s !important; }
@@ -222,6 +226,9 @@ body { font-family: var(--font-body); color: var(--text); }
 .s-demo .hint { display: none; position: absolute; left: 0; right: 0; top: 760px; text-align: center; font-size: 26px; font-weight: 600;
     letter-spacing: .16em; text-transform: uppercase; color: var(--mist); }
 .s-demo.no-embed .hint { display: block; }
+.s-demo .vlink { display: none; position: absolute; left: 0; right: 0; top: 760px; text-align: center; font-size: 30px; font-weight: 600;
+    letter-spacing: .06em; color: var(--mist); }
+.s-demo .vlink a { color: var(--text); text-decoration: none; border-bottom: 3px solid var(--accent); padding-bottom: 2px; }
 .s-demo .word { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     font-weight: 800; font-size: 260px; letter-spacing: .14em; padding-left: .14em; }
 .s-demo .word span { color: var(--accent); }
@@ -537,6 +544,7 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
             <div class="yt" id="demoYT" data-id="R41dpTOY1Mg"></div>
         </div>
         <p class="hint" id="demoHint">Click to watch the demo on YouTube</p>
+        <p class="vlink">Watch the demo · <a href="https://youtu.be/R41dpTOY1Mg">youtu.be/R41dpTOY1Mg</a></p>
         <div class="demo-hit" id="demoHit" title="Click to pause or resume"></div>
 
         <aside class="notes" data-time="0:45">

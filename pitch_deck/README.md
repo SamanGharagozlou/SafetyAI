@@ -73,10 +73,15 @@ untouched. To redo a crop, change the original and regenerate the copy at the sa
   wording matches what the demo shows. If the layer only alerts, change the right panel caption.
 - Run the brief's preflight checklist (section 10) and time the pitch aloud with the real video.
 
-## PDF backup
+## PDF
+
+[sepazu_pitch.pdf](sepazu_pitch.pdf) is committed so reviewers can read the pitch on GitHub. It must match
+`index.html`: regenerate it after every slide change and commit both together.
 
 ```bash
-node pitch_deck/tools/export_pdf.js
+python3 pitch_deck/tools/export_pdf.py        # headless Chrome or Edge, no packages (set CHROME=... if not found)
+node pitch_deck/tools/export_pdf.js           # alternative if Playwright is installed
 ```
 
-This writes `pitch_deck/sepazu_pitch.pdf` (not committed, regenerate after assets land).
+The print layout is the deck's `@media print` CSS: one 1920x1080 page per slide, animations off, and the demo
+slide shows a link to the YouTube video instead of the player.

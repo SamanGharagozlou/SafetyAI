@@ -14,9 +14,10 @@ talk to the robot from their phone, get answers about the facility, and are walk
 The hackathon pitch is a single HTML file, [pitch_deck/index.html](pitch_deck/index.html): 12 slides, fixed 16:9,
 fonts and images bundled, works offline. GitHub shows only its source, so open it one of these ways:
 
+- **PDF, opens right on GitHub:** [pitch_deck/sepazu_pitch.pdf](pitch_deck/sepazu_pitch.pdf), one page per slide;
+  the demo page links to the video.
 - **View online, nothing to install:**
   [raw.githack.com/SamanGharagozlou/SafetyAI/main/pitch_deck/index.html](https://raw.githack.com/SamanGharagozlou/SafetyAI/main/pitch_deck/index.html)
-  (until the branch is merged: [feat/pitch_deck preview](https://raw.githack.com/SamanGharagozlou/SafetyAI/feat/pitch_deck/pitch_deck/index.html))
 - **Open locally:** clone the repo and serve it (needed for the embedded demo video):
 
   ```bash
@@ -27,7 +28,7 @@ fonts and images bundled, works offline. GitHub shows only its source, so open i
   [the demo on YouTube](https://youtu.be/R41dpTOY1Mg) instead of playing it inline.
   For an offline talk, drop the video at `pitch_deck/assets/demo.mp4` and it plays from disk.
 
-- **PDF backup:** `node pitch_deck/tools/export_pdf.js` writes `pitch_deck/sepazu_pitch.pdf` (needs Playwright).
+- **Regenerate the PDF** after any slide change: `python3 pitch_deck/tools/export_pdf.py` (needs only Chrome or Edge).
 
 To present: open it in Chrome or Edge, press F11 for full screen, and click once on the slide.
 

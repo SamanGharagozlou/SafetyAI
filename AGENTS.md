@@ -36,7 +36,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | `deploy/jetson/` | systemd units (bridge, watchdog, console) for the Jetson | in use |
 | `docker/` | `Dockerfile` (PC perception image), `d1-jetson/` (Orin image: Humble + Nav2 + RTAB-Map + PyTorch) | in use |
 | `perception/` | Standalone (non-ROS) YOLO11 test script | legacy/quick test |
-| `pitch_deck/` | Hackathon pitch (Sepazu): single-file HTML deck, photos, demo video slide | presentation-ready; how to open it is in [README.md](README.md#pitch-deck-sepazu) |
+| `pitch_deck/` | Hackathon pitch (Sepazu): single-file HTML deck, photos, demo video slide, committed PDF `sepazu_pitch.pdf` | presentation-ready; how to open it is in [README.md](README.md#pitch-deck-sepazu) |
 | `presentation/` | Separate ClawMetry deck | not the pitch |
 | `third_party/agibot_D1_Edu-Ultra` | Vendor SDK submodule (x86_64 + aarch64 libs) | do not edit |
 
@@ -94,6 +94,9 @@ make build && make up rviz=true            # make help for sources (webcam, d1-w
 
 # Frontend (Node 24)
 cd frontend && npm ci --include=dev && npm run typecheck && npm test && npm run test:e2e
+
+# Pitch deck PDF (headless Chrome or Edge, no packages); commit it with any slide change
+python3 pitch_deck/tools/export_pdf.py
 ```
 
 ## Rules for agents
@@ -113,6 +116,18 @@ cd frontend && npm ci --include=dev && npm run typecheck && npm test && npm run 
   chose for the deck, strip EXIF (location) from photos, keep each file under GitHub's 100 MB limit, and confirm
   consent or blur faces for children and other guests before presenting. Never copy robot camera frames,
   rosbags or MCAP recordings there; this exception does not extend to any other folder.
+
+### Pitch deck (`pitch_deck/`)
+- `index.html` is the source of truth; `sepazu_pitch.pdf` is generated from it. **Any slide change regenerates the
+  PDF** (`python3 pitch_deck/tools/export_pdf.py`) and commits both in the same commit, so reviewers never read a stale pitch.
+- Check the rendered slides (browser or headless Chrome screenshot), not just the HTML: text must not overlap
+  photos or run off the 1920x1080 stage, and no dashed placeholder may be visible.
+- No hyphen or dash characters in visible slide text (the brief's rule); use underscores in asset names.
+- Claims match what was shown: say monitor, predict, flag, alert, deny; never certified, fail safe or prevents
+  accidents. Keep the "Controlled test" tag on staged results. Prices and numbers come from the team, never invented.
+- Slides use web copies in `pitch_deck/assets/web/` (cropped, EXIF stripped); originals stay untouched. Screenshots
+  must not show tokens, tailnet hostnames or other secrets (crop them, as done for the guest UI).
+- The demo player must never take keyboard focus (the clicker has to keep working); see `pitch_deck/README.md`.
 
 ### Secrets and network
 - Never commit tokens, Vapi private keys, SSH passwords or Tailscale auth keys. Use env vars.
