@@ -8,7 +8,11 @@ for f in /usr/lib/aarch64-linux-gnu/libcudnn*.so* /usr/lib/aarch64-linux-gnu/lib
   [ -e "$f" ] && MOUNTS+=(-v "$f:/usr/lib/aarch64-linux-gnu/$(basename "$f"):ro")
 done
 mkdir -p "$HOME/.d1_hf_cache" "$HOME/d1_maps"
-exec sudo docker run --rm -it --runtime nvidia --network host --pid host --ipc host \
+# docker without sudo when the user is in the docker group; a terminal (-it) only when there is one (start.sh runs this in the background).
+# D1_NAME=<name> names the container (so start.sh can find and stop it).
+DOCKER=docker; docker info >/dev/null 2>&1 || DOCKER="sudo docker"
+TTY=(); [ -t 0 ] && [ -t 1 ] && TTY=(-it)
+exec $DOCKER run --rm "${TTY[@]}" ${D1_NAME:+--name "$D1_NAME"} --runtime nvidia --network host --pid host --ipc host \
   -e FASTRTPS_DEFAULT_PROFILES_FILE=/ws/docker/d1-jetson/fastdds_udp.xml -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=all \
   -e LD_LIBRARY_PATH="/opt/cusparselt/lib:$CUDA/targets/aarch64-linux/lib:$CUDA/lib64" \
   "${MOUNTS[@]}" d1-stack:humble-jp6 "${@:-bash}"
