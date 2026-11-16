@@ -76,6 +76,12 @@ and writes the whole chain to a hash-chained append-only ledger.
 | 14 | [Testing, evidence and reproducing it](technical/14-testing-and-evidence.md) | Every test suite, what it covers, how to run the whole demo with no robot |
 | 15 | [Gaps, risks and roadmap](technical/15-gaps-and-roadmap.md) | The list that would fail an audit today, in our own words |
 
+**Single-file version.** Every Markdown doc in the repository (these chapters plus the working notes below) combined
+into one reference, organised by subsystem, with a list of where the sources disagree:
+[combined_documentation/SafetyAI_Technical_Documentation.md](combined_documentation/SafetyAI_Technical_Documentation.md)
+([PDF](combined_documentation/SafetyAI_Technical_Documentation.pdf)). It is a snapshot of `main` at `945280a`; the
+chapters and working docs stay the source of truth.
+
 ---
 
 ## The shape of the system

@@ -43,6 +43,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | Topic | Doc |
 |---|---|
 | **Start here — the full technical documentation, 15 chapters** | **[docs/README.md](docs/README.md)** |
+| All docs combined into one file (snapshot, with PDF) | [docs/combined_documentation/SafetyAI_Technical_Documentation.md](docs/combined_documentation/SafetyAI_Technical_Documentation.md) |
 | Product requirements, user journeys, MVP scope | [docs/product_requirements.md](docs/product_requirements.md) |
 | System architecture, hardware, network, interfaces | [docs/system_architecture.md](docs/system_architecture.md) |
 | Feature: ROS 2 monocular camera on the Orin | [docs/feature_ros2_camera.md](docs/feature_ros2_camera.md) |
