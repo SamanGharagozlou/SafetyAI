@@ -249,9 +249,12 @@ const rb = await guest.evaluate(async () => (await (await fetch('/api/state')).j
   })
   pass.push(['start is gated on the voice, not on the robot', txt === 409 || txt === 200, 'HTTP ' + txt])
 }
+// The ros-agent must be reachable; the robot itself may well be on charge,
+// and this suite runs against the live Jetson where it often is.
 pass.push(['robot state reaches the guest page',
-  rb && rb.reachable === true && typeof rb.battery === 'number' && rb.battery >= 0 && rb.battery <= 100,
-  `battery ${rb?.battery}%, connected ${rb?.connected}`])
+  rb && rb.reachable === true
+    && (rb.battery === null || (typeof rb.battery === 'number' && rb.battery >= 0 && rb.battery <= 100)),
+  `reachable ${rb?.reachable}, connected ${rb?.connected}, battery ${rb?.battery}`])
 
 const steal = await other.evaluate(async () => (await fetch('/api/session', { method:'POST',
   headers:{'Content-Type':'application/json'},
@@ -296,7 +299,10 @@ await second.close()
 
 // The lease must be free before a fresh brain can be tested on its own.
 await face.close()
-await wait(3000)        // LEASE_MS is 2s under test
+// Wait out the lease. It is 2 s under this suite's own server and 8 s in a
+// deployment, and a fixed guess at the shorter one made three assertions
+// fail against the Jetson for no reason at all.
+await wait(Number(process.env.LEASE_MS ?? (process.env.BASE ? 8000 : 2000)) + 2500)
 
 // --- THE REGRESSION: a face phone opening against a dirty event log.
 // The log now holds this run's starts, stops and sentences. A face that
