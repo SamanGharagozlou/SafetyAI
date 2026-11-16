@@ -174,6 +174,25 @@ Launch arguments of [follow.launch.py](../ros2_ws/src/d1_follow/launch/follow.la
 `rtsp_url`, `file_path`, `source_params`, `detector_params`, `model_name`, `device`), `auto_lock`, `embedder`, `params`,
 `rviz`.
 
+## Run on the D1 (Jetson Orin)
+
+The bridge (`d1mono` / `d1-bridge`) must be running and nothing else may write `/cmd_vel` (stop `d1dash`: Nav2, depth and
+RTAB-Map also eat the Orin's 8 GB, and CUDA allocations fail without the memory). One-time deps (ultralytics, boxmot,
+CUDA torchvision built for the image's Jetson torch) live in `~/.d1_hf_cache/follow_venv`; `vision_msgs` is in the image.
+
+```bash
+docker stop d1dash                                  # frees RAM + removes other /cmd_vel writers
+cd ~/SafetyAI && docker/d1-jetson/follow.sh         # camera + yolo26n (GPU) + d1_follow (auto_lock) + relay, DISARMED
+docker/d1-jetson/follow-cmd.sh ros2 topic echo /follow/state      # LOCKING -> TRACKING
+docker/d1-jetson/follow-cmd.sh drive on             # arm (expires after 120 s); `drive off` or Ctrl-C stops
+```
+
+`follow_d1.launch.py` runs the camera with `stamp_offset_s:=0.0`: the default 1.35 s back-dating makes every detection
+older than `stale_s` and the node would never move. Detector latency (age of detections) must stay well under `stale_s`
+(0.8 s); check `age mean` in the `human_detector` perf log. First live run (shared Orin, other stacks running): lock and
+OSNet similarity 0.92-0.98 worked, but detections were 0.6-1.7 s old, so most were dropped. **Motion on the robot is
+unverified.** The controller only turns and drives forward (no reverse, no sideways).
+
 ## Run on the laptop (WSL webcam)
 
 ```bash

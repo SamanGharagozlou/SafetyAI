@@ -34,3 +34,13 @@ Open `http://<orin wifi ip>:8080` from the PC. Use a private `ROS_DOMAIN_ID` on 
 The SDK accepts one client. If someone already runs `agibot_d1_bridge` on the Orin, do not start a second one (it fails with
 `bind: Address already in use`). Start the dashboard with `external_robot:=true`: it never starts/stops a bridge and
 uses the running bridge's `/odom`, `/imu`, `/tf` (same ROS domain), while camera, depth, RTAB-Map and Nav2 run in the container.
+
+## Follow dependencies (ultralytics, boxmot, torchvision)
+The image has the Jetson CUDA torch only in `/opt/d1_depth_venv`. `d1_follow` needs ultralytics, boxmot and a torchvision
+built for that torch, kept in a persistent venv `~/.d1_hf_cache/follow_venv` (mounted at `/hf_cache`) by `docker/d1-jetson/follow.sh`.
+Recipe (run in a container with the `run.sh` CUDA/cuDNN mounts and `--ipc host`; ~25 min, mostly the torchvision build):
+1. `python3 -m venv /hf_cache/follow_venv`, then put `/opt/d1_depth_venv/lib/python3.10/site-packages` in a `.pth` file in its site-packages so pip sees the Jetson torch.
+2. `pip install -c <numpy<2> ultralytics "boxmot==19.0.0"`, then `pip uninstall -y torch opencv-python huggingface-hub`: pip pulls a CPU torch, a pip OpenCV (shadows the apt one ROS needs) and a newer huggingface-hub (breaks the depth node) that shadow the image's versions.
+3. PyPI's torchvision 0.20.0 does not load against `torch 2.5.0a0+nv24.08` (`operator torchvision::nms does not exist`), and a CPU-only build fails in ultralytics' NMS warm-up on CUDA. Build from the v0.20.0 tarball: `apt-get install g++ ninja-build python3-dev libjpeg-dev libpng-dev zlib1g-dev`, then `CUDA_HOME=/usr/local/cuda-12.6 FORCE_CUDA=1 TORCH_CUDA_ARCH_LIST=8.7 MAX_JOBS=2 pip install --no-build-isolation --no-deps .` (`MAX_JOBS=2`: more runs out of RAM).
+4. `PYTHONPATH` must name both site-packages explicitly (`.pth` files are not read via `PYTHONPATH`); `follow.sh` sets it.
+Also: CUDA allocations fail (`NVML_SUCCESS == r INTERNAL ASSERT`, `CUBLAS_STATUS_ALLOC_FAILED`) when other stacks (depth, RTAB-Map, Nav2) leave under ~2 GB free.
