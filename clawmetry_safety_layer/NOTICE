@@ -1,0 +1,9 @@
+ClawMetry integration kit: safety layer and spa concierge for the AgiBot D1 Ultra-W
+Copyright 2026 ClawMetry
+
+This kit is licensed under the Apache License, Version 2.0 (see LICENSE). It is a subset of ClawMetry's
+leukerbad-g1 project, contributed to the SafetyAI hackathon team's repository. The rest of leukerbad-g1 is not
+covered by this license.
+
+It runs on top of the SafetyAI team's ROS 2 bridge (ros2_ws/src/agibot_d1_bridge) and detector (perception/), which
+remain under their own terms. Third-party Python packages are installed from PyPI under their own licenses.

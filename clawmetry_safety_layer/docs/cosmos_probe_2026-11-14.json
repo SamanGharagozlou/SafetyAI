@@ -1,0 +1,409 @@
+{
+ "summary": {
+  "url": "http://127.0.0.1:8000/v1",
+  "frames": 22,
+  "cold_first_s": 2.697,
+  "warm_p50_s": 2.451,
+  "warm_p90_s": 2.528,
+  "warm_max_s": 3.254,
+  "unavailable": 0
+ },
+ "rows": [
+  {
+   "file": "cosmos_sample.png",
+   "repeat": 0,
+   "bytes": 21225,
+   "latency_s": 2.697,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "blue tape"
+    ],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward drive toward bath entrance is safe, no obstacles or people in path",
+    "latency_s": 2.696,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_partC_pathtraced_corridor.png",
+   "repeat": 0,
+   "bytes": 24699,
+   "latency_s": 2.528,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "bath_entrance"
+    ],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward drive toward bath entrance within zone",
+    "latency_s": 2.528,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_partC_pathtraced_shelf.png",
+   "repeat": 0,
+   "bytes": 24609,
+   "latency_s": 2.242,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward motion is permitted toward bath entrance without obstruction",
+    "latency_s": 2.242,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_partC_pathtraced_tableB.png",
+   "repeat": 0,
+   "bytes": 24635,
+   "latency_s": 2.25,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward drive toward bath entrance is permitted and safe",
+    "latency_s": 2.249,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_realtime_frame_1_shelf_pick.jpg",
+   "repeat": 0,
+   "bytes": 19735,
+   "latency_s": 2.409,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "cube"
+    ],
+    "people_within_2m": 0,
+    "stop": true,
+    "confidence": 0.97,
+    "reason": "cube is in the path, must avoid",
+    "latency_s": 2.409,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_realtime_frame_2_carry.jpg",
+   "repeat": 0,
+   "bytes": 23648,
+   "latency_s": 2.484,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward path is clear, no obstacles, no people, no turnstiles ahead",
+    "latency_s": 2.484,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_realtime_frame_3_place_B.jpg",
+   "repeat": 0,
+   "bytes": 26863,
+   "latency_s": 2.486,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward path is clear, no obstacles, no people, no turnstiles ahead",
+    "latency_s": 2.486,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_shot_C_line.png",
+   "repeat": 0,
+   "bytes": 23822,
+   "latency_s": 2.247,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward drive toward bath entrance is permitted and safe",
+    "latency_s": 2.247,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_shot_cam_shelf_pick.png",
+   "repeat": 0,
+   "bytes": 19127,
+   "latency_s": 3.254,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "stack of towels",
+     "wooden counter",
+     "white cabinet",
+     "green plant"
+    ],
+    "people_within_2m": 0,
+    "stop": true,
+    "confidence": 0.97,
+    "reason": "forward path is clear of hazards; no obstacles or people in the way",
+    "latency_s": 3.254,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_shot_place_B.png",
+   "repeat": 0,
+   "bytes": 24537,
+   "latency_s": 2.245,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward motion is permitted toward bath entrance without obstruction",
+    "latency_s": 2.245,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_shot_shelf.png",
+   "repeat": 0,
+   "bytes": 23557,
+   "latency_s": 2.483,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward path is clear, no obstacles, no people, no turnstiles ahead",
+    "latency_s": 2.482,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "cosmos_sample.png",
+   "repeat": 1,
+   "bytes": 21225,
+   "latency_s": 2.653,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "blue tape"
+    ],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward drive toward bath entrance is safe, no obstacles or people in path",
+    "latency_s": 2.652,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_partC_pathtraced_corridor.png",
+   "repeat": 1,
+   "bytes": 24699,
+   "latency_s": 2.525,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "bath_entrance"
+    ],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward drive toward bath entrance within zone",
+    "latency_s": 2.524,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_partC_pathtraced_shelf.png",
+   "repeat": 1,
+   "bytes": 24609,
+   "latency_s": 2.254,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward motion is permitted toward bath entrance without obstruction",
+    "latency_s": 2.254,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_partC_pathtraced_tableB.png",
+   "repeat": 1,
+   "bytes": 24635,
+   "latency_s": 2.249,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward drive toward bath entrance is permitted and safe",
+    "latency_s": 2.248,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_realtime_frame_1_shelf_pick.jpg",
+   "repeat": 1,
+   "bytes": 19735,
+   "latency_s": 2.418,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "cube"
+    ],
+    "people_within_2m": 0,
+    "stop": true,
+    "confidence": 0.97,
+    "reason": "cube is in the path, must avoid",
+    "latency_s": 2.418,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_realtime_frame_2_carry.jpg",
+   "repeat": 1,
+   "bytes": 23648,
+   "latency_s": 2.451,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward path is clear, no obstacles, no people, no turnstiles ahead",
+    "latency_s": 2.45,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_realtime_frame_3_place_B.jpg",
+   "repeat": 1,
+   "bytes": 26863,
+   "latency_s": 2.474,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward path is clear, no obstacles, no people, no turnstiles ahead",
+    "latency_s": 2.473,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_shot_C_line.png",
+   "repeat": 1,
+   "bytes": 23822,
+   "latency_s": 2.249,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward drive toward bath entrance is permitted and safe",
+    "latency_s": 2.249,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_shot_cam_shelf_pick.png",
+   "repeat": 1,
+   "bytes": 19127,
+   "latency_s": 3.234,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [
+     "stack of towels",
+     "wooden counter",
+     "white cabinet",
+     "green plant"
+    ],
+    "people_within_2m": 0,
+    "stop": true,
+    "confidence": 0.97,
+    "reason": "forward path is clear of hazards; no obstacles or people in the way",
+    "latency_s": 3.234,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_shot_place_B.png",
+   "repeat": 1,
+   "bytes": 24537,
+   "latency_s": 2.246,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward motion is permitted toward bath entrance without obstruction",
+    "latency_s": 2.246,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  },
+  {
+   "file": "isaac_shot_shelf.png",
+   "repeat": 1,
+   "bytes": 23557,
+   "latency_s": 2.483,
+   "verdict": {
+    "leaves_go_zone": false,
+    "hazards": [],
+    "people_within_2m": 0,
+    "stop": false,
+    "confidence": 0.98,
+    "reason": "forward path is clear, no obstacles, no people, no turnstiles ahead",
+    "latency_s": 2.483,
+    "cached": false,
+    "model": "nvidia/Cosmos-Reason2-2B"
+   }
+  }
+ ]
+}

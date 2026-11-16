@@ -1,0 +1,18 @@
+# The D1 Ultra-W edge stack on this Spark, tonight: kinematic twin (D1W_TRANSPORT=mock) + the venue walkthrough as the
+# camera + the brain relay / Cosmos judge / ClawMetry, all on loopback (scripts/run_mock.sh, scripts/demo_d1w_mock.sh).
+# The walkthrough was filmed with a phone at chest height, so the camera geometry here is the phone's, not the robot's.
+extends: config/d1w.yaml
+transport: mock
+start_pose: [2.5, 1.0, 0.0]
+perception:
+  source: video
+  video: assets/venue/spa_walkthrough.mp4
+  camera: {height_m: 1.25, pitch_deg: 15.0, vfov_deg: 65.0}   # phone, portrait, looking slightly down
+  person_height_m: 1.70
+  local_yolo: true                     # no team detector here: the CPU fallback (perception/detections.py)
+  yolo_model: ~/.cache/leukerbad/yolo11n.pt
+  boundary:
+    detector: floor_transition
+    model: perception/floor_classes.json
+  sampler: {fps: 2.0, max_w: 640, max_h: 360, jpeg_quality: 70}
+mock: {hooks: true}                    # POST /mock/video and /mock/stage_breach (never on a real transport)

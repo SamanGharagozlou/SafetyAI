@@ -1,0 +1,119 @@
+# Packaging for leukerbad-g1. Flat layout (no src/): see docs/adr/ and CONTRIBUTING.md for why the top-level
+# packages bridge/, skills/, telemetry/ stay where they are.
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clawmetry-safety-layer"
+version = "0.1.0"
+description = "ClawMetry integration kit: safety supervisor, perception, Cosmos judge relay and spa concierge for the AgiBot D1 Ultra-W"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["leukerbad_g1", "bridge/agibot_d1w_bridge.py", "perception", "safety", "brain", "venue", "concierge"]
+authors = [{ name = "eaby" }, { name = "vivekchand" }]
+classifiers = ["Programming Language :: Python :: 3"]
+# Pinned to the versions the suites pass with (Python 3.12, 2026-11-12; Python 3.10, 2026-11-14). Bump deliberately,
+# one PR, full suite. Python 3.10 (Ubuntu 22.04 + ROS 2 Humble, the venue edge PC) gets numpy 1.26: numpy 2.5 needs
+# 3.12, and Humble's rclpy message packages are built against numpy 1.x.
+dependencies = [
+  "PyYAML==6.0.3",
+  "numpy==2.5.4; python_version >= '3.12'",
+  "numpy==1.26.4; python_version < '3.12'",
+  "fastapi==0.162.4",
+  "uvicorn==0.54.0",
+  "pydantic==2.14.3",
+  "mcp==1.30.0",
+  "opentelemetry-api==1.45.2",
+  "opentelemetry-sdk==1.45.2",
+  "opentelemetry-exporter-otlp-proto-http==1.45.2",
+]
+
+[project.optional-dependencies]
+# Venue edge (team PC next to the D1 Ultra-W, or the robot itself): perception frame sources, JPEG sampling, HTTP
+# clients for the team detector / brain / Cosmos. rclpy comes from ROS 2 Humble (system site-packages), not pip.
+# scripts/setup_edge.sh installs this.
+edge = [
+  "opencv-python-headless==5.0.0.93; python_version >= '3.12'",
+  "opencv-python-headless==4.11.0.86; python_version < '3.12'",   # last line with numpy 1.x wheels
+  "pillow==13.0.0; python_version >= '3.12'",
+  "pillow==12.3.0; python_version < '3.12'",
+  "httpx==0.28.1",
+]
+# Brain (this DGX Spark): relay, mission-control console, concierge (Anthropic API). Cosmos Reason 2 runs in its own
+# vLLM venv (scripts/cosmos/serve_reason2.sh), never imported from here. scripts/setup_brain.sh installs this.
+brain = [
+  "httpx==0.28.1",
+  "pillow==13.0.0; python_version >= '3.12'",
+  "pillow==12.3.0; python_version < '3.12'",
+  "anthropic==2.8.0",
+]
+# Optional perception extras, CPU only (install torch from https://download.pytorch.org/whl/cpu first):
+# zero-shot scene classes (perception/scene.py) and the local YOLO fallback (perception/detections.py LocalYolo).
+scene = ["open-clip-torch==4.2.2"]
+yolo = ["ultralytics==8.4.213"]
+dev = [
+  "pytest==9.2.0",
+  "httpx==0.28.1",        # FastAPI TestClient
+  "pytest-cov==7.1.0",    # CI coverage report
+  "ruff==0.17.3",         # lint + format (quality gate)
+  "mypy==2.4.1",         # gradual typing, new files only
+  "types-PyYAML==6.0.12.20260906",
+  "pre-commit==4.7.0; python_version >= '3.12'",    # runs the hooks in .pre-commit-config.yaml
+  "pre-commit==4.6.2; python_version < '3.12'",
+  "detect-secrets==1.5.0", # secrets scan (pre-commit hook; regenerates .secrets.baseline)
+]
+
+[project.urls]
+Repository = "https://github.com/SamanGharagozlou/SafetyAI"
+
+[tool.setuptools]
+packages = ["leukerbad_g1", "bridge", "skills", "telemetry", "perception", "safety", "brain", "venue", "concierge"]
+
+[tool.setuptools.package-data]
+brain = ["console.html"]
+perception = ["floor_classes.json"]
+venue = ["*.yaml"]
+
+# ---------------------------------------------------------------- quality gates (make lint; CI; pre-commit)
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["third_party", "docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+  "E501",   # long lines: the formatter decides; long strings and URLs stay as they are
+  "E731",   # small named lambdas are used deliberately in the skills
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Isaac Sim scripts: SimulationApp must be created before omni/carb/pxr are imported (docs/adr/0004),
+# so their import order is load-bearing: no sorting, imports after code are expected.
+"bridge/isaac_server.py" = ["I001", "E402"]
+"scripts/isaac/*.py" = ["I001", "E402"]
+# scripts and tests put the repo root on sys.path before importing project modules
+"scripts/*.py" = ["E402"]
+"tests/*.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["bridge", "skills", "telemetry", "leukerbad_g1", "perception", "safety", "brain", "venue", "concierge"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Body", "fastapi.Depends", "fastapi.Query", "fastapi.Header"]
+
+[tool.ruff.format]
+# defaults (double quotes, magic trailing comma); one formatting commit is in .git-blame-ignore-revs
+
+[tool.mypy]
+# Lenient and gradual: only files written after the quality gates went in are checked. Add a file here when you
+# create it (or when you are ready to type an existing one); never remove one.
+python_version = "3.10"   # the venue edge runs Python 3.10 (Ubuntu 22.04 / ROS 2 Humble)
+files = ["leukerbad_g1", "bridge/agibot_d1w_bridge.py", "perception", "safety", "brain", "venue", "concierge"]
+ignore_missing_imports = true
+follow_imports = "silent"
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true

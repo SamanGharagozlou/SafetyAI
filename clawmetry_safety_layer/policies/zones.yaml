@@ -1,0 +1,31 @@
+# Coordinates in metres on the taped floor. Re-measure on site with
+#   python -m bridge.zones --calibrate
+zones:
+  A:
+    label: reception
+    polygon: [[0, 0], [2, 0], [2, 2], [0, 2]]
+    centre: [1.0, 1.0]
+    speed_cap: 0.4
+  corridor:
+    label: corridor shelf
+    polygon: [[2, 0], [4, 0], [4, 2], [2, 2]]
+    centre: [3.0, 1.0]
+    speed_cap: 0.3
+  B:
+    label: table B
+    polygon: [[4, 0], [6, 0], [6, 2], [4, 2]]
+    centre: [5.0, 1.0]
+    speed_cap: 0.3
+  C:
+    label: pool deck
+    polygon: [[0, 2], [6, 2], [6, 4], [0, 4]]
+    centre: [3.0, 3.0]
+    speed_cap: 0.2
+    restricted: true          # skill server refuses to enter, always
+    requires_approval: true   # ClawMetry gate holds navigate_to(C) for a human tap
+    camera_off: true
+
+near_person_speed_cap: 0.2
+retry_limit: 2
+allowed_objects: [tray, towels]
+place_targets: [table_B, shelf_corridor, table_A]

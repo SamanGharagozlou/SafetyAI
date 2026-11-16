@@ -1,0 +1,65 @@
+# Leukerbad Therme, level-4 concourse: zones in the venue frame (metres). No floor tape is allowed at the venue, so
+# this frame is anchored on existing features (landmarks below), not on taped marks. Origin = the Kasse counter's
+# outer corner (kasse_corner), x along the concourse toward the shop/café, y toward the bath entrance turnstiles.
+# EVERY number here is a plan from the floor directory and the walkthrough, not a measurement:  # VERIFY on site
+# (pace it out / laser-measure, then `python -m bridge.zones --calibrate --config config/d1w.yaml`).
+zones:
+  reception:
+    label: reception / Kasse
+    polygon: [[0, 0], [5, 0], [5, 4], [0, 4]]
+    centre: [2.5, 2.0]
+    speed_cap: 0.3
+  concourse:
+    label: level-4 concourse
+    polygon: [[5, 0], [14, 0], [14, 4], [5, 4]]
+    centre: [9.5, 2.0]
+    speed_cap: 0.3
+  shop_cafe:
+    label: souvenir shop and café
+    polygon: [[14, 0], [19, 0], [19, 4], [14, 4]]
+    centre: [16.0, 2.0]
+    speed_cap: 0.2
+  bath_entrance:
+    label: Therme entrance (in front of the turnstiles)
+    polygon: [[8, 4], [12, 4], [12, 6], [8, 6]]
+    centre: [10.0, 5.0]
+    speed_cap: 0.2
+  pool_deck:
+    label: pool deck (behind the turnstiles)
+    polygon: [[8, 6], [14, 6], [14, 12], [8, 12]]
+    centre: [11.0, 9.0]
+    speed_cap: 0.15
+    restricted: true          # wet floor + guest privacy: the skill server refuses, always
+    requires_approval: true   # ClawMetry Approve/Deny decides only whether STAFF escort the guest; the robot never enters
+    camera_off: true          # no photography anywhere in the complex; behind the turnstiles not even frames for the judge
+  relax_level:
+    label: Relax level (level 3, barefoot zone)
+    polygon: [[0, 4], [5, 4], [5, 8], [0, 8]]
+    centre: [2.5, 6.0]
+    speed_cap: 0.15
+    restricted: true          # barefoot hygiene
+    camera_off: true
+  stairs:
+    label: stairs / lift lobby
+    polygon: [[5, 4], [8, 4], [8, 6], [5, 6]]
+    centre: [6.5, 5.0]
+    speed_cap: 0.15
+    restricted: true          # never: a wheeled-leg robot on stairs in a crowd
+  technik:
+    label: Technik (levels 1-2, staff only)
+    polygon: [[12, 4], [19, 4], [19, 6], [12, 6]]
+    centre: [15.5, 5.0]
+    speed_cap: 0.15
+    restricted: true          # staff only (Kein Eingang / No Entry)
+
+# Existing features used instead of tape: zone calibration (three odometry fixes) and drift re-fixes while guiding.
+# x, y in the frame above; yaw (optional) = the robot's heading when it stands at the feature facing `facing`.
+landmarks:
+  kasse_corner: {xy: [0.3, 0.3], facing: concourse, yaw: 0.0, note: "outer corner of the Kasse counter, robot nose 30 cm off"}
+  pillar: {xy: [9.5, 0.6], facing: shop_cafe, yaw: 0.0, note: "concourse pillar nearest the turnstiles"}
+  shop_door: {xy: [14.3, 2.0], facing: shop_cafe, yaw: 0.0, note: "souvenir shop door frame, left side"}
+
+near_person_speed_cap: 0.15
+retry_limit: 2
+allowed_objects: [tray, towels]
+place_targets: [reception]

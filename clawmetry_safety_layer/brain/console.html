@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mission Control</title>
+<style>
+:root{--bg:#0e1116;--panel:#161b22;--line:#2b313a;--fg:#e6e6e6;--mut:#8b949e;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--acc:#58a6ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,sans-serif}
+header{display:flex;gap:16px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header b{font-size:16px}.pill{padding:3px 10px;border-radius:99px;font-weight:600;background:#222}
+main{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:12px;padding:12px 16px}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;min-width:0}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:0 0 8px}
+svg{width:100%;height:auto;background:#0b0e13;border-radius:6px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px}.kv span:nth-child(odd){color:var(--mut)}
+button,select,input{font:inherit;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:#21262d;color:var(--fg)}
+button:hover{border-color:var(--acc)}button.stop{background:#3d1214;border-color:var(--bad)}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}#log{height:220px;overflow:auto;font:12px ui-monospace,monospace;white-space:pre-wrap}
+#strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;padding:10px 16px 0}
+@media(max-width:900px){#strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tile{border-radius:8px;padding:8px 10px;border:1px solid var(--line);background:var(--panel);border-top:4px solid #555;min-width:0}
+.tile.ok{border-top-color:var(--ok)}.tile.warn{border-top-color:var(--warn)}.tile.bad{border-top-color:var(--bad);background:#2a1214}
+.tile b{display:block;font-size:13px}.tile small{color:var(--mut);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#counters{display:flex;gap:24px;padding:8px 16px 0;color:var(--mut)}#counters b{color:var(--fg);font-size:18px;margin-left:6px}
+.ev{display:grid;grid-template-columns:auto auto 1fr;gap:10px;padding:2px 0;border-bottom:1px solid #1c2128}
+.ev .k{font-weight:600}.ev.hold .k{color:var(--bad)}.ev.warn .k{color:var(--warn)}.ev.good .k{color:var(--ok)}
+body.watch .ctl{display:none!important}body.watch{font-size:17px}body.watch #log{height:calc(100vh - 560px);min-height:260px}
+body.watch main{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}
+.v{border-left:3px solid var(--line);padding:4px 8px;margin:4px 0}.v.hold{border-color:var(--bad)}.v.caution{border-color:var(--warn)}
+</style>
+</head>
+<body>
+<header>
+  <b>D1 Ultra-W · Leukerbad Therme</b>
+  <span>FSM <span id="fsm" class="pill">?</span></span>
+  <span>people &lt;2 m <b id="ppl">–</b></span>
+  <span>link RTT <b id="rtt">–</b></span>
+  <span>brain <b id="brainok">–</b> · ClawMetry <b id="cpok">–</b></span>
+  <a id="cm" href="#" target="_blank" style="color:var(--acc)">ClawMetry session</a>
+</header>
+<div id="strip"></div>
+<div id="counters"><span>session turns today<b id="c_turns">–</b></span><span>judge calls<b id="c_judge">–</b></span><span>dataset clips<b id="c_clips">–</b></span><span id="c_sse" style="margin-left:auto"></span></div>
+<main>
+  <section>
+    <h2>Zones and pose</h2>
+    <svg id="map" viewBox="0 0 100 60"></svg>
+    <div class="kv" id="robot" style="margin-top:8px"></div>
+  </section>
+  <section>
+    <h2>Safety</h2>
+    <div class="kv" id="safety"></div>
+    <div class="row ctl">
+      <button onclick="act('pause',{reason:'mission control'})">Pause</button>
+      <button onclick="act('resume',{})">Resume</button>
+      <button onclick="act('reset',{})">Reset (recover)</button>
+      <button onclick="act('approve',{})">Approve</button>
+      <button onclick="act('deny',{})">Deny</button>
+      <button onclick="act('confirm',{})">Confirm load / hand-off</button>
+    </div>
+    <h2 class="ctl">Goals (no velocity: goals only)</h2>
+    <div class="row ctl">
+      <select id="poi"></select><button onclick="act('guide_to',{poi:poi.value})">Guide to</button>
+    </div>
+    <div class="row ctl"><input id="say" placeholder="Say…" style="flex:1"><button onclick="act('say',{text:say.value})">Say</button></div>
+    <div class="row ctl"><input id="ask" placeholder="Ask the concierge as a guest…" style="flex:1"><button onclick="act('ask',{text:ask.value})">Ask</button></div>
+    <div id="actlog" class="ctl" style="color:#8b949e;min-height:1.4em"></div>
+    <h2>Last verdicts (Cosmos)</h2>
+    <div id="verdicts"></div>
+  </section>
+  <section style="grid-column:1/-1">
+    <h2>Live events (edge SSE: FSM, verdicts, holds, approvals, link)</h2>
+    <div id="log"></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let Z = null, last = null;
+const COLORS = {NORMAL:'#3fb950', CAUTION:'#d29922', HOLD:'#f85149', RECOVER:'#a371f7'};
+function log(s){ $('actlog').textContent = new Date().toLocaleTimeString()+'  '+s; }
+async function act(name, body){
+  const r = await fetch('/api/edge/'+name, {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
+  const j = await r.json().catch(()=>({}));
+  log(name+' -> '+r.status+' '+(j.message||j.reply||j.detail||JSON.stringify(j).slice(0,200)));
+}
+function bbox(){ let xs=[],ys=[]; for(const z of Object.values(Z.zones)) for(const [x,y] of z.polygon){xs.push(x);ys.push(y);} return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]; }
+function drawMap(s){
+  if(!Z) return; const [x0,y0,x1,y1]=bbox(); const W=100, H=60, sc=Math.min(W/(x1-x0+1),H/(y1-y0+1));
+  const tx=(x)=>(x-x0+0.5)*sc, ty=(y)=>H-(y-y0+0.5)*sc;
+  let g='';
+  for(const [n,z] of Object.entries(Z.zones)){
+    const bad = z.restricted || z.camera_off;
+    g+=`<polygon points="${z.polygon.map(([x,y])=>tx(x)+','+ty(y)).join(' ')}" fill="${bad?'#3d1214':'#14301b'}" stroke="#2b313a" stroke-width=".3"/>`;
+    const [cx,cy]=z.centre||z.polygon[0]; g+=`<text x="${tx(cx)}" y="${ty(cy)}" font-size="2" fill="#8b949e" text-anchor="middle">${n}</text>`;
+  }
+  for(const [n,l] of Object.entries(Z.landmarks||{})) g+=`<circle cx="${tx(l.xy[0])}" cy="${ty(l.xy[1])}" r=".7" fill="#58a6ff"><title>${n}</title></circle>`;
+  if(s){ const r=s.robot, a=r.yaw; const px=tx(r.x), py=ty(r.y);
+    g+=`<circle cx="${px}" cy="${py}" r="1.4" fill="${COLORS[s.safety.state]||'#fff'}"/><line x1="${px}" y1="${py}" x2="${px+3*Math.cos(a)}" y2="${py-3*Math.sin(a)}" stroke="#fff" stroke-width=".4"/>`; }
+  $('map').innerHTML=g;
+}
+function kv(el, obj){ el.innerHTML = Object.entries(obj).map(([k,v])=>`<span>${k}</span><span>${typeof v==='object'?JSON.stringify(v):v}</span>`).join(''); }
+async function poll(){
+  try{
+    const r = await fetch('/api/edge/state'); const s = await r.json();
+    if(!r.ok){ $('fsm').textContent='EDGE ?'; $('fsm').style.background='#555'; log('edge: '+(s.detail||r.status)); return; }
+    last = s; const f=s.safety;
+    $('fsm').textContent=f.state; $('fsm').style.background=COLORS[f.state]||'#555';
+    $('ppl').textContent=s.observation.people_within_2m ?? '–';
+    $('rtt').textContent=(s._rtt_s!=null? Math.round(s._rtt_s*1000)+' ms':'–');
+    $('brainok').textContent=s.link.brain_ok===false?'DOWN':(s.link.brain_ok?'ok':'?');
+    $('cpok').textContent=s.link.control_plane_ok===false?'DOWN':(s.link.control_plane_ok?'ok':'?');
+    if(s.clawmetry && s.clawmetry.dashboard){ $('cm').href=s.clawmetry.dashboard; $('cm').title=s.clawmetry.run_id||''; }
+    const rb=s.robot; kv($('robot'),{zone:rb.zone, pose:`${rb.x.toFixed(2)}, ${rb.y.toFixed(2)}, ${rb.yaw.toFixed(2)}`, mode:rb.mode, battery:rb.battery_pct+' %', transport:s.transport.transport, connected:s.transport.connected, scene:s.observation.scene, nearest_person_m:s.observation.nearest_person_m, degraded:(s.observation.degraded||[]).join(', ')||'–'});
+    kv($('safety'),{state:f.state, speed_cap:f.speed_cap==null?'policy':f.speed_cap+' m/s', latched:f.latched?f.latched.source+': '+f.latched.reason:'–', awaiting_approval:f.awaiting_approval, causes:f.causes.map(c=>c.source+' '+c.level+': '+c.reason).join(' | ')||'–', judge_unavailable:f.judge_unavailable});
+    const vs=(s.verdicts||[]).slice().reverse();
+    $('verdicts').innerHTML=vs.map(v=>`<div class="v ${v.leaves_go_zone||(v.stop&&v.hazards&&v.hazards.length)?'hold':(v.stop||(v.hazards||[]).length?'caution':'')}">${v.judge_unavailable?'judge unavailable: '+v.error:`stop=${v.stop} leaves=${v.leaves_go_zone} people=${v.people_within_2m} ${(v.hazards||[]).join(', ')} · ${v.reason||''}`} <span style="color:#8b949e">${v.latency_s??''} s ${v.trigger||''}</span></div>`).join('')||'–';
+    drawMap(s);
+  }catch(e){ log('poll failed: '+e); }
+}
+const WATCH = new URLSearchParams(location.search).get('watch') === '1';
+if(WATCH) document.body.classList.add('watch');
+const ORDER = ['vllm','brain','edge','bridge','detector','clawmetry','tailscale'];
+const esc = (t) => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function pollPipeline(){
+  try{
+    const r = await fetch('/api/pipeline'); if(r.status===401){ location.reload(); return; } const p = await r.json();
+    $('strip').innerHTML = ORDER.filter(k=>p.tiles[k]).map(k=>{const t=p.tiles[k]; return `<div class="tile ${t.level}" title="${esc(t.detail)}"><b>${esc(t.label)}</b><small>${esc(t.detail)}</small></div>`;}).join('');
+    const c=p.counters; $('c_turns').textContent=c.turns_today??'–'; $('c_judge').textContent=c.judge_calls??'–'; $('c_clips').textContent=c.dataset_clips??'–';
+  }catch(e){ $('strip').innerHTML='<div class="tile bad"><b>Brain</b><small>console poll failed</small></div>'; }
+}
+function evClass(k, e){
+  if(k==='fsm.transition') return e.to==='HOLD'?'hold':(e.to==='NORMAL'?'good':'warn');
+  if(k==='approval') return e.decision==='deny'?'hold':(e.decision==='allow'?'good':'warn');
+  if(k==='command' || /breach|lost|hazard/.test(k) || (k==='guide' && /refused|stopped/.test(e.phase))) return 'hold';
+  if(/approv|resume|recover/.test(k)) return 'good';
+  if(/judge|verdict|link|person/.test(k)) return 'warn';
+  return '';
+}
+function evText(e){
+  const k=e.kind;
+  if(k==='fsm.transition') return `${e.from||'?'} → ${e.to||'?'}  ${e.reason||e.cause||''}`;
+  if(/judge|verdict/.test(k)) return `${e.stop?'STOP ':''}${e.leaves_go_zone?'leaves go-zone ':''}${(e.hazards||[]).join(', ')} ${e.reason||e.error||''}  · ${e.latency_s!=null?e.latency_s+' s':''}`;
+  const rest = Object.fromEntries(Object.entries(e).filter(([x])=>!['ts','kind','controller_id','run_id'].includes(x)));
+  return JSON.stringify(rest).slice(0,240);
+}
+const LOG=[];
+function addEvent(e){
+  LOG.unshift(e); if(LOG.length>200) LOG.pop();
+  $('log').innerHTML = LOG.map(e=>`<div class="ev ${evClass(e.kind,e)}"><span>${new Date((e.ts||Date.now()/1000)*1000).toLocaleTimeString()}</span><span class="k">${esc(e.kind)}</span><span>${esc(evText(e))}</span></div>`).join('');
+}
+function connectEvents(){
+  const es = new EventSource('/api/events');
+  es.onopen = () => { $('c_sse').textContent='event stream: live'; $('c_sse').style.color='var(--ok)'; };
+  es.onmessage = (m) => { try{ addEvent(JSON.parse(m.data)); }catch(e){} };
+  es.addEventListener('down', (m) => { $('c_sse').textContent='event stream: edge down, retrying'; $('c_sse').style.color='var(--bad)'; es.close(); setTimeout(connectEvents, 3000); });
+  es.onerror = () => { $('c_sse').textContent='event stream: reconnecting'; $('c_sse').style.color='var(--warn)'; es.close(); setTimeout(connectEvents, 3000); };
+}
+(async()=>{
+  pollPipeline(); setInterval(pollPipeline, 2000); connectEvents();
+  Z = await (await fetch('/api/zones')).json();
+  $('poi').innerHTML = Object.entries(Z.zones).filter(([n,z])=>!z.restricted).map(([n])=>`<option>${n}</option>`).join('') + '<option disabled>──</option>' + Object.entries(Z.zones).filter(([n,z])=>z.restricted).map(([n])=>`<option>${n}</option>`).join('');
+  try{ const pois = await (await fetch('/pois')).json(); if(pois.length) $('poi').innerHTML = pois.map(p=>`<option value="${p.id}">${p.name}${p.no_go?' (no-go)':''}</option>`).join(''); }catch(e){}
+  poll(); setInterval(poll, 1000);
+})();
+</script>
+</body>
+</html>

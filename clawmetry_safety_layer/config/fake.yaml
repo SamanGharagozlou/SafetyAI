@@ -1,0 +1,9 @@
+bridge: fake
+iface: lo
+domain: 0
+speed_scale: 1.0        # multiply commanded velocities (tune on real floor)
+settle_timeout_s: 3.0   # max wait for balance_ok after stop
+nav_tolerance_m: 0.3
+nav_max_s: 20
+start_pose: [1.0, 1.0, 0.0]   # x, y, yaw(rad) in zone A
+zones_file: policies/zones.yaml
