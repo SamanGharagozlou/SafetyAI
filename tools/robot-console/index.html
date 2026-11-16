@@ -201,6 +201,23 @@
   .log-ok { color: var(--ok); }
   .log-err { color: var(--bad); }
   .log-send { color: var(--accent); }
+
+  /* Keyboard help overlay */
+  #kbd-help { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 90;
+              display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .kbd-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+               padding: 22px; max-width: 760px; width: 100%; max-height: 86vh; overflow: auto; }
+  .kbd-panel h3 { margin: 0 0 14px; font-size: 17px; }
+  .kbd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+  .kbd-group h4 { margin: 0 0 7px; font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+  .kbd-group div { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; font-size: 13px; }
+  .kbd-group div span { color: var(--muted); }
+  kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-width: 2px;
+        border-radius: 5px; padding: 1px 6px; font: 600 11px ui-monospace, monospace; color: var(--ink); }
+  .kbd-foot { color: var(--muted); font-size: 12px; margin: 14px 0 0; line-height: 1.5; }
+  .kb { position: absolute; top: 3px; right: 5px; font: 600 9px ui-monospace, monospace;
+        color: var(--muted); opacity: .75; pointer-events: none; }
+  #gestures button, button[data-move] { position: relative; }
 </style>
 </head>
 <body>
@@ -209,7 +226,52 @@
   <h1>D1 Robot Console</h1>
   <span class="pill"><span class="dot" id="link-dot"></span><span id="link-text">connecting…</span></span>
   <button id="talk">🎙 Talk to robot</button>
+  <button id="kbd-toggle" title="Keyboard controls (press ?)">⌨ Keys</button>
   <button class="stop" id="stop">■ STOP</button>
+</div>
+
+<!-- Shown on ? or the Keys button. Space and Escape are listed first because
+     they are the two an operator may need before they have read anything. -->
+<div id="kbd-help" style="display:none">
+  <div class="kbd-panel">
+    <h3>Keyboard controls</h3>
+    <div class="kbd-grid">
+      <div class="kbd-group">
+        <h4>Stop</h4>
+        <div><kbd>Space</kbd><span>STOP</span></div>
+        <div><kbd>Esc</kbd><span>STOP — works even while typing</span></div>
+      </div>
+      <div class="kbd-group">
+        <h4>Move</h4>
+        <div><kbd>W</kbd><kbd>↑</kbd><span>forward</span></div>
+        <div><kbd>S</kbd><kbd>↓</kbd><span>backward</span></div>
+        <div><kbd>Q</kbd><kbd>←</kbd><span>turn left</span></div>
+        <div><kbd>E</kbd><kbd>→</kbd><span>turn right</span></div>
+        <div><kbd>A</kbd><span>strafe left</span></div>
+        <div><kbd>D</kbd><span>strafe right</span></div>
+        <div><kbd>Enter</kbd><span>walk the measured distance</span></div>
+      </div>
+      <div class="kbd-group">
+        <h4>Posture</h4>
+        <div><kbd>T</kbd><span>stand up</span></div>
+        <div><kbd>G</kbd><span>sit / lie down</span></div>
+        <div><kbd>H</kbd><span>shake hand</span></div>
+      </div>
+      <div class="kbd-group">
+        <h4>Gestures</h4>
+        <div><kbd>1</kbd>–<kbd>9</kbd><kbd>0</kbd><span>the ten gestures, in the order shown</span></div>
+      </div>
+      <div class="kbd-group">
+        <h4>Tuning</h4>
+        <div><kbd>[</kbd><kbd>]</kbd><span>duration down / up</span></div>
+        <div><kbd>-</kbd><kbd>=</kbd><span>speed down / up</span></div>
+      </div>
+    </div>
+    <p class="kbd-foot">Each key clicks the control on screen, so the same limits apply:
+      moves auto-stop when the duration elapses, and anything needing a standing
+      robot still refuses. Holding a key does <strong>not</strong> repeat the command.</p>
+    <p class="kbd-foot">Press <kbd>?</kbd> or click outside to close.</p>
+  </div>
 </div>
 
 <div class="banner" id="banner"></div>
@@ -279,12 +341,12 @@
   <div class="panel">
     <h2>Move</h2>
     <div class="dpad">
-      <button class="act needs-stand" data-move="strafe_left">⇦<br>strafe</button>
-      <button class="act needs-stand" data-move="forward">▲<br>fwd</button>
-      <button class="act needs-stand" data-move="strafe_right">⇨<br>strafe</button>
-      <button class="act needs-stand" data-move="turn_left">↺<br>turn</button>
-      <button class="act needs-stand" data-move="backward">▼<br>back</button>
-      <button class="act needs-stand" data-move="turn_right">↻<br>turn</button>
+      <button class="act needs-stand" data-move="strafe_left">⇦<br>strafe<b class="kb">A</b></button>
+      <button class="act needs-stand" data-move="forward">▲<br>fwd<b class="kb">W</b></button>
+      <button class="act needs-stand" data-move="strafe_right">⇨<br>strafe<b class="kb">D</b></button>
+      <button class="act needs-stand" data-move="turn_left">↺<br>turn<b class="kb">Q</b></button>
+      <button class="act needs-stand" data-move="backward">▼<br>back<b class="kb">S</b></button>
+      <button class="act needs-stand" data-move="turn_right">↻<br>turn<b class="kb">E</b></button>
     </div>
     <div style="margin-top:14px">
       <label class="field">Duration <b id="dur-v">1.5</b> s <span style="opacity:.6">(0.1–5)</span></label>
@@ -325,6 +387,43 @@
     Voice <span id="voice-state" style="text-transform:none;letter-spacing:0;color:var(--accent)"></span>
     <button id="analyse" style="float:right;padding:5px 11px;font-size:12px">⟲ Analyse last call</button>
   </h2>
+  <div class="row" style="margin-bottom:12px;align-items:center">
+    <div style="flex:2">
+      <label class="field">Speaker <span id="spk-note" style="color:var(--muted)"></span></label>
+      <select id="spkpick"><option>…</option></select>
+    </div>
+  </div>
+
+  <div id="ios-audio" class="note" style="display:none;border-left:3px solid #c8a33a">
+    <b>No phone can send this call to a Bluetooth speaker.</b> Confirmed on
+    iPhone and Android, Safari and Chrome. It is a Bluetooth limitation, not a
+    browser one — see below. Fastest fix: <b>plug the speaker in with a cable</b>
+    (AUX or USB-C). Otherwise run the voice from the Mac and keep the phone for
+    the robot controls.
+  </div>
+
+  <div class="note"><b>Pick both before you press Talk.</b> Names appear once
+  the microphone has been allowed, and a speaker paired later shows up on its
+  own. Phones list no output devices at all — iOS has no
+  <code>setSinkId</code>, and Chrome on Android does not expose output
+  selection either, because the OS owns the routing.
+  <br><br>
+  <b>Bluetooth speaker plays music but not the call?</b> The profile is the
+  problem, not the phone. <b>A2DP carries audio one way only</b> — it is a
+  playback profile and has no microphone channel, which is why music is
+  flawless. A call needs two directions at once, so the phone switches to
+  <b>HFP</b>, and most Bluetooth <i>speakers</i> implement no usable HFP. With
+  no two-way route available the phone falls back to its own speaker and mic.
+  Same on Android as on iOS, for the same reason.
+  <br><br>
+  <b>What actually works.</b> A cable — AUX or USB-C — sidesteps Bluetooth
+  entirely and is the quickest fix. A Bluetooth <i>headset</i> has HFP and will
+  route, at mono 8–16&nbsp;kHz. Or run voice from a desktop OS: macOS, Windows
+  and Linux route input and output independently, so an A2DP speaker plus any
+  mic works, and the dropdown above becomes usable. Releasing the mic between
+  turns would restore A2DP on a phone but costs barge-in, which is a worse
+  trade for a greeter.</div>
+
   <div class="row" style="margin-bottom:12px;align-items:center">
     <div style="flex:2">
       <label class="field">Microphone</label>
@@ -501,8 +600,11 @@ async function send(name, args = {}, { retry = true } = {}) {
 }
 
 // Gestures
+// The digit that fires each gesture is printed on it. A shortcut nobody can
+// see is a shortcut nobody uses, and the overlay is the wrong place to look
+// when a guest is standing in front of the robot.
 $('gestures').innerHTML = GESTURES
-  .map(g => `<button class="act needs-stand" data-tool="do_gesture" data-args='{"gesture":"${g}"}'>${g.replace('_',' ')}</button>`)
+  .map((g, i) => `<button class="act needs-stand" data-tool="do_gesture" data-args='{"gesture":"${g}"}'>${g.replace('_',' ')}<b class="kb">${(i + 1) % 10}</b></button>`)
   .join('')
 
 // Generic tool buttons
@@ -536,10 +638,114 @@ $('dur').addEventListener('input', e => $('dur-v').textContent = Number(e.target
 $('spd').addEventListener('input', e => $('spd-v').textContent = Number(e.target.value).toFixed(2))
 $('autostand').addEventListener('change', syncButtons)
 
-// Spacebar = stop. A physical robot needs a reflex that is not "find the mouse".
+/* --------------------------- KEYBOARD TELEOP ---------------------------- *
+ * Every binding resolves to a real button and then clicks it. Nothing here
+ * calls send() directly, and that is the whole safety argument: the keyboard
+ * inherits the disabled state, the needs-stand gating, the busy lock and the
+ * auto-stand-up retry exactly as the mouse has them. A second command path
+ * with its own rules is how a console ends up moving a robot its own UI
+ * believes is stopped.
+ */
+const KEYS = {
+  // movement - the d-pad, in two layouts so neither hand has to learn the other
+  KeyW: '[data-move="forward"]',      ArrowUp:    '[data-move="forward"]',
+  KeyS: '[data-move="backward"]',     ArrowDown:  '[data-move="backward"]',
+  KeyQ: '[data-move="turn_left"]',    ArrowLeft:  '[data-move="turn_left"]',
+  KeyE: '[data-move="turn_right"]',   ArrowRight: '[data-move="turn_right"]',
+  KeyA: '[data-move="strafe_left"]',
+  KeyD: '[data-move="strafe_right"]',
+  // posture
+  KeyT: '[data-args*="stand_up"]',
+  KeyG: '[data-args*="lie_down"]',
+  KeyH: '[data-args*="shake_hand"]',
+  // the measured walk
+  Enter: '#walk',
+}
+// Digits pick a gesture by position: 1..9 then 0 for the tenth.
+const GESTURE_KEYS = ['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0']
+
+// Sliders, nudged from the keyboard so speed can be trimmed without the mouse.
+const nudge = (id, delta) => {
+  const el = $(id)
+  const step = Number(el.step), min = Number(el.min), max = Number(el.max)
+  el.value = Math.min(max, Math.max(min, Number(el.value) + delta * step)).toFixed(2)
+  el.dispatchEvent(new Event('input'))
+  flash(el)
+}
+
+// Which control just fired. Without this the keyboard is invisible: you press
+// a key, the robot moves, and nothing on screen says which control you hit.
+function flash(el) {
+  if (!el) return
+  el.style.transition = 'box-shadow .12s'
+  el.style.boxShadow = '0 0 0 2px var(--accent)'
+  setTimeout(() => { el.style.boxShadow = '' }, 180)
+}
+
+// A text field must keep its keystrokes. A range or checkbox must not: those
+// are the ones sitting under the operator's fingers mid-demo.
+const isTyping = el => {
+  if (!el) return false
+  if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true
+  return el.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button'].includes(el.type)
+}
+
 document.addEventListener('keydown', e => {
-  if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); $('stop').click() }
+  // Escape is the one key that outranks everything, including a focused text
+  // field. If someone is typing when the robot starts walking at a guest, the
+  // reflex must not be "click out of the box first".
+  if (e.key === 'Escape') { e.preventDefault(); flash($('stop')); $('stop').click(); return }
+
+  // Leave the browser's own shortcuts alone - Cmd+R, Ctrl+L, Alt+Tab.
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  if (isTyping(e.target)) return
+
+  // STOP. Allowed to repeat: holding it is a reasonable panic response.
+  if (e.code === 'Space') { e.preventDefault(); flash($('stop')); $('stop').click(); return }
+
+  // Autorepeat must never queue commands. Holding W for a second would
+  // otherwise fire ~30 moves that drain out of the busy lock one by one,
+  // long after the key came up.
+  if (e.repeat) return
+
+  if (e.key === '?') { e.preventDefault(); toggleKbdHelp(); return }
+
+  // Enter belongs to whatever the operator has tabbed to. Without this,
+  // focusing "Stand up" and pressing Enter would run Walk instead, because
+  // preventDefault below suppresses the button's own activation.
+  if (e.key === 'Enter' && e.target?.tagName === 'BUTTON') return
+
+  // Arrow keys belong to a focused slider first, so it stays adjustable.
+  if (e.target?.type === 'range' && e.key.startsWith('Arrow')) return
+
+  if (e.code === 'BracketLeft')  { e.preventDefault(); return nudge('dur', -1) }
+  if (e.code === 'BracketRight') { e.preventDefault(); return nudge('dur', +1) }
+  if (e.code === 'Minus')        { e.preventDefault(); return nudge('spd', -1) }
+  if (e.code === 'Equal')        { e.preventDefault(); return nudge('spd', +1) }
+
+  const gi = GESTURE_KEYS.indexOf(e.code)
+  const sel = gi >= 0
+    ? `#gestures button:nth-of-type(${gi + 1})`
+    : KEYS[e.code]
+  if (!sel) return
+
+  const btn = document.querySelector(sel)
+  if (!btn) return
+  e.preventDefault()
+  flash(btn)
+  // A disabled button is clicked anyway on purpose: the click handler ignores
+  // it, but the operator gets the flash and sees WHICH control refused,
+  // instead of pressing a key and getting silence.
+  if (btn.disabled) { log(`   ${e.code}: that control is unavailable right now`, 'log-err'); return }
+  btn.click()
 })
+
+function toggleKbdHelp() {
+  const el = $('kbd-help')
+  el.style.display = el.style.display === 'none' ? '' : 'none'
+}
+$('kbd-toggle').addEventListener('click', toggleKbdHelp)
+$('kbd-help').addEventListener('click', e => { if (e.target.id === 'kbd-help') toggleKbdHelp() })
 
 /* ------------------------------ VOICE ------------------------------ *
  * The assistant already holds all 7 robot tools, each with the Jetson URL and
@@ -677,7 +883,10 @@ async function startMeter() {
       meterRAF = requestAnimationFrame(tick)
     }
     tick()
-    await listMics()   // labels resolve once permission is granted
+    // Labels (and, in Chrome, the audiooutput entries at all) only appear
+    // once permission has been granted, so re-list BOTH here.
+    await listMics()
+    await listSpeakers()
   } catch (e) {
     $('lvl-txt').textContent = 'cannot open this mic'
     $('lvl-txt').style.color = 'var(--bad)'
@@ -692,6 +901,101 @@ function stopMeter() {
   meterStream = meterCtx = meterRAF = null
 }
 
+/*
+ * SPEAKER CHOICE, and why a Bluetooth speaker gets dropped the moment the call
+ * starts.
+ *
+ * The symptom: music plays over the Bluetooth speaker perfectly, then you open
+ * this page and start a call and the voice comes out of the phone instead.
+ *
+ * It is not a bug in the page. Playing music needs output only, so iOS uses
+ * A2DP - stereo, high quality. The moment anything calls getUserMedia, iOS
+ * switches the audio session to two-way communication, and a two-way route
+ * over Bluetooth needs HFP. Most Bluetooth SPEAKERS implement A2DP and no
+ * usable HFP, so there is no bidirectional route to be had and iOS falls back
+ * to the built-in speaker and mic. Nothing in a web page can override that -
+ * iOS Safari does not even enumerate audio output devices, so there is no
+ * handle to grab.
+ *
+ * What does work:
+ *   - this picker, on desktop Chrome/Edge and Android Chrome, where output
+ *     devices are selectable;
+ *   - a Bluetooth HEADSET rather than a speaker, which has HFP - routed, but
+ *     mono and 8-16 kHz;
+ *   - running the call on a Mac: macOS routes input and output independently,
+ *     so an A2DP speaker plus a separate mic is fine. That is the setup to use
+ *     for a demo that has to sound good.
+ */
+const SPK_KEY = 'd1-console-speaker'
+
+function outputSelectable() {
+  // Chrome/Edge expose setSinkId on media elements; Safari and iOS do not.
+  return typeof HTMLMediaElement !== 'undefined'
+    && 'setSinkId' in HTMLMediaElement.prototype
+}
+
+async function listSpeakers() {
+  const sel = $('spkpick')
+  if (!outputSelectable()) {
+    sel.innerHTML = '<option value="">not selectable on this device</option>'
+    sel.disabled = true
+    $('spk-note').textContent = '— iOS chooses this itself'
+    // Say it where it will be read, rather than leaving it to a paragraph.
+    $('ios-audio').style.display = ''
+    return []
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const outs = devices.filter(d => d.kind === 'audiooutput')
+    const saved = localStorage.getItem(SPK_KEY)
+    sel.innerHTML = outs.map(d =>
+      `<option value="${d.deviceId}"${d.deviceId === saved ? ' selected' : ''}>${esc(d.label || 'output ' + d.deviceId.slice(0, 6))}</option>`
+    ).join('') || '<option value="">no output device offered by this OS</option>'
+    $('spk-note').textContent = outs.length ? '' : '— the OS is choosing'
+    // Chrome on Android HAS setSinkId but enumerates no audiooutput devices,
+    // so "selectable" is not the same as "any device to select". The callout
+    // belongs on the outcome, not on the feature test.
+    if (!outs.length) $('ios-audio').style.display = ''
+    return outs
+  } catch (e) {
+    log(`   could not list speakers: ${e.message}`, 'log-err')
+    return []
+  }
+}
+
+/** Route an in-progress call to the chosen output. */
+async function applySpeakerToCall() {
+  const deviceId = $('spkpick').value
+  if (!deviceId || !outputSelectable()) return
+  const label = $('spkpick').selectedOptions[0]?.textContent ?? deviceId
+  let routed = false
+
+  // The SDK's own call, which hands straight to Daily underneath.
+  if (vapi?.setOutputDeviceAsync) {
+    try {
+      await vapi.setOutputDeviceAsync({ outputDeviceId: deviceId })
+      routed = true
+    } catch (e) {
+      log(`   SDK would not switch output: ${e.message}`, 'log-err')
+    }
+  }
+
+  // Belt and braces: the SDK creates its own <audio> elements and a version
+  // bump could stop forwarding this, so set the sink directly too. Harmless
+  // when the call above already worked.
+  for (const el of document.querySelectorAll('audio, video')) {
+    try { await el.setSinkId(deviceId); routed = true } catch {}
+  }
+
+  log(routed ? `   audio out: ${label}` : `   could not route audio to ${label}`,
+      routed ? 'log-ok' : 'log-err')
+}
+
+$('spkpick').addEventListener('change', async () => {
+  localStorage.setItem(SPK_KEY, $('spkpick').value)
+  await applySpeakerToCall()
+})
+
 /** Point an in-progress call at the chosen device. */
 async function applyMicToCall() {
   const deviceId = $('micpick').value
@@ -703,6 +1007,23 @@ async function applyMicToCall() {
     log(`   could not switch the call's mic: ${e.message}`, 'log-err')
   }
 }
+
+listSpeakers()
+
+/*
+ * Re-list when the hardware changes. Connecting the Bluetooth speaker AFTER
+ * the page is open is the normal case here, and without this the dropdown
+ * keeps showing the devices that existed at load and the speaker you just
+ * paired is simply absent.
+ */
+navigator.mediaDevices?.addEventListener?.('devicechange', async () => {
+  const before = $('spkpick').value
+  await listMics()
+  await listSpeakers()
+  if ($('spkpick').value !== before) {
+    log('   audio devices changed - lists refreshed', 'log-ok')
+  }
+})
 
 $('micpick').addEventListener('change', async () => {
   localStorage.setItem(MIC_KEY, $('micpick').value)
@@ -972,9 +1293,10 @@ async function startVoice() {
       voiceState('live — speak', 'ok')
       mark('CALL LIVE (click → ready to speak)')
       banner(null)
-      // Chrome's per-site default may not be the mic you chose, so tell the
-      // call explicitly once it is up.
+      // Chrome's per-site default may not be the devices you chose, so tell
+      // the call explicitly once it is up - both directions.
       applyMicToCall()
+      applySpeakerToCall()
     })
     vapi.on('call-end', () => { endVoice('call ended'); log('   voice call ended', 'log-ok') })
     vapi.on('call-start-failed', () => { endVoice('connect failed', 'err'); log('   voice connect failed', 'log-err') })

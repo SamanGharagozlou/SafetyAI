@@ -11,6 +11,40 @@ D1_ROBOT_TOKEN=<token> node tools/robot-console/server.mjs
 The token lives on the Jetson in `~/vapi-robot/start_server.sh`. **Do not paste it
 into a file in this repository.**
 
+## Keyboard controls
+
+Press <kbd>?</kbd> in the page (or the **⌨ Keys** button) for the full list. The
+keys are also printed on the buttons themselves, because a shortcut nobody can
+see is a shortcut nobody uses.
+
+| Keys | Does |
+|---|---|
+| `Space` | STOP |
+| `Esc` | STOP — works even while typing |
+| `W` `S` / `↑` `↓` | forward / backward |
+| `Q` `E` / `←` `→` | turn left / right |
+| `A` `D` | strafe left / right |
+| `Enter` | walk the measured distance (defers to a focused button) |
+| `T` `G` `H` | stand up / sit-lie down / shake hand |
+| `1`–`9` `0` | the ten gestures, in the order shown |
+| `[` `]` | duration down / up |
+| `-` `=` | speed down / up |
+
+Modifier combinations are left alone, so `Cmd+R` and friends still work, and
+arrow keys go to a slider when one has focus.
+
+Covered by `test-keyboard.mjs` — 17 assertions in a real Chrome against the
+simulator:
+
+```bash
+node tools/robot-sim/server.mjs &                       # :5175
+ROBOT_URL=http://127.0.0.1:5175 D1_ROBOT_TOKEN=sim PORT=5177 \
+  node tools/robot-console/server.mjs &
+node tools/robot-console/test-keyboard.mjs              # needs frontend/ deps
+```
+
+Point it at the simulator, never the robot: it presses movement keys.
+
 ## Why there is a server and not just an HTML file
 
 Two reasons, both measured rather than assumed:
@@ -117,7 +151,19 @@ confirming it fails.
   limp so the robot drops to the floor — one misclick in a grid of otherwise
   harmless buttons. A human can still send it over plain REST.
 - **STOP is never disabled**, and **spacebar is STOP**. A physical robot needs a
-  reflex that isn't "find the mouse".
+  reflex that isn't "find the mouse". **Escape is also STOP, and it is the one key
+  that still works while a text field has focus** — if someone is typing a distance
+  when the robot starts walking at a guest, the reflex must not be "click out of
+  the box first".
+- **The keyboard clicks the on-screen buttons; it never calls the API directly.**
+  Every binding resolves to a real button element and clicks it, so keyboard
+  control inherits the disabled state, the needs-standing gating, the busy lock
+  and the auto-stand-up retry exactly as the mouse has them. A second command
+  path with its own rules is how a console ends up moving a robot its own UI
+  believes is stopped.
+- **Key autorepeat never queues commands.** Holding `W` sends one move, not one
+  per repeat tick. Otherwise a held key fires dozens of moves that drain out of
+  the busy lock one at a time, long after the key came up.
 - **A timeout never reports "it didn't happen."** `walk_distance` blocks on the
   robot for up to 25 s, so the proxy allows 35 s; if it still times out the console
   says the robot *may still be moving* and to press STOP. Telling an operator

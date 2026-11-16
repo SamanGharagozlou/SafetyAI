@@ -110,6 +110,8 @@ ros2 run agibot_d1_bridge keyboard_teleop            # --lin 0.2 --ang 0.4 --hol
 Gestures (from `d1w_gestures`, robot must be standing, i.e. `ctrl_mode` = 1; press `1` first).
 Any key cancels a running gesture. `--gesture-scale 1.0` (default) shrinks the gestures if set lower,
 `--no-reset` skips the `stand_up` re-centre after each gesture.
+Inside a sequence such as `g` (greet), only the last step re-centres: `stand_up` while already
+standing made the robot lie down and rise between the bow and the shake hand (*unverified* on the robot).
 
 | Key | Gesture | Key | Gesture |
 |---|---|---|---|

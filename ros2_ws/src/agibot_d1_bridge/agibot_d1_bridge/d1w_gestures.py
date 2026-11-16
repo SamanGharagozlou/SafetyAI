@@ -199,14 +199,17 @@ class GestureController:
             self.robot.standUp()
             self.sleep(1.0)
 
-    def play(self, name, scale=1.0):
+    def play(self, name, scale=1.0, reset=True):
         if not 0.0 < scale <= 1.0:
             raise ValueError("scale must be in (0, 1]")
         if name in SEQUENCES:
             self.log(f"sequence: {name}")
-            for kind, *arg in SEQUENCES[name]:
+            seq = SEQUENCES[name]
+            for i, (kind, *arg) in enumerate(seq):
                 if kind == "gesture":
-                    self.play(arg[0], scale)
+                    # No standUp() re-centre mid-sequence: standUp() while standing
+                    # makes the robot lie down and rise again between steps.
+                    self.play(arg[0], scale, reset=i == len(seq) - 1)
                 else:
                     self.call_sdk(*arg)
             return
@@ -228,7 +231,7 @@ class GestureController:
                 self._send(0, 0, 0, 0)   # always stop body motion, even on Ctrl+C
             except Exception as e:      # don't mask the original error
                 self.log(f"WARNING: failed to send zero attitude: {e}")
-        if self.reset_with_standup:
+        if reset and self.reset_with_standup:
             self.robot.standUp()
             self.sleep(1.0)
 

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Greeter · debug</title>
+<!--
+  WHERE THE TIME WENT.
+
+  "It does not answer for a long time" cannot be acted on until you know
+  WHICH step was slow, so this is built around the gaps rather than the
+  events. Every row carries the time since the row above it, and anything
+  over a second is coloured. The slow step is then the one with the large
+  number beside it, not a guess.
+
+  The chain of a single turn, and what each gap means:
+
+    heard   the guest's sentence was finalised by the transcriber. The gap
+            above it is mostly how long they talked plus endpointing.
+    tool    the model decided to move the robot. A walk BLOCKS for seconds,
+            so a large gap after a tool row is the robot, not the model.
+    speaks  the voice actually started. The gap from `heard` to `speaks` is
+            what a guest experiences as the robot thinking - this is the
+            number to watch.
+    says    the sentence it spoke, once finalised.
+
+  Read-only. Nothing here can start, stop or steer a session.
+-->
+<style>
+  :root { --bg:#0b0f14; --panel:#141a22; --line:#232c38; --ink:#e6edf3; --muted:#8b949e;
+          --ok:#3fb950; --warn:#d29922; --bad:#f85149; --accent:#58a6ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif; padding:16px; }
+  h1 { font-size:17px; margin:0 0 12px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  .chip { background:var(--panel); border:1px solid var(--line); border-radius:999px;
+          padding:6px 13px; font-size:12.5px; }
+  .chip b { color:var(--muted); font-weight:600; margin-right:6px; }
+  .up { color:var(--ok) } .down { color:var(--bad) } .idle { color:var(--muted) }
+
+  .big { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:11px 15px; min-width:150px; }
+  .stat .k { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+  .stat .v { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; }
+
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th { text-align:left; font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+       color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--line); font-weight:600; }
+  td { padding:6px 8px; border-bottom:1px solid #1a212b; vertical-align:top; }
+  td.gap { text-align:right; width:82px; color:var(--muted); }
+  td.gap.slow { color:var(--warn); font-weight:700 }
+  td.gap.vslow { color:var(--bad); font-weight:700 }
+  td.kind { width:92px; }
+  .k-heard  { color:var(--accent) } .k-says { color:var(--ok) }
+  .k-tool   { color:var(--warn) }   .k-error{ color:var(--bad) }
+  .k-speaks { color:var(--ok) }     .k-quiet, .k-call { color:var(--muted) }
+  td.txt { color:var(--ink); word-break:break-word; }
+  .empty { color:var(--muted); padding:22px 8px; }
+  .note { color:var(--muted); font-size:12px; margin-top:14px; line-height:1.6; }
+</style>
+</head>
+<body>
+<h1>Greeter · debug</h1>
+
+<div class="bar" id="bar"></div>
+
+<div class="big">
+  <div class="stat"><div class="k">guest → first word</div><div class="v" id="ttfw">—</div></div>
+  <div class="stat"><div class="k">slowest gap</div><div class="v" id="worst">—</div></div>
+  <div class="stat"><div class="k">turns</div><div class="v" id="turns">0</div></div>
+</div>
+
+<table>
+  <thead><tr><th>time</th><th class="gap" style="text-align:right">+gap</th><th>what</th><th>detail</th></tr></thead>
+  <tbody id="rows"><tr><td colspan="4" class="empty">waiting for a conversation…</td></tr></tbody>
+</table>
+
+<p class="note">
+  <b>guest → first word</b> is the gap from the guest's sentence being finalised to the voice
+  starting: what a person actually experiences as the pause. A large gap straight after a
+  <span class="k-tool">tool</span> row is the robot moving, not the model thinking —
+  <code>walk_distance</code> blocks until the walk finishes.
+</p>
+
+<script type="module">
+const $ = id => document.getElementById(id)
+const K = new URLSearchParams(location.search).get('k')
+const q = p => p + (K ? (p.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(K) : '')
+const clock = ms => new Date(ms).toLocaleTimeString('en-GB', { hour12: false })
+const secs = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms'
+
+let since = 0
+const all = []
+
+function render(state) {
+  $('bar').innerHTML = [
+    ['voice', state.brain?.connected ? '<span class="up">connected</span>' : '<span class="down">not connected</span>'],
+    ['robot', state.robot?.connected
+        ? `<span class="up">up</span> · ${state.robot.battery ?? '?'}% · ${state.robot.standing ? 'standing' : 'down'}${state.robot.moving ? ' · moving' : ''}`
+        : (state.robot?.reachable ? '<span class="down">not connected</span>' : '<span class="down">agent unreachable</span>')],
+    ['session', state.live ? `<span class="up">${state.name || 'guest'}</span> · ${state.lang}` : '<span class="idle">idle</span>'],
+    ['face', state.face?.state ?? '—'],
+  ].map(([k, v]) => `<span class="chip"><b>${k}</b>${v}</span>`).join('')
+
+  // Turn timing: from a finalised guest sentence to the voice starting.
+  const waits = []
+  for (let i = 0; i < all.length; i++) {
+    if (all[i].kind !== 'heard') continue
+    const next = all.slice(i + 1).find(e => e.kind === 'speaks')
+    if (next) waits.push(next.at - all[i].at)
+  }
+  $('ttfw').textContent = waits.length ? secs(waits[waits.length - 1]) : '—'
+  $('ttfw').style.color = waits.length ? (waits.at(-1) > 4000 ? 'var(--bad)' : waits.at(-1) > 2000 ? 'var(--warn)' : 'var(--ok)') : ''
+  $('turns').textContent = waits.length
+  const worst = all.reduce((m, e) => e.gap > m ? e.gap : m, 0)
+  $('worst').textContent = worst ? secs(worst) : '—'
+
+  const rows = all.slice(-80).reverse()
+  $('rows').innerHTML = rows.length ? rows.map(e => `
+    <tr>
+      <td>${clock(e.at)}</td>
+      <td class="gap ${e.gap > 3000 ? 'vslow' : e.gap > 1000 ? 'slow' : ''}">${e.gap ? '+' + secs(e.gap) : ''}</td>
+      <td class="kind k-${e.kind}">${e.kind}</td>
+      <td class="txt">${(e.text ?? '').replace(/[<&]/g, c => ({ '<': '&lt;', '&': '&amp;' }[c]))}</td>
+    </tr>`).join('') : '<tr><td colspan="4" class="empty">waiting for a conversation…</td></tr>'
+}
+
+async function tick() {
+  try {
+    const d = await (await fetch(q('/api/log?since=' + since), { cache: 'no-store' })).json()
+    for (const e of d.entries ?? []) { all.push(e); since = Math.max(since, e.at) }
+    render(d.state ?? {})
+  } catch { /* a missed poll is not worth a banner on a debug page */ }
+  setTimeout(tick, 1000)
+}
+tick()
+</script>
+</body>
+</html>

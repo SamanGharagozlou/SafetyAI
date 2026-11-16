@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Tropfi</title>
+<!--
+  THE ROBOT'S FACE AND THE ROBOT'S HEAD.
+
+  This runs full-screen on the phone strapped to the D1. It is the whole
+  robot as far as a guest is concerned, and it owns everything to do with
+  the conversation:
+
+    the QR code while nobody is talking to it
+    the face, lip-synced, while it talks
+    the microphone
+    the loudspeaker
+    the Vapi call itself
+
+  ONE DEVICE, ONE MICROPHONE - like any humanoid robot. You talk to the dog,
+  not into your own phone. The guest's phone only carries consent and a Stop
+  button; it has no audio role at all.
+
+  WHY THAT IS ALSO THE TECHNICALLY CORRECT CHOICE, not just the nicer one:
+
+  1. Echo. Mic and speaker on the same device is the exact case browser echo
+     cancellation is built for. Split them - phone mic, Bluetooth speaker -
+     and the speaker's 100-200 ms latency puts the echo outside what AEC can
+     cancel, so the assistant hears itself, transcribes itself, and
+     interrupts itself mid-sentence.
+  2. Lip sync. Humans notice about 45 ms of audio-visual offset. The mouth
+     here is read off the very audio being played, on the same device, so
+     there is no network in the loop to lose that race.
+
+  THE COST, and it is not negotiable: this page holds the microphone, so it
+  can NOT also drive a Bluetooth speaker. Measured here on both iPhone and
+  Android - getUserMedia drops the phone from A2DP to HFP, and most Bluetooth
+  speakers have no usable HFP, so the sound falls back to the phone's own
+  speaker. If the phone is not loud enough for the room, the speaker is
+  plugged in WITH A CABLE. There is no Bluetooth anywhere in this design.
+
+  SERVE THIS OVER HTTPS. A browser will not give the microphone to an
+  http:// page on a LAN address - it is not a secure context - and the
+  failure looks like a permissions bug rather than a protocol one.
+
+  MODES
+  ?demo=1   synthetic speech envelope, no network, no mic. For judging the face.
+  ?qr=<url> override what the idle QR encodes.
+-->
+<style>
+  :root {
+    --deep:   #04243a;   /* thermal water at depth */
+    --mid:    #0a4f78;
+    --bright: #19a7d4;   /* the pool lit from below */
+    --pale:   #8fe3f7;
+    --ink:    #04202f;
+    --white:  #f2fbff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: var(--deep);
+    font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
+    color: var(--white); user-select: none;
+  }
+  /* Behind everything, breathing. A perfectly still screen reads as crashed. */
+  #glow {
+    position: fixed; inset: -30%; z-index: 0;
+    background: radial-gradient(circle at 50% 55%, #0d6490 0%, #063b5c 40%, var(--deep) 70%);
+    animation: breathe 7s ease-in-out infinite;
+  }
+  @keyframes breathe { 0%,100% { transform: scale(1); opacity: .85 } 50% { transform: scale(1.08); opacity: 1 } }
+
+  .screen { position: fixed; inset: 0; z-index: 1; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; padding: 1.5vmin; transition: opacity .4s; }
+  .screen[hidden] { display: none; }
+
+  /* ---------- arm ---------- */
+  #arm { cursor: pointer; }
+  #arm .tap { font-size: 7vmin; font-weight: 800; letter-spacing: -.02em; }
+  #arm .why { font-size: 3vmin; color: var(--pale); max-width: 70vmin; text-align: center; margin-top: 3vmin; line-height: 1.5; }
+  #arm .pulse { width: 26vmin; height: 26vmin; border-radius: 50%; margin-bottom: 6vmin;
+                background: var(--bright); opacity: .25; animation: ping 1.8s ease-out infinite; }
+  @keyframes ping { 0% { transform: scale(.75); opacity: .45 } 100% { transform: scale(1.35); opacity: 0 } }
+
+  /* ---------- idle ---------- */
+
+  /* ---------- face ---------- */
+  /* The element is #facesvg - this rule used to say #face and matched
+     nothing, so the face was sized by whatever the flexbox felt like. */
+  #facesvg { flex: 0 1 auto; width: 54vmin; height: auto; max-height: 72vh; overflow: visible;
+             transition: width .9s cubic-bezier(.4,0,.2,1); }
+  .pair:has(#qrpanel.on) #facesvg { width: 36vmin; }   /* yields room, never vanishes */
+  #caption { position: fixed; left: 0; right: 0; bottom: 3vmin; z-index: 2; text-align: center;
+             font-size: 3vmin; color: var(--pale); opacity: .85; padding: 0 6vmin; min-height: 4vmin; }
+  #badge { position: fixed; top: 2.5vmin; left: 50%; transform: translateX(-50%); z-index: 3;
+           font-size: 2.3vmin; letter-spacing: .18em; text-transform: uppercase; color: var(--pale); opacity: .5; }
+
+  /* Face and code side by side, both always visible. Earlier the QR took
+     the whole screen on a timer, which meant a guest glancing over at the
+     wrong moment saw no face, and one glancing over at another saw no code
+     to scan. Now the cycle only changes the proportion. */
+  .pair { display: flex; align-items: center; justify-content: center;
+          gap: 3vmin; width: 100%; height: 100%; }
+  @media (orientation: portrait) { .pair { flex-direction: column; gap: 2vmin; } }
+
+  #qrpanel { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center;
+             transition: width .9s cubic-bezier(.4,0,.2,1), opacity .5s; width: 30vmin; }
+  #qrpanel.on { width: 52vmin; }                 /* the "look at me" half of the cycle */
+  /* Someone is talking to it: the code is clutter, and an invitation to a
+     second person to interrupt. The face takes the whole screen instead. */
+  .pair.solo #qrpanel { width: 0; opacity: 0; pointer-events: none; overflow: hidden; }
+  .pair.solo #facesvg { width: 76vmin; }
+  .qrcap { font-size: 2.4vmin; margin: 1.6vmin 0 0; color: var(--pale); text-align: center;
+           white-space: nowrap; transition: font-size .9s; }
+  #qrpanel.on .qrcap { font-size: 3.2vmin; }
+  .card { background: var(--white); border-radius: 4vmin; padding: 2.2vmin;
+          box-shadow: 0 2vmin 6vmin rgba(0,0,0,.45); width: 100%; }
+  #qr { width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
+  #qr canvas { width: 100% !important; height: 100% !important; image-rendering: pixelated; }
+  #qr-fallback { color: #04202f; font: 600 2.2vmin/1.5 ui-monospace, monospace; word-break: break-all;
+                 text-align: center; padding: 2vmin; }
+
+  /* Faults are shown on the robot's own face. A failure only in a console is
+     a failure nobody in the room can diagnose. */
+  #fault { position: fixed; bottom: 0; left: 0; right: 0; z-index: 9; padding: 2.4vmin;
+           background: #7d1d1d; color: #fff; font-size: 2.5vmin; text-align: center; display: none; }
+</style>
+</head>
+<body>
+
+<div id="glow"></div>
+
+<!-- ARM. A browser will not hand a page the microphone, or play a sound,
+     until somebody has tapped it. An unattended screen that was never tapped
+     is silent and gives no clue why, so we make the tap the first screen
+     instead of a mystery later. -->
+<section class="screen" id="arm">
+  <div class="pulse"></div>
+  <div class="tap">Tap to wake me</div>
+  <div class="why">One tap lets this screen use the microphone and the speaker. Do it once while setting up.</div>
+</section>
+
+<!-- THE STAGE. The face is always on once armed, and the QR comes OVER it
+     every so often. A screen showing only a code is a dead screen - nobody
+     crosses a foyer to look at a barcode, but they will cross it to look at
+     something with eyes. The code then arrives to tell them what to do with
+     the thing they already walked up to. -->
+<section class="screen" id="stage" hidden>
+  <div id="badge"></div>
+  <div class="pair" id="pair">
+  <svg id="facesvg" viewBox="0 0 200 230" aria-hidden="true">
+    <defs>
+      <radialGradient id="body" cx="38%" cy="28%" r="78%">
+        <stop offset="0%"  stop-color="#7fe0fb"/>
+        <stop offset="48%" stop-color="var(--bright)"/>
+        <stop offset="100%" stop-color="#0a5f90"/>
+      </radialGradient>
+      <radialGradient id="shine" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#ffffff" stop-opacity=".92"/>
+        <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+      </radialGradient>
+      <filter id="soft"><feGaussianBlur stdDeviation="2.4"/></filter>
+    </defs>
+    <g id="drop">
+      <!-- Ears, behind the body. A water drop is the venue; floppy ears are
+           the dog. The robot is both, and one shape should say so. -->
+      <g id="ears">
+        <path id="earL" d="M48 108 C14 116 2 156 16 176 C31 194 54 168 58 138 Z" fill="#06405f"/>
+        <path id="earR" d="M152 108 C186 116 198 156 184 176 C169 194 146 168 142 138 Z" fill="#06405f"/>
+      </g>
+      <path d="M100 8 C100 8 172 92 172 138 A72 72 0 1 1 28 138 C28 92 100 8 100 8 Z" fill="url(#body)"/>
+      <!-- a drop with no specular read looks like a balloon -->
+      <ellipse cx="68" cy="92" rx="26" ry="34" fill="url(#shine)" opacity=".55" transform="rotate(-20 68 92)"/>
+      <g id="features">
+        <g id="eyeL">
+          <ellipse class="sclera" cx="72" cy="132" rx="19" ry="22" fill="var(--white)"/>
+          <circle  class="pupil"  cx="72" cy="134" r="9.5" fill="var(--ink)"/>
+          <circle  class="spark"  cx="76" cy="129" r="3.2" fill="#fff"/>
+        </g>
+        <g id="eyeR">
+          <ellipse class="sclera" cx="128" cy="132" rx="19" ry="22" fill="var(--white)"/>
+          <circle  class="pupil"  cx="128" cy="134" r="9.5" fill="var(--ink)"/>
+          <circle  class="spark"  cx="132" cy="129" r="3.2" fill="#fff"/>
+        </g>
+        <g id="lids">
+          <rect id="lidL" x="51" y="108" width="42" height="48" rx="8" fill="url(#body)" transform="scale(1,0)" transform-origin="72px 110px"/>
+          <rect id="lidR" x="107" y="108" width="42" height="48" rx="8" fill="url(#body)" transform="scale(1,0)" transform-origin="128px 110px"/>
+        </g>
+        <ellipse id="cheekL" cx="52" cy="160" rx="13" ry="8" fill="#ff8fa8" opacity="0" filter="url(#soft)"/>
+        <ellipse id="cheekR" cx="148" cy="160" rx="13" ry="8" fill="#ff8fa8" opacity="0" filter="url(#soft)"/>
+        <!-- Thinking. The gap between a guest finishing and the voice
+             starting is the bit that feels broken; a face doing nothing
+             through it reads as a hang, and three dots read as a pause. -->
+        <g id="think" opacity="0">
+          <circle cx="84"  cy="172" r="4.5" fill="var(--ink)"/>
+          <circle cx="100" cy="172" r="4.5" fill="var(--ink)"/>
+          <circle cx="116" cy="172" r="4.5" fill="var(--ink)"/>
+        </g>
+        <ellipse id="mouth" cx="100" cy="172" rx="21" ry="3" fill="var(--ink)"/>
+        <path    id="smile" d="M80 170 Q100 182 120 170" stroke="var(--ink)" stroke-width="5"
+                 stroke-linecap="round" fill="none" opacity="1"/>
+      </g>
+    </g>
+  </svg>
+
+  <!-- Always on screen, never covering the face. The cycle changes how much
+       room it takes, not whether it is there: a guest who looks up at the
+       wrong moment must still find a code to scan. -->
+  <div id="qrpanel">
+    <div class="card"><div id="qr"><div id="qr-fallback">loading…</div></div></div>
+    <p class="qrcap">Scan to say hello</p>
+  </div>
+  </div>
+  <div id="caption"></div>
+</section>
+
+<div id="fault"></div>
+
+<script type="module">
+const $ = id => document.getElementById(id)
+const qs = new URLSearchParams(location.search)
+const DEMO = qs.get('demo') === '1'
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
+const fault = msg => { const f = $('fault'); f.textContent = msg; f.style.display = msg ? 'block' : 'none' }
+
+const show = which => {
+  for (const id of ['arm', 'stage']) $(id).hidden = id !== which
+}
+
+/**
+ * THE IDLE CYCLE.
+ *
+ * The face is the default and the QR is the interruption, not the other way
+ * round. Nobody crosses a foyer to look at a barcode; they cross it to look
+ * at something with eyes. By the time the code appears they are already
+ * standing in front of it and it only has to say what to do next.
+ *
+ * Both are always on screen; this only swaps which one is bigger. It opens
+ * on the large code so whoever is setting the robot up can scan it at once.
+ */
+const FACE_MS = 14000, QR_MS = 7000
+let cycleTimer = null
+function startIdleCycle() {
+  stopIdleCycle()
+  const toQR = () => {
+    $('qrpanel').classList.add('on')
+    cycleTimer = setTimeout(toFace, QR_MS)
+  }
+  const toFace = () => {
+    $('qrpanel').classList.remove('on')
+    cycleTimer = setTimeout(toQR, FACE_MS)
+  }
+  toQR()
+}
+function stopIdleCycle() {
+  clearTimeout(cycleTimer); cycleTimer = null
+  $('qrpanel').classList.remove('on')   // settle back to the small code
+}
+
+/* ------------------------------------------------------------------ *
+ * THE FACE
+ *
+ * One rAF loop owns every pixel. Each expressive channel is a spring -
+ * a value chasing a target - which is what keeps it feeling alive
+ * rather than mechanical. Nothing in nature steps to a new value.
+ * ------------------------------------------------------------------ */
+const face = {
+  state: 'idle',
+  openTarget: 0, open: 0,
+  gaze: { x: 0, y: 0, tx: 0, ty: 0 },
+  lid: 0, blinkAt: 0, blinking: 0,
+  warmth: 0, warmthTarget: 0,
+  wobble: 0, think: 0,
+}
+
+function setState(s, caption) {
+  face.state = s
+  $('badge').textContent = { listening: 'listening', thinking: 'thinking', speaking: 'speaking' }[s] ?? ''
+  if (caption !== undefined) $('caption').textContent = caption
+  face.warmthTarget = (s === 'happy' || s === 'speaking') ? 1 : 0
+}
+
+// Eyes wander. Eyes that move only on command look dead; the bias toward
+// centre keeps it reading as "looking at you" rather than away.
+function wander() {
+  face.gaze.tx = (Math.random() * 2 - 1) * 0.55
+  face.gaze.ty = (Math.random() * 2 - 1) * 0.40
+  setTimeout(wander, 900 + Math.random() * 1800)
+}
+wander()
+
+let t0 = performance.now()
+function frame(now) {
+  const dt = Math.min(64, now - t0) / 1000
+  t0 = now
+  const k = x => 1 - Math.exp(-x * dt)        // frame-rate independent easing
+
+  // mouth: fast attack, slow release. Symmetric timing chatters; a slow
+  // release reads as a syllable trailing off.
+  const target = face.state === 'speaking' ? face.openTarget : 0
+  face.open += (target - face.open) * k(target > face.open ? 26 : 9)
+  $('mouth').setAttribute('ry', (2.2 + face.open * 21).toFixed(2))
+  $('mouth').setAttribute('rx', (21 + face.open * 5).toFixed(2))
+  $('smile').setAttribute('opacity', (clamp(1 - face.open * 3.2, 0, 1) * (1 - face.think)).toFixed(3))
+  $('mouth').setAttribute('opacity', (1 - face.think).toFixed(3))
+
+  // eyes
+  face.gaze.x += (face.gaze.tx - face.gaze.x) * k(5)
+  face.gaze.y += (face.gaze.ty - face.gaze.y) * k(5)
+  const dx = face.gaze.x * 6, dy = face.gaze.y * 4.5
+  for (const [g, cx] of [['eyeL', 72], ['eyeR', 128]]) {
+    const el = $(g)
+    el.querySelector('.pupil').setAttribute('cx', (cx + dx).toFixed(2))
+    el.querySelector('.pupil').setAttribute('cy', (134 + dy).toFixed(2))
+    el.querySelector('.spark').setAttribute('cx', (cx + 4 + dx * .7).toFixed(2))
+    el.querySelector('.spark').setAttribute('cy', (129 + dy * .7).toFixed(2))
+  }
+  const openEye = face.state === 'listening' ? 24 : 22   // widening = "I heard you"
+  for (const g of ['eyeL', 'eyeR']) {
+    const s = $(g).querySelector('.sclera')
+    const cur = Number(s.getAttribute('ry'))
+    s.setAttribute('ry', (cur + (openEye - cur) * k(6)).toFixed(2))
+  }
+
+  // blink
+  if (now > face.blinkAt) { face.blinking = 1; face.blinkAt = now + 2200 + Math.random() * 3600 }
+  if (face.blinking > 0) {
+    face.lid = Math.sin(face.blinking * Math.PI)
+    face.blinking = Math.max(0, face.blinking - dt * 7)
+    if (face.blinking === 0) face.lid = 0
+  }
+  $('lidL').setAttribute('transform', `scale(1,${face.lid.toFixed(3)})`)
+  $('lidR').setAttribute('transform', `scale(1,${face.lid.toFixed(3)})`)
+
+  // cheeks
+  face.warmth += (face.warmthTarget - face.warmth) * k(2.2)
+  $('cheekL').setAttribute('opacity', (face.warmth * .55).toFixed(3))
+  $('cheekR').setAttribute('opacity', (face.warmth * .55).toFixed(3))
+
+  // ears: they lag the body, which is what makes them read as floppy rather
+  // than painted on, and they perk up when it is listening.
+  const perk = face.state === 'listening' ? -7 : 0
+  const lagged = Math.sin((face.wobble - 0.18) * 1.5) * 1.2
+  $('earL').setAttribute('transform', `rotate(${(lagged * 2.6 + perk).toFixed(2)} 48 112)`)
+  $('earR').setAttribute('transform', `rotate(${(lagged * 2.6 - perk).toFixed(2)} 152 112)`)
+
+  // body: a water drop is never perfectly still
+  face.wobble += dt
+  const sway = Math.sin(face.wobble * 1.5) * 1.2
+  const bob  = Math.sin(face.wobble * 2.3) * 1.0 - face.open * 3.5
+  $('drop').setAttribute('transform',
+    `translate(${sway.toFixed(2)} ${bob.toFixed(2)}) rotate(${(sway * .35).toFixed(2)} 100 140)`)
+
+  requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame)
+
+/* If the encoder will not load - no wifi, a blocked CDN - the URL is printed
+   instead. A blank white square is the one failure nobody in the room could
+   diagnose, and it is the failure a guest is standing in front of. */
+async function renderQR(url) {
+  try {
+    const m = await import('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm')
+    const canvas = document.createElement('canvas')
+    await (m.default ?? m).toCanvas(canvas, url, { margin: 1, width: 900,
+      color: { dark: '#04243aff', light: '#ffffffff' } })
+    $('qr').replaceChildren(canvas)
+  } catch { $('qr-fallback').textContent = url }
+}
+
+/* The mouth is read off the assistant's actual audio. The SDK's volume-level
+   event is kept as a fallback for whenever the track is not reachable. */
+function attachAnalyser(stream) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)()
+  const an = ctx.createAnalyser()
+  an.fftSize = 512; an.smoothingTimeConstant = 0.45
+  ctx.createMediaStreamSource(stream).connect(an)
+  const buf = new Uint8Array(an.frequencyBinCount)
+  const tick = () => {
+    an.getByteTimeDomainData(buf)
+    let peak = 0
+    for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128))
+    // /48 rather than /128: speech rarely nears full scale, and a mouth that
+    // only twitches is worse than one that slightly over-acts.
+    face.openTarget = clamp(peak / 48, 0, 1)
+    requestAnimationFrame(tick)
+  }
+  tick()
+}
+
+/* ------------------------------------------------------------------ *
+ * DEMO - no network, no microphone, no Vapi.
+ * ------------------------------------------------------------------ */
+if (DEMO) {
+  show('stage')
+  // A placeholder domain here was a real bug: .invalid never resolves, so
+  // the demo screen showed a code that every phone rejected as a bad URL.
+  // Demo mode encodes this page's OWN join link, so the code on screen is
+  // always one that actually works.
+  renderQR(qs.get('qr') || new URL(
+    '/join' + (qs.get('k') ? `?k=${encodeURIComponent(qs.get('k'))}` : ''), location.origin).href)
+  startIdleCycle()
+  const script = [
+    [1200, 'listening', ''],
+    [900,  'thinking',  ''],
+    [4200, 'speaking',  'Oh, hello! Fancy a hot soak?'],
+    [1400, 'listening', ''],
+    [3600, 'speaking',  'Ten thermal pools, right under the mountains.'],
+    [1200, 'happy',     'Come on, this way.'],
+  ]
+  let i = 0
+  const run = () => { const [ms, st, cap] = script[i++ % script.length]; setState(st, cap); setTimeout(run, ms) }
+  run()
+  setInterval(() => {
+    if (face.state !== 'speaking') return
+    const t = performance.now() / 1000
+    const syll = Math.max(0, Math.sin(t * 11)) * Math.max(0, Math.sin(t * 2.6))
+    face.openTarget = clamp(syll * 1.25 + Math.random() * .12, 0, 1)
+  }, 33)
+}
+
+/* ------------------------------------------------------------------ *
+ * TWO ROLES, ONE FILE
+ *
+ *   ?brain=1   the Jetson. Runs the Vapi call against the DJI microphone
+ *              and the Bluetooth speaker, and reports what the
+ *              conversation is doing. Nobody looks at it; it runs headless.
+ *   (default)  the phone on the robot's back. Draws the face and the QR.
+ *              Never opens a microphone and never joins a call.
+ *
+ * Splitting them is what lets the robot keep its own voice and ears: a
+ * Linux box can hold a USB mic and an A2DP speaker at once, which no phone
+ * can. The cost is that the mouth is now driven across a network, so only
+ * onsets travel and the syllables are generated here. People notice a mouth
+ * moving in silence; nobody can tell a real envelope from a plausible one.
+ * ------------------------------------------------------------------ */
+const BRAIN = qs.get('brain') === '1'
+/* auto=1 skips the arming tap. Only safe when the browser was launched with
+   the microphone and autoplay already granted - brain-mac.sh does exactly
+   that. A tap is a fine thing to require of someone sitting at the machine
+   and a terrible thing to require of a machine that must come up by itself. */
+const AUTO = qs.get('auto') === '1'
+const cfg = async () => (await fetch('/api/config')).json()
+
+/* ------------------------------ BRAIN ------------------------------ */
+async function brain() {
+  let c
+  try { c = await cfg() } catch (e) { return void fault(`no config: ${e.message}`) }
+  /* The npm package is CommonJS, so the CDN's ESM wrapper nests the class
+     differently depending on the build: taking `mod.default` straight gives
+     "Vapi is not a constructor", which is exactly how this failed at 5am
+     with nothing on screen but a working-looking page. tools/robot-console
+     already carried this workaround; it is repeated here rather than
+     assumed. */
+  const mod = await import('https://cdn.jsdelivr.net/npm/@vapi-ai/web@3.1.0/+esm')
+  const Vapi = [mod.default?.default, mod.default, mod.Vapi, mod].find(c => typeof c === 'function')
+  if (!Vapi) return void fault('the voice SDK loaded but exposes no constructor')
+  const vapi = new Vapi(c.publicKey)
+
+  let calling = false, ready = false, state = 'idle', caption = ''
+  const pending = []
+  /* Identity, so the server can pick ONE of us. Two brains both open their
+     own call and the room gets two assistants talking over each other -
+     heard as an echo. A stray tab must not be able to do that. */
+  const bid = Math.random().toString(36).slice(2, 10)
+  let holding = true
+
+  // Posted on every change AND on a heartbeat, so the server can tell the
+  // guest's phone whether anything is actually able to talk. A Start button
+  // that works when nothing is listening is how you get silence with no
+  // explanation on screen.
+  // Discrete events queue up and ride along with the next heartbeat, so a
+  // busy turn is one request rather than ten.
+  const outbox = []
+  const note = (kind, text = '') => { outbox.push({ kind, text }); report() }
+  const report = () => fetch('/api/face', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state, caption, bid, log: outbox.splice(0, outbox.length) }),
+  }).then(r => r.json()).then(d => {
+    // The heartbeat is also how the lease is kept, so it is also where we
+    // learn we have lost it - faster than waiting for the next long poll.
+    if (d && d.holding === false && holding) {
+      holding = false
+      fault('another voice is already running for this robot — this window is standing by')
+      if (calling) stop()
+    } else if (d && d.holding === true && !holding) { holding = true; fault('') }
+  }).catch(() => {})
+  const set = (s, cap) => { state = s; if (cap !== undefined) caption = cap; report() }
+  setInterval(report, 3000)
+  report()
+
+  const sendText = text => {
+    if (!ready) { pending.push(text); return }
+    try {
+      vapi.send({ type: 'add-message', message: { role: 'user', content: text }, triggerResponseEnabled: true })
+    } catch (e) { fault(`could not send that: ${e?.message ?? e}`) }
+  }
+  const flush = () => { while (pending.length && ready) sendText(pending.shift()) }
+
+  vapi.on('call-start',   () => { calling = true; ready = true; note('call', 'started'); set('listening', ''); flush() })
+  vapi.on('speech-start', () => { note('speaks'); set('speaking') })
+  vapi.on('speech-end',   () => { note('quiet'); set('listening', '') })
+  vapi.on('call-end',     () => { calling = false; ready = false; pending.length = 0; note('call', 'ended'); set('idle', '') })
+  vapi.on('error',        e => { note('error', String(e?.message ?? e)); fault(`voice error: ${e?.message ?? e}`) })
+  vapi.on('message', m => {
+    if (m?.type === 'transcript' && m.transcriptType === 'final') {
+      if (m.role === 'assistant') { note('says', m.transcript); set(state, m.transcript) }
+      else {
+        /* The guest has finished a sentence. Everything from here until the
+           voice starts is dead air on the robot's face, and it is the part
+           that feels like a hang - so this is where "thinking" belongs. */
+        note('heard', m.transcript)
+        set('thinking', '')
+      }
+    }
+    // Tool calls are usually the long pole: a walk blocks for seconds.
+    const calls = m?.toolCalls ?? m?.toolCallList ?? (m?.functionCall ? [m.functionCall] : null)
+    if (calls) for (const c of calls) {
+      note('tool', `${c.name ?? c.function?.name ?? '?'} ${JSON.stringify(c.arguments ?? c.function?.arguments ?? {}).slice(0, 120)}`)
+      set('thinking')
+    }
+    if (m?.type === 'tool-calls-result' || m?.type === 'function-call-result') note('tool-done', JSON.stringify(m.result ?? '').slice(0, 160))
+  })
+
+  /* THE OPENING LINE IS NOT GENERATED BY THE MODEL.
+     firstMessageMode is 'assistant-speaks-first', so Vapi speaks this string
+     verbatim and the prompt never sees it - which is why picking French once
+     produced an English greeting. Every language needs its own words here.
+
+     They are warm rather than efficient, and there are several per language
+     picked at random, because the same line twice in a row in a small foyer
+     makes a robot sound like a vending machine. These are the greetings
+     people actually use here: Grüezi and Salü in the German cantons, Salut
+     in Romandy, Ciao in Ticino, Allegra in Romansh. */
+  const pick = a => a[Math.floor(Math.random() * a.length)]
+  /* The opener is spoken verbatim, so the name has to be put into the string
+     here - the model never sees this line. Without a name the slot and its
+     separator both disappear, so "Grüezi, Anna!" degrades to "Grüezi!"
+     rather than to "Grüezi, !". */
+  const withName = (line, name) => name
+    ? line.replace('{name}', (/[\u0900-\u0DFF\u4e00-\u9fff]/.test(line) ? ' ' : ', ') + name)
+    : line.replace('{name}', '')
+
+  const OPENERS = {
+    German: [
+      'Grüezi{name}! Schön, dass Sie da sind. Zehn Thermalbecken warten, direkt unter den Bergen.',
+      'Hoi{name}! Was für ein Tag für ein warmes Bad. Das Wasser kommt frisch aus dem Berg.',
+      'Salü{name}! Willkommen in Leukerbad. Draussen zweiundvierzig Grad im Wasser, und die Alpen gleich davor.',
+    ],
+    French: [
+      'Bonjour{name}, bienvenue ! Dix bassins thermaux vous attendent, juste sous les montagnes.',
+      'Salut{name} ! Quelle belle journée pour un bain chaud. L\'eau sort directement de la montagne.',
+      'Bonjour{name} ! Vous tombez bien : quarante-deux degrés, en plein air, face aux Alpes.',
+    ],
+    Italian: [
+      'Buongiorno{name}, benvenuto! Dieci vasche termali vi aspettano, proprio sotto le montagne.',
+      'Ciao{name}! Che giornata per un bagno caldo. L\'acqua sgorga direttamente dalla montagna.',
+      'Salve{name}! Quarantadue gradi, all\'aperto, con le Alpi davanti. Vi va?',
+    ],
+    English: [
+      'Oh, hello{name}! Lovely to see you. Ten thermal pools in there, right under the mountains.',
+      'Hello{name}! You have picked a good day for a hot soak. Forty-two degrees, outdoors, facing the Alps.',
+      'Welcome{name}! The water comes straight out of the mountain, still warm. Fancy a soak?',
+    ],
+    Spanish: [
+      '¡Hola{name}, bienvenido! Diez piscinas termales le esperan, justo bajo las montañas.',
+      '¡Hola{name}! Qué día para un baño caliente. El agua sale directamente de la montaña.',
+    ],
+    Portuguese: [
+      'Olá{name}, bem-vindo! Dez piscinas termais à sua espera, mesmo debaixo das montanhas.',
+      'Olá{name}! Que dia para um banho quente. A água vem diretamente da montanha.',
+    ],
+    Dutch: [
+      'Hoi{name}, welkom! Tien thermaalbaden wachten op je, pal onder de bergen.',
+      'Hoi{name}! Wat een dag voor een warm bad. Het water komt zo uit de berg.',
+    ],
+    Chinese: [
+      '您好{name}，欢迎来到洛伊克巴德温泉！十个温泉池，就在雪山脚下。',
+      '你好{name}！今天很适合泡温泉。水是直接从山里流出来的。',
+      '欢迎{name}！四十二度的露天温泉，正对着阿尔卑斯山。',
+    ],
+    Hindi: [
+      'नमस्ते{name}! आपका स्वागत है। दस गरम पानी के कुंड, पहाड़ों के ठीक नीचे।',
+      'नमस्ते{name}! गरम पानी में उतरने का बढ़िया दिन है। पानी सीधे पहाड़ से आता है।',
+    ],
+    Tamil: [
+      'வணக்கம்{name}! வருக! பத்து வெந்நீர் குளங்கள், மலைகளுக்கு அடியில்.',
+      'வணக்கம்{name}! வெந்நீரில் குளிக்க நல்ல நாள். தண்ணீர் மலையிலிருந்தே வருகிறது.',
+    ],
+    Kannada: [
+      'ನಮಸ್ಕಾರ{name}! ಸುಸ್ವಾಗತ. ಹತ್ತು ಬಿಸಿನೀರಿನ ಕೊಳಗಳು, ಪರ್ವತಗಳ ಕೆಳಗೆ.',
+    ],
+    Malayalam: [
+      'നമസ്കാരം{name}! സ്വാഗതം. പത്ത് ചൂടുവെള്ള കുളങ്ങൾ, മലകൾക്ക് താഴെ.',
+    ],
+  }
+
+  /* Deepgram's nova-3 'multi' covers around ten languages with
+     code-switching, and Chinese is not among them - the assistant would
+     have spoken Mandarin perfectly and understood none of it. nova-3 DOES
+     support Chinese on its own, so a guest who picks it gets a monolingual
+     transcriber for that call. Everything else stays on 'multi', which is
+     better for the very common case of a guest drifting between two
+     European languages mid-sentence. */
+  const stt = language => ({ provider: 'deepgram', model: 'nova-3', language, smartFormat: true })
+  const STT_OVERRIDE = {
+    Chinese:   stt('zh'),
+    Hindi:     stt('hi'),
+    Tamil:     stt('ta'),
+    Kannada:   stt('kn'),
+    Malayalam: stt('ml'),
+  }
+
+  /* VOICE MODEL, per language.
+     eleven_turbo_v2_5 covers 32 languages including Hindi and Tamil, but
+     NOT Malayalam or Kannada - those exist only in Eleven v3. Sending
+     Malayalam text to turbo does not fail, it mispronounces confidently,
+     which is worse than refusing. So those two switch model for the call.
+     UNVERIFIED BY EAR: if v3 is not on the account these two will sound
+     wrong and should be removed from the menu - the European and the other
+     Indian languages are unaffected either way. */
+  const VOICE_OVERRIDE = {
+    Kannada:   { provider: '11labs', voiceId: 'matilda', model: 'eleven_v3', speed: 0.88 },
+    Malayalam: { provider: '11labs', voiceId: 'matilda', model: 'eleven_v3', speed: 0.88 },
+  }
+
+  /* For a guest who did not choose. Four national languages and a foyer full
+     of visitors from everywhere, so always opening in one of them tells most
+     of the room it was not expecting them. */
+  const ANY = [
+    'Grüezi{name}! Schön, dass Sie da sind. Ten thermal pools in there, right under the mountains.',
+    'Bonjour ! Buongiorno! Grüezi! Whichever you prefer, you are very welcome here.',
+    'Allegra{name}! That is Romansh for welcome. Fancy a hot soak? Forty-two degrees, under the Alps.',
+    'Salü{name}! Hello! Lovely to see you. The water comes straight out of the mountain.',
+    'Buongiorno! Hello! Ten thermal pools waiting, and the Alps right in front of them.',
+  ]
+
+  const start = async (name, lang) => {
+    if (calling) return
+    if (!holding) return          // another voice already holds this robot
+    calling = true
+    const wedged = setTimeout(() => {
+      if (!ready) { calling = false; fault('the call did not connect — retrying') }
+    }, 20000)
+    try {
+      // The DJI microphone and the Bluetooth speaker both belong to this
+      // machine. Default audioSource and default echo cancellation: one
+      // device holding both is the case AEC is built for.
+      const picked = lang && lang !== 'any' ? lang : ''
+      await vapi.start(c.assistantId, {
+        variableValues: { name: name || 'there', language: picked || 'any' },
+        // Always sent: the assistant's stored firstMessage is English, and
+        // it is spoken verbatim, so leaving it alone is how a French guest
+        // gets greeted in English.
+        firstMessage: withName(picked ? pick(OPENERS[picked] ?? OPENERS.English) : pick(ANY), name),
+        ...(STT_OVERRIDE[picked] ? { transcriber: STT_OVERRIDE[picked] } : {}),
+        ...(VOICE_OVERRIDE[picked] ? { voice: VOICE_OVERRIDE[picked] } : {}),
+      })
+    } catch (e) { calling = false; clearTimeout(wedged); fault(`could not start: ${e?.message ?? e}`) }
+  }
+  const stop = () => {
+    try { vapi.stop() } catch {}
+    calling = false; ready = false; pending.length = 0; set('idle', '')
+  }
+
+  await pump(async (d, first) => {
+    if (d.holding === false) {
+      // Stand down, and say so - a silent second brain is how you end up
+      // hunting an echo instead of closing a tab.
+      if (holding) fault('another voice is already running for this robot — this window is standing by')
+      holding = false
+      if (calling) stop()
+      return
+    }
+    if (d.holding === true && !holding) { holding = true; fault('') }
+    if (!first) for (const e of d.events ?? []) {
+      if (e.type === 'start') await start(e.name, e.lang)
+      else if (e.type === 'stop') stop()
+      else if (e.type === 'say') sendText(e.text)
+    }
+    if (d.session?.live && !calling) await start(d.session.name, d.session.lang)
+    if (!d.session?.live && calling) stop()
+  }, `&role=brain&bid=${bid}`)
+}
+
+/* ----------------------------- DISPLAY ----------------------------- *
+ * The phone on the robot's back. It is DECORATION, and deliberately so.
+ *
+ * It holds no microphone, joins no call and syncs with nothing. Earlier it
+ * mirrored the conversation so the mouth moved in time with the voice, and
+ * that is lovely when the audio is on the same device - but once the audio
+ * moved to the laptop, keeping a mouth in step across a network bought a
+ * standing risk of a face that lies about what the robot is doing, in
+ * exchange for a detail nobody standing two metres away is checking.
+ *
+ * So it blinks, it looks around, it sways, and every so often it shows the
+ * QR. Nothing it draws can be wrong, because it never claims anything.
+ * ------------------------------------------------------------------ */
+async function display() {
+  let c
+  try { c = await cfg() } catch (e) { return void fault(`no config: ${e.message}`) }
+  await renderQR(qs.get('qr') || c.joinUrl)
+  show('stage')
+  startIdleCycle()
+
+  /* The ONE thing the screen asks the server: is someone talking to it?
+     Not the conversation, not the mouth - just whether to show the code.
+     A plain GET every two seconds, because being a couple of seconds late
+     to hide a QR costs nothing, and the screen still cannot contradict the
+     robot: it is drawing a face either way. */
+  let live = null
+  setInterval(async () => {
+    try {
+      const d = await (await fetch('/api/state', { cache: 'no-store' })).json()
+      if (d.live === live) return
+      live = d.live
+      $('pair').classList.toggle('solo', live)
+      if (live) stopIdleCycle(); else startIdleCycle()
+    } catch { /* a missed poll just leaves the screen as it was */ }
+  }, 2000)
+
+  // A little life beyond the blink: now and then it looks pleased about
+  // nothing, which is what stops a looping idle reading as a screensaver.
+  const pleased = () => {
+    setState('happy')
+    setTimeout(() => setState('idle'), 1400 + Math.random() * 1200)
+    setTimeout(pleased, 14000 + Math.random() * 20000)
+  }
+  setTimeout(pleased, 9000)
+}
+
+/* ------------------------------ SHARED ----------------------------- *
+ * One long-polling loop for both roles. The first response only syncs the
+ * log position: replaying history tore down the call it was setting up and
+ * wedged the whole thing, so history is read once and never acted on.
+ * ------------------------------------------------------------------ */
+async function pump(handle, role = '') {
+  let since = null, failures = 0
+  for (;;) {
+    try {
+      const wait = since === null ? '' : '&wait=1'
+      const r = await fetch(`/api/events?since=${since ?? 0}${wait}${role}`, { cache: 'no-store' })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const d = await r.json()
+      const first = since === null
+      await handle(d, first)
+      since = d.seq ?? since ?? 0
+      if (failures) { failures = 0; fault('') }
+    } catch (e) {
+      // One dropped poll on a phone radio is normal; only a pattern is worth
+      // saying out loud, or the face cries wolf at every hiccup.
+      if (++failures === 4) fault('lost the link to the robot — retrying')
+      await new Promise(r => setTimeout(r, 1000))
+    }
+  }
+}
+
+if (!DEMO) {
+  if (BRAIN && AUTO) {
+    show('stage')
+    brain()
+  } else if (BRAIN) {
+    // The brain takes the microphone and plays the audio, and no browser
+    // allows either until something has been tapped. One tap when you open
+    // it on the laptop, and it is armed for the rest of the session.
+    $('arm').addEventListener('click', async () => {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true })
+        s.getTracks().forEach(t => t.stop())       // we only wanted the permission
+      } catch (e) {
+        fault(`no microphone: ${e.message}. This page must be served over HTTPS.`)
+      }
+      show('stage')
+      brain()
+    }, { once: true })
+  } else {
+    // The screen asks for nothing, so it needs no tap. One less thing to
+    // forget while strapping a phone to a robot.
+    display()
+  }
+}
+</script>
+</body>
+</html>

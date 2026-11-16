@@ -65,17 +65,61 @@ const OFFERINGS = [
  * towels and swim things) -> restaurant and coffee bar off to one side ->
  * stairs down to the changing rooms and lockers -> turnstiles -> pools.
  */
+/*
+ * `aliases` exist because guests do not speak in ids. Someone asks for "the
+ * spa", "the baths", "somewhere to eat" - and the first version matched only
+ * on the id or a literal substring of `name`, so "take me to the thermal
+ * baths" came back "unknown destination" while the list had just offered "the
+ * thermal pools". The guest hears a robot contradicting itself.
+ */
 const DESTINATIONS = [
-  { id: 'reception',  name: 'the reception desk, just inside the doors', walk_cm: 60 },
-  { id: 'shop',       name: 'the shop behind reception, for towels and swim things', walk_cm: 70 },
-  { id: 'restaurant', name: 'the restaurant and coffee bar', walk_cm: 90 },
-  { id: 'pizzeria',   name: 'the pizzeria with the sun terrace', walk_cm: 110 },
-  { id: 'changing',   name: 'the stairs down to the changing rooms', walk_cm: 100, stairs: true },
-  { id: 'pools',      name: 'the thermal pools, through the turnstiles', walk_cm: 150, stairs: true },
-  { id: 'sauna',      name: 'the sauna world', walk_cm: 140, restricted: true },
-  { id: 'elevator',   name: 'the lift', walk_cm: 80 },
-  { id: 'staff_only', name: 'the staff area', walk_cm: 50, restricted: true },
+  { id: 'reception',  name: 'the reception desk, just inside the doors', walk_cm: 60,
+    aliases: ['desk', 'front desk', 'check in', 'checkin', 'entrance', 'tickets', 'ticket'] },
+  { id: 'shop',       name: 'the shop behind reception, for towels and swim things', walk_cm: 70,
+    aliases: ['store', 'towel', 'towels', 'swimsuit', 'costume', 'goggles'] },
+  { id: 'restaurant', name: 'the restaurant and coffee bar', walk_cm: 90,
+    aliases: ['food', 'eat', 'lunch', 'dinner', 'coffee', 'cafe', 'bar', 'drink', 'hungry'] },
+  { id: 'pizzeria',   name: 'the pizzeria with the sun terrace', walk_cm: 110,
+    aliases: ['pizza', 'terrace', 'sun terrace', 'outside table'] },
+  { id: 'changing',   name: 'the stairs down to the changing rooms', walk_cm: 100, stairs: true,
+    aliases: ['changing room', 'changing rooms', 'locker', 'lockers', 'change', 'cabin'] },
+  { id: 'pools',      name: 'the thermal pools, through the turnstiles', walk_cm: 150, stairs: true,
+    aliases: ['pool', 'thermal', 'thermal bath', 'thermal baths', 'bath', 'baths',
+              'swim', 'swimming', 'water', 'therme'] },
+  { id: 'sauna',      name: 'the sauna world', walk_cm: 140, restricted: true,
+    aliases: ['spa', 'wellness', 'steam', 'steam room', 'hammam', 'saunas'] },
+  { id: 'elevator',   name: 'the lift', walk_cm: 80,
+    aliases: ['elevator', 'lift', 'upstairs', 'downstairs'] },
+  { id: 'staff_only', name: 'the staff area', walk_cm: 50, restricted: true,
+    aliases: ['staff', 'office', 'back office', 'employees'] },
 ]
+
+/*
+ * Forgiving match: exact id, then alias, then substring either way, then a
+ * single shared significant word. Deliberately generous - the cost of guiding
+ * someone to the pools when they meant the sauna is that they say so and the
+ * robot corrects; the cost of refusing is a dead end mid-conversation.
+ */
+const STOPWORDS = new Set(['the', 'a', 'an', 'to', 'me', 'please', 'go', 'take',
+  'walk', 'show', 'where', 'is', 'are', 'of', 'in', 'at', 'and', 'room', 'area'])
+
+function findDestination(query) {
+  const q = String(query ?? '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').trim()
+  if (!q) return null
+  const words = q.split(/\s+/).filter(w => w && !STOPWORDS.has(w))
+
+  let d = DESTINATIONS.find(x => x.id === q)
+  if (d) return d
+  d = DESTINATIONS.find(x => (x.aliases ?? []).some(a => a === q))
+  if (d) return d
+  d = DESTINATIONS.find(x => x.name.toLowerCase().includes(q) || q.includes(x.id))
+  if (d) return d
+  d = DESTINATIONS.find(x => (x.aliases ?? []).some(a => q.includes(a)))
+  if (d) return d
+  // last resort: any significant word shared with an alias or the name
+  return DESTINATIONS.find(x => words.some(w => w.length > 2 &&
+    ((x.aliases ?? []).some(a => a.includes(w)) || x.name.toLowerCase().includes(w)))) ?? null
+}
 
 /**
  * Promotions change by time of day, per the concept board's "controllable by
@@ -251,10 +295,14 @@ async function runTool(name, args) {
     }
 
     case 'list_destinations':
-      return `I can walk you to: ${DESTINATIONS.map(d => d.name).join(', ')}.`
+      // Carry the id alongside the prose. Without it the assistant can only
+      // echo back the description it was given, and guide_to then has to
+      // guess - which is exactly how "the thermal baths" became unknown.
+      return `I can walk you to: ${DESTINATIONS.map(d => `${d.name} [${d.id}]`).join(', ')}.`
+        + ' Pass the name in square brackets to guide_to.'
 
     case 'guide_to': {
-      const d = DESTINATIONS.find(x => x.id === args.destination || x.name.includes(String(args.destination ?? '')))
+      const d = findDestination(args.destination)
       if (!d) return `Sorry, that failed: unknown destination '${args.destination}'. Call list_destinations first.`
       if (!standing()) return notStanding()
       // Restricted zones are refused by the robot, not negotiated by the
@@ -341,7 +389,17 @@ createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && (url.pathname === '/vapi' || url.pathname === '/')) {
-    const body = JSON.parse(await readBody(req) || '{}')
+    // A malformed body used to throw here, and because this handler is async
+    // with nothing catching it, the rejection took the WHOLE SIMULATOR DOWN -
+    // one stray request and the demo is over. Vapi is not the only thing that
+    // can reach this port once it is tunnelled to the internet.
+    let body
+    try {
+      body = JSON.parse(await readBody(req) || '{}')
+    } catch (error) {
+      log(`bad request body: ${error.message}`)
+      return send(400, { error: `body is not JSON: ${error.message}` })
+    }
     const calls = body?.message?.toolCallList ?? body?.message?.toolCalls ?? []
     const results = []
     for (const c of calls) {

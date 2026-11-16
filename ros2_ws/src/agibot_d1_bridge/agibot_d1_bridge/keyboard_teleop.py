@@ -57,9 +57,12 @@ def gesture_plan(name, scale, reset=True):
     """
     if name in SEQUENCES:
         steps = []
-        for kind, *arg in SEQUENCES[name]:
+        seq = SEQUENCES[name]
+        for i, (kind, *arg) in enumerate(seq):
             if kind == 'gesture':
-                steps += gesture_plan(arg[0], scale, reset)
+                # No stand_up re-centre mid-sequence: standUp() while standing makes
+                # the robot lie down and rise again between steps.
+                steps += gesture_plan(arg[0], scale, reset and i == len(seq) - 1)
             else:
                 method, wait_s = arg
                 steps.append((wait_s, None, SDK_TO_CMD[method]))
