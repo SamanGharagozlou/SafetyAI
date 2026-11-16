@@ -171,6 +171,71 @@ Everything upstream of the tap is a **claim**; everything downstream is
 why the breach set below is mostly about disagreement between sources rather
 than any single threshold.
 
+## Live wiring, end to end
+
+On the Orin the tap binds `127.0.0.1:8901` and the only public door is the
+Tailscale funnel in front of it. One switch decides whether oversight is real:
+
+```
+tailscale funnel --bg 8901      # 443/ -> the tap    (governed)
+tailscale funnel --bg 8090      # 443/ -> the robot  (bypassed)
+```
+
+Until that funnel points at 8901, Vapi talks straight to `d1-vapi-server` and
+**the ledger sees nothing** — the tap is running and idle, which looks identical
+to a quiet robot. `GET /api/state` reporting a `vapi_tap` source age of hours is
+the tell.
+
+The tap stands in for the whole of `d1-vapi-server`, not one route, because that
+server's own surface is wider than the tool endpoint:
+
+| route | what the tap does |
+|---|---|
+| `POST /vapi` | tool calls: record · predict · judge · gate · forward |
+| `POST /move` `/gait` `/gesture` `/command` | same pipeline, under the name of the tool that does the same thing, `source: rest_direct` |
+| `POST /stop` | gated but **never** held behind a prediction |
+| `POST /vapi/events` | the voice sink (below) |
+| `GET /health` `/status` `/call` | forwarded verbatim — the operator console polls these at 2 Hz |
+| anything else | refused, not tunnelled |
+
+Those REST motion routes were public, behind the same token, and ungoverned.
+That is why keyboard teleop used to reach the ledger only afterwards, as
+`unattributed_motion`: the command never passed a gate, so only its consequences
+were visible.
+
+### The voice layer
+
+`POST /vapi/events` takes Vapi's server messages, configured on the assistant as
+`server.url` with `serverMessages = ['transcript[transcriptType="final"]',
+'status-update', 'end-of-call-report']`.
+
+- **Final transcripts only.** Partials and speech-start chatter are counted and
+  dropped. A ledger holding every interim word is a transcript of spa guests,
+  which is the one thing this must not keep. `--redact-transcripts` stores a
+  length and a sha256 prefix instead of words.
+- **No audio, ever.** `recordingUrl` and `stereoRecordingUrl` are discarded and
+  `audio_dropped: true` records that they were offered — the omission is visible
+  rather than assumed.
+- **Vapi's clock is kept as a claim.** Everything is stamped
+  `basis: vapi_self_report` with Vapi's timestamp in `src_ts` and the difference
+  in `skew_s`, because the STT, the LLM and the TTS all happened on someone
+  else's machine.
+- **An unrecognised message type emits an `integrity` event** rather than being
+  swallowed, so a Vapi-side change shows up as a finding instead of a silence.
+
+A tool call within 120 s of a guest sentence re-enters that sentence against the
+action's `corr` with a pointer back to the original event, so *who asked* and
+*what it did* are one hop apart and not two timestamps compared by hand. Outside
+that window the correlator raises `command_unattributed_to_speech`.
+
+**There is no OpenTelemetry from Vapi.** `observabilityPlan` accepts Langfuse and
+nothing else, and the host must be public HTTPS — loopback and private addresses
+are refused, so it cannot be pointed at the Orin, Tailscale or not. What the
+webhook does carry is `artifact.performanceMetrics`: per-turn STT, endpointing,
+LLM and TTS latency in milliseconds, measured on Vapi's servers. That is stored
+as `stage_latency_ms` and is the only instrumentation available for the one
+stretch of the pipeline that does not run on hardware we own.
+
 ## What it detects
 
 | rule | the question it answers | needs |
