@@ -36,6 +36,8 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | `deploy/jetson/` | systemd units (bridge, watchdog, console) for the Jetson | in use |
 | `docker/` | `Dockerfile` (PC perception image), `d1-jetson/` (Orin image: Humble + Nav2 + RTAB-Map + PyTorch) | in use |
 | `perception/` | Standalone (non-ROS) YOLO11 test script | legacy/quick test |
+| `pitch_deck/` | Hackathon pitch (Sepazu): single-file HTML deck, photos, demo video slide | presentation-ready; how to open it is in [README.md](README.md#pitch-deck-sepazu) |
+| `presentation/` | Separate ClawMetry deck | not the pitch |
 | `third_party/agibot_D1_Edu-Ultra` | Vendor SDK submodule (x86_64 + aarch64 libs) | do not edit |
 
 ## Docs index
@@ -63,6 +65,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | Secrets: credential inventory + the repo-wide scan | [docs/secrets.md](docs/secrets.md) |
 | Jetson services / watchdog | [deploy/jetson/README.md](deploy/jetson/README.md) |
 | Frontend | [frontend/README.md](frontend/README.md) |
+| Pitch deck: slides, assets, demo video | [pitch_deck/README.md](pitch_deck/README.md) |
 
 ## Environment facts
 
@@ -105,6 +108,11 @@ cd frontend && npm ci --include=dev && npm run typecheck && npm test && npm run 
 ### Privacy
 - Camera frames show spa guests. **No raw images leave the Orin, are recorded, or are logged** unless the anonymization feature explicitly allows it. See [docs/feature_privacy_anonymization.md](docs/feature_privacy_anonymization.md).
 - Never commit images, rosbags, MCAP recordings or audio of real people. Large recordings are not in git.
+- **Only exception: `pitch_deck/assets/`.** The team's own pitch photos and the demo video (`pitch_deck/assets/demo.mp4`,
+  also on YouTube) may be committed there, because they are presented publicly anyway. Keep it to media the team
+  chose for the deck, strip EXIF (location) from photos, keep each file under GitHub's 100 MB limit, and confirm
+  consent or blur faces for children and other guests before presenting. Never copy robot camera frames,
+  rosbags or MCAP recordings there; this exception does not extend to any other folder.
 
 ### Secrets and network
 - Never commit tokens, Vapi private keys, SSH passwords or Tailscale auth keys. Use env vars.

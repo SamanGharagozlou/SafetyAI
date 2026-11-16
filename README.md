@@ -25,7 +25,7 @@ fonts and images bundled, works offline. GitHub shows only its source, so open i
 
   Double clicking `pitch_deck/index.html` also works, but the demo slide then links out to
   [the demo on YouTube](https://youtu.be/R41dpTOY1Mg) instead of playing it inline.
-  For an offline talk, drop the video at `pitch_deck/assets/demo.mp4` (git ignored) and it plays from disk.
+  For an offline talk, drop the video at `pitch_deck/assets/demo.mp4` and it plays from disk.
 
 - **PDF backup:** `node pitch_deck/tools/export_pdf.js` writes `pitch_deck/sepazu_pitch.pdf` (needs Playwright).
 

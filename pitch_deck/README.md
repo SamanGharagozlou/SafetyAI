@@ -21,8 +21,8 @@ Open `index.html` in a browser.
 The DEMO slide (5) plays the demo when it opens and stops it when you leave; click the slide to pause or
 resume. The arrow keys and a clicker keep working while it plays. It picks the first source that works:
 
-1. `assets/demo.mp4`, if you put one there. Works offline. It is git ignored on purpose: recordings of people
-   stay out of git (AGENTS.md), so copy it onto the presenting laptop yourself.
+1. `assets/demo.mp4`, if you put one there. Works offline. Pitch deck media is the one place AGENTS.md allows
+   recordings of people in git, so it may be committed (keep it under 100 MB).
 2. The YouTube upload [youtu.be/R41dpTOY1Mg](https://youtu.be/R41dpTOY1Mg), embedded. Needs internet **and**
    the deck served over http (the online preview link, or `python3 -m http.server 8000 --directory pitch_deck`).
    Opened by double clicking the file, YouTube refuses to embed (error 153), so the slide shows DEMO with
