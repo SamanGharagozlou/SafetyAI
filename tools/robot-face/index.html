@@ -663,13 +663,27 @@ async function brain() {
       const mic = ins.find(d => /wireless microphone|dji/i.test(d.label))
         ?? ins.find(d => !BAD_MIC.test(d.label))
         ?? ins[0]
-      const spk = outs.find(d => /aka|spk/i.test(d.label)) ?? outs[0]
+      /* Bind to the REAL device, never the "Default - X" alias. The alias
+         follows whatever macOS currently prefers, and macOS moves it: the
+         moment the Bluetooth speaker gets used as an input it drops to HFP
+         and the system output jumps to the laptop speakers, taking the
+         alias with it. An explicit deviceId stays put. */
+      const named = d => d.deviceId !== 'default' && !/^default\b/i.test(d.label)
+      const spk = outs.find(d => named(d) && /aka|spk/i.test(d.label))
+        ?? outs.find(d => /aka|spk/i.test(d.label))
+        ?? outs.find(named) ?? outs[0]
       if (mic) await vapi.setInputDevicesAsync({ audioDeviceId: mic.deviceId })
       if (spk) await vapi.setOutputDeviceAsync({ outputDeviceId: spk.deviceId })
+      /* The speaker appearing in the INPUT list at all means macOS has it
+         selected as a microphone, which is what forces HFP - and that is
+         true even when we then pick a different mic for ourselves. The
+         speaker is already degraded by then, so it is worth saying. */
+      const osUsingSpeakerAsMic = ins.some(d => BAD_MIC.test(d.label))
       const warn = mic && BAD_MIC.test(mic.label)
-        ? ' — WARNING: that is a speaker being used as a microphone, calls will fail' : ''
+        ? ' — WARNING: that is a speaker being used as a microphone, calls will fail'
+        : osUsingSpeakerAsMic ? ' — WARNING: macOS has the speaker set as an input, so it is in HFP' : ''
       note('audio', `mic "${mic?.label ?? 'none'}" → out "${spk?.label ?? 'default'}"${warn}`)
-      if (warn) fault('the microphone is a Bluetooth speaker — plug the DJI receiver back in')
+      if (warn) fault('macOS has the Bluetooth speaker set as the INPUT — set Input to the DJI or the built-in mic, or there will be no sound from it')
       return { mic: mic?.label ?? 'none', spk: spk?.label ?? 'default', bad: !!warn }
     } catch (e) { note('audio', `could not pick devices: ${e.message}`); return null }
   }
