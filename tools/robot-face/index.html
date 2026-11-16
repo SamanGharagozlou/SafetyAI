@@ -85,14 +85,6 @@
   @keyframes ping { 0% { transform: scale(.75); opacity: .45 } 100% { transform: scale(1.35); opacity: 0 } }
 
   /* ---------- idle ---------- */
-  #idle .card { background: var(--white); border-radius: 6vmin; padding: 4vmin;
-                box-shadow: 0 2vmin 6vmin rgba(0,0,0,.45); }
-  #qr { width: 46vmin; height: 46vmin; display: grid; place-items: center; }
-  #qr canvas { width: 100% !important; height: 100% !important; image-rendering: pixelated; }
-  #qr-fallback { color: #04202f; font: 600 2.2vmin/1.5 ui-monospace, monospace; word-break: break-all;
-                 text-align: center; padding: 2vmin; }
-  #idle h1 { font-size: 5.6vmin; margin: 4vmin 0 1vmin; font-weight: 800; letter-spacing: -.02em; }
-  #idle p  { font-size: 3.1vmin; margin: 0; color: var(--pale); text-align: center; max-width: 72vmin; }
 
   /* ---------- face ---------- */
   #face { width: min(104vmin, 99vw); height: auto; max-height: 90vh; overflow: visible; }
@@ -100,6 +92,24 @@
              font-size: 3vmin; color: var(--pale); opacity: .85; padding: 0 6vmin; min-height: 4vmin; }
   #badge { position: fixed; top: 2.5vmin; left: 50%; transform: translateX(-50%); z-index: 3;
            font-size: 2.3vmin; letter-spacing: .18em; text-transform: uppercase; color: var(--pale); opacity: .5; }
+
+  /* The QR rides over the face rather than replacing the screen, so the
+     thing that drew the guest in is still there underneath. */
+  #qrpanel {
+    position: fixed; inset: 0; z-index: 4; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 0;
+    background: rgba(4,36,58,.93); backdrop-filter: blur(6px);
+    opacity: 0; pointer-events: none; transition: opacity .55s ease;
+  }
+  #qrpanel.on { opacity: 1; }
+  #qrpanel h1 { font-size: 5.6vmin; margin: 4vmin 0 1vmin; font-weight: 800; letter-spacing: -.02em; }
+  #qrpanel p  { font-size: 3.1vmin; margin: 0; color: var(--pale); text-align: center; max-width: 72vmin; }
+  .card { background: var(--white); border-radius: 6vmin; padding: 4vmin;
+          box-shadow: 0 2vmin 6vmin rgba(0,0,0,.45); }
+  #qr { width: 46vmin; height: 46vmin; display: grid; place-items: center; }
+  #qr canvas { width: 100% !important; height: 100% !important; image-rendering: pixelated; }
+  #qr-fallback { color: #04202f; font: 600 2.2vmin/1.5 ui-monospace, monospace; word-break: break-all;
+                 text-align: center; padding: 2vmin; }
 
   /* Faults are shown on the robot's own face. A failure only in a console is
      a failure nobody in the room can diagnose. */
@@ -121,15 +131,12 @@
   <div class="why">One tap lets this screen use the microphone and the speaker. Do it once while setting up.</div>
 </section>
 
-<!-- IDLE -->
-<section class="screen" id="idle" hidden>
-  <div class="card"><div id="qr"><div id="qr-fallback">loading…</div></div></div>
-  <h1>Scan to say hello</h1>
-  <p>I am the greeter at Leukerbad Therme. Scan this, then just talk to me.</p>
-</section>
-
-<!-- LIVE -->
-<section class="screen" id="live" hidden>
+<!-- THE STAGE. The face is always on once armed, and the QR comes OVER it
+     every so often. A screen showing only a code is a dead screen - nobody
+     crosses a foyer to look at a barcode, but they will cross it to look at
+     something with eyes. The code then arrives to tell them what to do with
+     the thing they already walked up to. -->
+<section class="screen" id="stage" hidden>
   <div id="badge"></div>
   <svg id="facesvg" viewBox="0 0 200 230" aria-hidden="true">
     <defs>
@@ -145,6 +152,12 @@
       <filter id="soft"><feGaussianBlur stdDeviation="2.4"/></filter>
     </defs>
     <g id="drop">
+      <!-- Ears, behind the body. A water drop is the venue; floppy ears are
+           the dog. The robot is both, and one shape should say so. -->
+      <g id="ears">
+        <path id="earL" d="M48 108 C14 116 2 156 16 176 C31 194 54 168 58 138 Z" fill="#06405f"/>
+        <path id="earR" d="M152 108 C186 116 198 156 184 176 C169 194 146 168 142 138 Z" fill="#06405f"/>
+      </g>
       <path d="M100 8 C100 8 172 92 172 138 A72 72 0 1 1 28 138 C28 92 100 8 100 8 Z" fill="url(#body)"/>
       <!-- a drop with no specular read looks like a balloon -->
       <ellipse cx="68" cy="92" rx="26" ry="34" fill="url(#shine)" opacity=".55" transform="rotate(-20 68 92)"/>
@@ -172,6 +185,13 @@
     </g>
   </svg>
   <div id="caption"></div>
+
+  <!-- Slides over the face on a cycle while idle. Never during a call. -->
+  <div id="qrpanel">
+    <div class="card"><div id="qr"><div id="qr-fallback">loading…</div></div></div>
+    <h1>Scan to say hello</h1>
+    <p>I am the greeter at Leukerbad Therme. Scan this, then just talk to me.</p>
+  </div>
 </section>
 
 <div id="fault"></div>
@@ -184,7 +204,37 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
 const fault = msg => { const f = $('fault'); f.textContent = msg; f.style.display = msg ? 'block' : 'none' }
 
 const show = which => {
-  for (const s of ['arm', 'idle', 'live']) $(s).hidden = s !== which
+  for (const id of ['arm', 'stage']) $(id).hidden = id !== which
+}
+
+/**
+ * THE IDLE CYCLE.
+ *
+ * The face is the default and the QR is the interruption, not the other way
+ * round. Nobody crosses a foyer to look at a barcode; they cross it to look
+ * at something with eyes. By the time the code appears they are already
+ * standing in front of it and it only has to say what to do next.
+ *
+ * It opens on the QR for a few seconds so that whoever is setting the robot
+ * up can scan it immediately, then settles into mostly-face.
+ */
+const FACE_MS = 18000, QR_MS = 7000
+let cycleTimer = null
+function startIdleCycle() {
+  stopIdleCycle()
+  const toQR = () => {
+    $('qrpanel').classList.add('on')
+    cycleTimer = setTimeout(toFace, QR_MS)
+  }
+  const toFace = () => {
+    $('qrpanel').classList.remove('on')
+    cycleTimer = setTimeout(toQR, FACE_MS)
+  }
+  toQR()
+}
+function stopIdleCycle() {
+  clearTimeout(cycleTimer); cycleTimer = null
+  $('qrpanel').classList.remove('on')   // never over a live conversation
 }
 
 /* ------------------------------------------------------------------ *
@@ -266,6 +316,13 @@ function frame(now) {
   $('cheekL').setAttribute('opacity', (face.warmth * .55).toFixed(3))
   $('cheekR').setAttribute('opacity', (face.warmth * .55).toFixed(3))
 
+  // ears: they lag the body, which is what makes them read as floppy rather
+  // than painted on, and they perk up when it is listening.
+  const perk = face.state === 'listening' ? -7 : 0
+  const lagged = Math.sin((face.wobble - 0.18) * 1.5) * 1.2
+  $('earL').setAttribute('transform', `rotate(${(lagged * 2.6 + perk).toFixed(2)} 48 112)`)
+  $('earR').setAttribute('transform', `rotate(${(lagged * 2.6 - perk).toFixed(2)} 152 112)`)
+
   // body: a water drop is never perfectly still
   face.wobble += dt
   const sway = Math.sin(face.wobble * 1.5) * 1.2
@@ -276,6 +333,19 @@ function frame(now) {
   requestAnimationFrame(frame)
 }
 requestAnimationFrame(frame)
+
+/* If the encoder will not load - no wifi, a blocked CDN - the URL is printed
+   instead. A blank white square is the one failure nobody in the room could
+   diagnose, and it is the failure a guest is standing in front of. */
+async function renderQR(url) {
+  try {
+    const m = await import('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm')
+    const canvas = document.createElement('canvas')
+    await (m.default ?? m).toCanvas(canvas, url, { margin: 1, width: 900,
+      color: { dark: '#04243aff', light: '#ffffffff' } })
+    $('qr').replaceChildren(canvas)
+  } catch { $('qr-fallback').textContent = url }
+}
 
 /* The mouth is read off the assistant's actual audio. The SDK's volume-level
    event is kept as a fallback for whenever the track is not reachable. */
@@ -301,7 +371,9 @@ function attachAnalyser(stream) {
  * DEMO - no network, no microphone, no Vapi.
  * ------------------------------------------------------------------ */
 if (DEMO) {
-  show('live')
+  show('stage')
+  renderQR(qs.get('qr') || 'https://example.invalid/join?demo')
+  startIdleCycle()
   const script = [
     [1200, 'listening', ''],
     [900,  'thinking',  ''],
@@ -329,23 +401,13 @@ async function live() {
   try { cfg = await (await fetch('/api/config')).json() }
   catch (e) { return void fault(`cannot reach the server for config: ${e.message}`) }
 
-  // QR. If the encoder will not load - no wifi, blocked CDN - the URL is
-  // printed instead. A blank white square is the one failure nobody in the
-  // room could diagnose.
-  const joinUrl = qs.get('qr') || cfg.joinUrl
-  try {
-    const m = await import('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm')
-    const canvas = document.createElement('canvas')
-    await (m.default ?? m).toCanvas(canvas, joinUrl, { margin: 1, width: 900,
-      color: { dark: '#04243aff', light: '#ffffffff' } })
-    $('qr').replaceChildren(canvas)
-  } catch { $('qr-fallback').textContent = joinUrl }
+  await renderQR(qs.get('qr') || cfg.joinUrl)
 
   const { default: Vapi } = await import('https://cdn.jsdelivr.net/npm/@vapi-ai/web@3.1.0/+esm')
   const vapi = new Vapi(cfg.publicKey)
   let calling = false, analyserOn = false
 
-  vapi.on('call-start',   () => { calling = true; show('live'); setState('listening', ''); fault('') })
+  vapi.on('call-start',   () => { calling = true; stopIdleCycle(); setState('listening', ''); fault('') })
   vapi.on('speech-start', () => setState('speaking'))
   vapi.on('speech-end',   () => setState('listening', ''))
   vapi.on('volume-level', v => { if (!analyserOn) face.openTarget = clamp(v * 1.6, 0, 1) })
@@ -355,7 +417,7 @@ async function live() {
     }
   })
   vapi.on('error', e => fault(`voice error: ${e?.message ?? e}`))
-  vapi.on('call-end', () => { calling = false; analyserOn = false; setState('idle'); show('idle') })
+  vapi.on('call-end', () => { calling = false; analyserOn = false; setState('idle'); $('caption').textContent = ''; startIdleCycle() })
   vapi.on('daily-participant-updated', p => {
     const track = p?.tracks?.audio?.persistentTrack
     if (!track || analyserOn) return
@@ -372,7 +434,7 @@ async function live() {
       await vapi.start(cfg.assistantId, name ? { variableValues: { name } } : undefined)
     } catch (e) { calling = false; fault(`could not start the call: ${e?.message ?? e}`) }
   }
-  const stop = () => { try { vapi.stop() } catch {} calling = false; show('idle') }
+  const stop = () => { try { vapi.stop() } catch {} calling = false; setState('idle'); $('caption').textContent = ''; startIdleCycle() }
 
   /* The guest's phone decides when a session begins, and this polls to find
      out. Server-Sent Events were the obvious choice and work perfectly on
@@ -421,7 +483,8 @@ async function live() {
   }
   poll()
 
-  show('idle')
+  show('stage')
+  startIdleCycle()
 }
 
 /* Arm once, by hand, at setup. After this tap the page may take the

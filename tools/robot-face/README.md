@@ -4,7 +4,7 @@ Two screens and one wire between them.
 
 | | |
 |---|---|
-| `/face` | The phone strapped to the robot. QR when idle, a face when talking. **Owns the microphone, the loudspeaker and the Vapi call.** |
+| `/face` | The phone strapped to the robot. A living face by default; the QR comes over it every so often. **Owns the microphone, the loudspeaker and the Vapi call.** |
 | `/join` | What the guest's phone opens after scanning. Consent, Start, Stop, and tap-shortcuts. **No audio role at all.** |
 
 ```bash
@@ -15,6 +15,18 @@ node tools/robot-face/server.mjs          # :5180
 
 Env: `VAPI_PUBLIC_KEY`, `VAPI_ASSISTANT_ID` (defaults to the Leukerbad greeter
 `a366d544`, never the robot-only assistant), `PORT`, `PUBLIC_URL`.
+
+## The face is the default, the QR is the interruption
+
+Nobody crosses a foyer to look at a barcode. They cross it to look at
+something with eyes. So the water drop — floppy dog ears, because the robot
+is a dog and the venue is thermal water, and one shape should say both — is
+on screen all the time, blinking, glancing around, ears lagging behind the
+sway. Every 18 seconds the QR slides over it for 7, to tell the person who
+already walked up what to do next, then hands back to the face.
+
+It opens on the QR so that whoever is setting the robot up can scan it
+immediately. It never covers a live conversation.
 
 ## One device, one microphone
 

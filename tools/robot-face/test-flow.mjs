@@ -88,7 +88,9 @@ await face.goto(BASE + '/face' + K, { waitUntil: 'networkidle' })
 pass.push(['face opens on the arm screen', !(await face.isHidden('#arm'))])
 await face.click('#arm')
 await wait(1500)
-pass.push(['arming shows the QR', !(await face.isHidden('#idle'))])
+pass.push(['arming shows the stage', !(await face.isHidden('#stage'))])
+pass.push(['the cycle opens on the QR, so it can be scanned at once',
+  await face.evaluate(() => document.getElementById('qrpanel').classList.contains('on'))])
 pass.push(['QR encodes the join URL', (await face.locator('#qr canvas').count()) === 1
            || (await face.textContent('#qr-fallback'))?.includes('/join')])
 
@@ -115,7 +117,9 @@ pass.push(['guest is greeted by name', (await guest.textContent('#greet'))?.incl
 // --- the face should have started a call, carrying the name
 let log = await face.evaluate(() => window.__log ?? [])
 pass.push(['face started a call on the guest tap', log.some(l => l[0] === 'start'), JSON.stringify(log.find(l=>l[0]==='start')||'')])
-pass.push(['face switched to the live screen', !(await face.isHidden('#live'))])
+pass.push(['face is on stage during the call', !(await face.isHidden('#stage'))])
+pass.push(['the QR never covers a live conversation',
+  !(await face.evaluate(() => document.getElementById('qrpanel').classList.contains('on')))])
 
 // --- a shortcut becomes the guest's own sentence
 await guest.click('#places button[data-i="2"]')      // sauna world
@@ -167,7 +171,8 @@ await guest.click('#stop')
 await wait(900)
 log = await face.evaluate(() => window.__log ?? [])
 pass.push(['stop ends the call', log.some(l => l[0] === 'stop')])
-pass.push(['face returns to the QR', !(await face.isHidden('#idle'))])
+pass.push(['the QR cycle resumes after the call',
+  await face.evaluate(() => document.getElementById('qrpanel').classList.contains('on'))])
 
 // a say with no session must be refused
 const late = await guest.evaluate(async () => (await fetch('/api/session', { method:'POST',
