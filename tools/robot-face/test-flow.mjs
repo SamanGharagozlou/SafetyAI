@@ -16,6 +16,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(join(HERE, '../../frontend/package.json'))
 const { chromium } = require('playwright')
@@ -53,7 +54,10 @@ if (!BASE) {
   }
   const srv = spawn(process.execPath, [join(HERE, 'server.mjs')], {
     env: { ...process.env, PORT: '5189', AGENT_URL: 'http://127.0.0.1:5191',
-           PUBLIC_URL: 'http://127.0.0.1:5189', FACE_KEY: '', LEASE_MS: '6000' },
+           PUBLIC_URL: 'http://127.0.0.1:5189', FACE_KEY: '', LEASE_MS: '6000',
+           // Never into the repo: the server persists its log and sessions,
+           // and a test run must not leave history in the working tree.
+           STATE_DIR: join(tmpdir(), 'd1-face-test-' + process.pid) },
     stdio: 'ignore',
   })
   spawned.push(() => srv.kill())
@@ -354,9 +358,25 @@ pass.push(['a tap after joining reaches the robot',
   const dbg = await ctx.newPage()
   await dbg.goto(BASE + '/debug' + K, { waitUntil: 'domcontentloaded' })
   pass.push(['the debug page loads', /debug/i.test(await dbg.title())])
+  // Which TTS and STT a call is really on - it changes per language, so
+  // reading it off the created call beats assuming the assistant's config.
+  pass.push(['it names the llm, tts and stt in use',
+    await until(async () => { const t = await dbg.textContent('#bar') ?? ''
+      return /llm/.test(t) && /tts/.test(t) && /stt/.test(t) }, 8000),
+    (await dbg.textContent('#bar'))?.replace(/\s+/g, ' ').slice(0, 110)])
   pass.push(['it shows the conversation log',
     await until(async () => (await dbg.textContent('#rows'))?.includes('call'), 6000),
     (await dbg.textContent('#rows'))?.trim().slice(0, 60)])
+  // Who used it, and how their turn ended - the queue matters more at a
+  // stand than any single conversation.
+  await dbg.click('.tab[data-tab="guests"]')
+  pass.push(['the guests tab lists who has used it',
+    await until(async () => /Anna/.test(await dbg.textContent('#grows') ?? ''), 6000),
+    (await dbg.textContent('#grows'))?.replace(/\s+/g, ' ').slice(0, 90)])
+  pass.push(['and says a guest was cut off by the next scan',
+    /took over/.test(await dbg.textContent('#grows') ?? '')])
+  pass.push(['QR page opens are counted', Number(await dbg.textContent('#scans')) > 0,
+    await dbg.textContent('#scans')])
   await dbg.close()
 }
 {

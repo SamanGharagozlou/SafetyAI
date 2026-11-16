@@ -57,6 +57,13 @@
   td.txt { color:var(--ink); word-break:break-word; }
   .empty { color:var(--muted); padding:22px 8px; }
   .note { color:var(--muted); font-size:12px; margin-top:14px; line-height:1.6; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; }
+  .tab { background:var(--panel); border:1px solid var(--line); color:var(--muted);
+         border-radius:9px; padding:7px 15px; font:inherit; font-size:13px; cursor:pointer; }
+  .tab.on { background:#1d2733; color:var(--ink); border-color:#3a4760; }
+  .live-dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+              background:var(--ok); margin-right:7px; }
+  .k-session { color:#c38fff; font-weight:700 }
 </style>
 </head>
 <body>
@@ -70,10 +77,29 @@
   <div class="stat"><div class="k">turns</div><div class="v" id="turns">0</div></div>
 </div>
 
-<table>
-  <thead><tr><th>time</th><th class="gap" style="text-align:right">+gap</th><th>what</th><th>detail</th></tr></thead>
-  <tbody id="rows"><tr><td colspan="4" class="empty">waiting for a conversation…</td></tr></tbody>
-</table>
+<div class="tabs">
+  <button class="tab on" data-tab="timeline">Timeline</button>
+  <button class="tab" data-tab="guests">Guests</button>
+</div>
+
+<div id="timeline">
+  <table>
+    <thead><tr><th>time</th><th class="gap" style="text-align:right">+gap</th><th>what</th><th>detail</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="4" class="empty">waiting for a conversation…</td></tr></tbody>
+  </table>
+</div>
+
+<div id="guests" hidden>
+  <div class="big">
+    <div class="stat"><div class="k">QR pages opened</div><div class="v" id="scans">0</div></div>
+    <div class="stat"><div class="k">sessions started</div><div class="v" id="nsess">0</div></div>
+    <div class="stat"><div class="k">cut off by the next scan</div><div class="v" id="nsup">0</div></div>
+  </div>
+  <table>
+    <thead><tr><th>started</th><th>name</th><th>language</th><th>lasted</th><th>ended</th></tr></thead>
+    <tbody id="grows"><tr><td colspan="5" class="empty">nobody yet</td></tr></tbody>
+  </table>
+</div>
 
 <p class="note">
   <b>guest → first word</b> is the gap from the guest's sentence being finalised to the voice
@@ -92,6 +118,36 @@ const secs = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms'
 let since = 0
 const all = []
 
+for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', () => {
+  for (const o of document.querySelectorAll('.tab')) o.classList.toggle('on', o === b)
+  $('timeline').hidden = b.dataset.tab !== 'timeline'
+  $('guests').hidden   = b.dataset.tab !== 'guests'
+})
+
+const lasted = (a, b) => { const s = Math.round(((b || Date.now()) - a) / 1000)
+  return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s` }
+
+async function guests() {
+  try {
+    const d = await (await fetch(q('/api/sessions'), { cache: 'no-store' })).json()
+    $('scans').textContent = d.scans
+    $('nsess').textContent = d.sessions.length
+    $('nsup').textContent = d.sessions.filter(x => x.endedBy === 'superseded').length
+    $('grows').innerHTML = d.sessions.length ? d.sessions.map(x => `
+      <tr>
+        <td>${clock(x.at)}</td>
+        <td>${x.active ? '<span class="live-dot"></span>' : ''}<b>${esc(x.name)}</b></td>
+        <td>${esc(x.lang)}</td>
+        <td>${lasted(x.at, x.endedAt)}</td>
+        <td>${x.active ? '<span class="up">talking now</span>'
+             : x.endedBy === 'superseded' ? '<span class="k-tool">next guest took over</span>'
+             : x.endedBy === 'timeout' ? '<span class="k-tool">walked away (timed out)</span>'
+             : 'finished on their phone'}</td>
+      </tr>`).join('') : '<tr><td colspan="5" class="empty">nobody yet</td></tr>'
+  } catch {}
+}
+const esc = t => String(t ?? '').replace(/[<&]/g, c => ({ '<': '&lt;', '&': '&amp;' }[c]))
+
 function render(state) {
   $('bar').innerHTML = [
     ['voice', state.brain?.connected ? '<span class="up">connected</span>' : '<span class="down">not connected</span>'],
@@ -101,6 +157,15 @@ function render(state) {
     ['session', state.live ? `<span class="up">${state.name || 'guest'}</span> · ${state.lang}` : '<span class="idle">idle</span>'],
     ['face', state.face?.state ?? '—'],
   ].map(([k, v]) => `<span class="chip"><b>${k}</b>${v}</span>`).join('')
+    // The stack is per CALL, not per assistant: a picked language swaps the
+    // transcriber, and Malayalam and Kannada swap the voice model too.
+    + (state.stack ? [
+        ['llm', state.stack.llm], ['tts', state.stack.tts],
+        ['stt', state.stack.stt], ['lang', state.stack.lang],
+        ['overridden for this call', state.stack.overridden ?? 'none'],
+        ['mic', state.stack.mic ?? '—'], ['speaker', state.stack.speaker ?? '—'],
+      ].map(([k, v]) => `<span class="chip"><b>${k}</b>${v ?? '—'}</span>`).join('')
+      : '<span class="chip"><b>stack</b>not reported until a call starts</span>')
 
   // Turn timing: from a finalised guest sentence to the voice starting.
   const waits = []
@@ -130,6 +195,7 @@ async function tick() {
     const d = await (await fetch(q('/api/log?since=' + since), { cache: 'no-store' })).json()
     for (const e of d.entries ?? []) { all.push(e); since = Math.max(since, e.at) }
     render(d.state ?? {})
+    await guests()
   } catch { /* a missed poll is not worth a banner on a debug page */ }
   setTimeout(tick, 1000)
 }

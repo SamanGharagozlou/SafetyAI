@@ -32,7 +32,7 @@
  *   VAPI_PUBLIC_KEY=... VAPI_ASSISTANT_ID=... node tools/robot-face/server.mjs
  */
 import { createServer } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile, appendFile, mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { networkInterfaces } from 'node:os'
@@ -160,6 +160,7 @@ const publicState = () => ({
   // it - which is exactly what happened the first time this ran.
   brain: { connected: brainUp() },
   face: faceState,
+  stack,
 })
 
 /**
@@ -213,6 +214,31 @@ const broadcast = event => {
  * drawing generates the thing that merely has to look right.
  */
 let faceState = { state: 'idle', caption: '', at: 0 }
+let stack = null          // which LLM / TTS / STT this call is actually on
+
+/**
+ * WHO HAS USED IT, and how their turn ended.
+ *
+ * At a stand the queue matters more than any single conversation: who is on
+ * it now, how many have been through, and whether people are finishing or
+ * being cut off by the next scan. `endedBy` is the interesting column -
+ * a lot of `superseded` means the queue is pushing, a lot of `timeout`
+ * means people walk away without finishing.
+ */
+const sessions = []
+let scans = 0            // /join loads: someone pointed a camera at the QR
+const startSession = (name, lang, owner) => {
+  sessions.push({ name: name || '(no name)', lang, owner, at: Date.now(), endedAt: 0, endedBy: '' })
+  if (sessions.length > 300) sessions.splice(0, sessions.length - 300)
+  saveSessions()
+}
+/* Takes the owner explicitly. Reading it off `session` was wrong: by the
+   time a takeover calls this, `session` has already been replaced by the
+   new guest, so it closed the wrong row - or none at all. */
+const endSession = (how, owner) => {
+  const live = sessions.find(x => !x.endedAt && x.owner === owner)
+  if (live) { live.endedAt = Date.now(); live.endedBy = how; saveSessions() }
+}
 
 /**
  * A TIMED LOG OF THE CONVERSATION, for /debug.
@@ -224,10 +250,54 @@ let faceState = { state: 'idle', caption: '', at: 0 }
  * with the large number next to it rather than a guess.
  */
 const log = []
+
+/**
+ * KEPT ON DISK, because it was not and that made it useless.
+ *
+ * Every deploy restarts this service, and the whole history - the timeline,
+ * who had used it, how many had scanned - went to zero each time. A record
+ * that disappears exactly when you ship a fix is not a record. Writes are
+ * fire-and-forget: losing a line is survivable, delaying a guest is not.
+ */
+const STATE_DIR = process.env.STATE_DIR ?? join(HERE, 'state')
+const LOG_FILE = join(STATE_DIR, 'log.jsonl')
+const SESSIONS_FILE = join(STATE_DIR, 'sessions.json')
+
 const logAdd = e => {
   const at = Date.now()
-  log.push({ ...e, at, gap: log.length ? at - log[log.length - 1].at : 0 })
-  if (log.length > 150) log.splice(0, log.length - 150)
+  const entry = { ...e, at, gap: log.length ? at - log[log.length - 1].at : 0 }
+  log.push(entry)
+  if (log.length > 400) log.splice(0, log.length - 400)
+  appendFile(LOG_FILE, JSON.stringify(entry) + '\n').catch(() => {})
+}
+
+let saveTimer = null
+const saveSessions = () => {
+  // Debounced: a busy minute should not mean a hundred writes to an SD card.
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    writeFile(SESSIONS_FILE, JSON.stringify({ scans, sessions: sessions.slice(-300) })).catch(() => {})
+  }, 1000)
+  saveTimer.unref?.()
+}
+
+async function restore() {
+  await mkdir(STATE_DIR, { recursive: true }).catch(() => {})
+  try {
+    const lines = (await readFile(LOG_FILE, 'utf8')).trim().split('\n')
+    // Only the tail is interesting, and re-reading a huge file on every
+    // boot is how a demo box gets slow.
+    for (const l of lines.slice(-400)) { try { log.push(JSON.parse(l)) } catch {} }
+    if (lines.length > 4000) await writeFile(LOG_FILE, lines.slice(-2000).join('\n') + '\n').catch(() => {})
+  } catch {}
+  try {
+    const d = JSON.parse(await readFile(SESSIONS_FILE, 'utf8'))
+    if (Array.isArray(d.sessions)) sessions.push(...d.sessions)
+    if (Number.isFinite(d.scans)) scans = d.scans
+    // Anything still marked live belongs to a process that no longer exists.
+    for (const x of sessions) if (!x.endedAt) { x.endedAt = x.at; x.endedBy = 'server restarted' }
+  } catch {}
+  console.log(`restored ${log.length} log entries, ${sessions.length} sessions, ${scans} scans`)
 }
 let brainSeenAt = 0
 const brainUp = () => Date.now() - brainSeenAt < 30000   // a long poll returns at 20s
@@ -251,6 +321,8 @@ const brainUp = () => Date.now() - brainSeenAt < 30000   // a long poll returns 
 const SESSION_MAX_MS = Number(process.env.SESSION_MAX_MS ?? 8 * 60 * 1000)
 setInterval(() => {
   if (session.live && Date.now() - session.startedAt > SESSION_MAX_MS) {
+    logAdd({ kind: 'session', text: `END    ${session.name || '(no name)'} · timed out after ${Math.round(SESSION_MAX_MS / 60000)} min` })
+    endSession('timeout', session.owner)
     session = { live: false, name: '', consent: false, startedAt: 0, owner: '', lang: 'any' }
     broadcast({ type: 'stop' })
     console.log('session timed out and was released')
@@ -298,7 +370,56 @@ async function page(res, file, extra = {}) {
   }
 }
 
-createServer(async (req, res) => {
+/**
+ * WEATHER, as a Vapi tool.
+ *
+ * It lives here rather than on the info server because this box is on the
+ * stable Tailscale funnel: the venue tools sit on a quick tunnel that dies
+ * overnight, and a greeter that cannot say whether it is raining is worse
+ * than one that never offered.
+ *
+ * Open-Meteo needs no API key and no account, which is the whole reason it
+ * was chosen - one less credential to leak and one less thing to expire
+ * during a demo. Leukerbad sits at 1411 m, so the valley forecast for Leuk
+ * is routinely several degrees out; these are the village's own numbers.
+ */
+const LEUKERBAD = { lat: 46.3808, lon: 7.6283 }
+const SKY = {
+  0:'clear', 1:'mostly clear', 2:'partly cloudy', 3:'overcast', 45:'foggy', 48:'freezing fog',
+  51:'light drizzle', 53:'drizzle', 55:'heavy drizzle', 61:'light rain', 63:'rain', 65:'heavy rain',
+  66:'freezing rain', 67:'freezing rain', 71:'light snow', 73:'snow', 75:'heavy snow', 77:'snow grains',
+  80:'rain showers', 81:'rain showers', 82:'violent rain showers', 85:'snow showers', 86:'heavy snow showers',
+  95:'a thunderstorm', 96:'a thunderstorm with hail', 99:'a thunderstorm with hail',
+}
+let weatherCache = { at: 0, text: '' }
+
+async function weather() {
+  // Cached: a greeter can be asked ten times in a minute and the sky does
+  // not change between them.
+  if (Date.now() - weatherCache.at < 10 * 60 * 1000 && weatherCache.text) return weatherCache.text
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${LEUKERBAD.lat}&longitude=${LEUKERBAD.lon}`
+    + '&current=temperature_2m,apparent_temperature,weather_code,precipitation,wind_speed_10m'
+    + '&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Europe%2FZurich&forecast_days=2'
+  const r = await fetch(url, { signal: AbortSignal.timeout(6000) })
+  if (!r.ok) throw new Error(`weather service returned ${r.status}`)
+  const d = await r.json()
+  const c = d.current, day = d.daily
+  const sky = SKY[c.weather_code] ?? 'hard to call'
+  const now = Math.round(c.temperature_2m)
+  const feels = Math.round(c.apparent_temperature)
+  const hi = Math.round(day.temperature_2m_max[0]), lo = Math.round(day.temperature_2m_min[0])
+  const tomorrow = `${SKY[day.weather_code[1]] ?? 'unsettled'}, ${Math.round(day.temperature_2m_min[1])} to ${Math.round(day.temperature_2m_max[1])} degrees`
+  // Written as a line to SAY, not a data structure to read out. The whole
+  // point is the contrast between the cold outside and the warm water.
+  const cold = now <= 2 ? ' That is cold enough that the outdoor pool is the best thing in the village right now.'
+    : now <= 10 ? ' Cold enough outside to make forty degrees of water feel wonderful.' : ''
+  weatherCache = { at: Date.now(), text:
+    `Right now in Leukerbad it is ${now} degrees and ${sky}${feels !== now ? `, feels like ${feels}` : ''}. `
+    + `Today ${lo} to ${hi}. Tomorrow ${tomorrow}.${cold}` }
+  return weatherCache.text
+}
+
+const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`)
   const p = url.pathname
 
@@ -313,7 +434,7 @@ createServer(async (req, res) => {
       ? { 'Set-Cookie': `fkey=${KEY}; Path=/; SameSite=Lax; Max-Age=86400` } : {}
 
     if (p === '/' || p === '/face') return void await page(res, 'index.html', setCookie)
-    if (p === '/join')              return void await page(res, 'join.html', setCookie)
+    if (p === '/join') { scans++; saveSessions(); return void await page(res, 'join.html', setCookie) }
 
     if (p === '/api/config') {
       // The QR carries the key, so a guest scans their way in and never sees it.
@@ -321,8 +442,37 @@ createServer(async (req, res) => {
       return json(res, 200, { publicKey: PUBLIC_KEY, assistantId: ASSISTANT_ID, joinUrl })
     }
 
+    /* Vapi calls this directly as a tool. Same shape as the robot edge and
+       the info server, so the assistant sees one protocol everywhere. */
+    if (p === '/vapi' && req.method === 'POST') {
+      let body
+      try { body = JSON.parse(await readBody(req) || '{}') }
+      catch (e) { return json(res, 400, { error: `body is not JSON: ${e.message}` }) }
+      const calls = body?.message?.toolCallList ?? []
+      const results = []
+      for (const call of calls) {
+        let result
+        try {
+          if (call.name === 'get_weather') result = await weather()
+          else result = `Sorry, that failed: unknown tool '${call.name}'.`
+        } catch (e) {
+          // Said as a sentence, because whatever comes back here is spoken
+          // aloud to a guest standing in the weather they just asked about.
+          result = `I cannot see the forecast just now, sorry — but you can see the sky better than I can.`
+          console.log(`weather failed: ${e.message}`)
+        }
+        results.push({ toolCallId: call.id, result })
+      }
+      return json(res, 200, { results })
+    }
+
     if (p === '/api/state') return json(res, 200, { ...publicState(), seq })
 
+    if (p === '/api/sessions') {
+      // owner is a credential, so it never leaves the server.
+      return json(res, 200, { now: Date.now(), scans, live: session.live, liveSince: session.startedAt,
+        sessions: sessions.map(({ owner, ...rest }) => ({ ...rest, active: !rest.endedAt })).slice(-60).reverse() })
+    }
     if (p === '/api/log') {
       const since = Number(url.searchParams.get('since') ?? 0) || 0
       return json(res, 200, { now: Date.now(), state: publicState(),
@@ -362,6 +512,7 @@ createServer(async (req, res) => {
       try { body = JSON.parse(await readBody(req) || '{}') }
       catch (e) { return json(res, 400, { error: `body is not JSON: ${e.message}` }) }
       brainSeenAt = Date.now()
+      if (body.stack && typeof body.stack === 'object') stack = body.stack
       // The heartbeat refreshes the lease too, so a dead brain's claim
       // lapses in seconds rather than outliving it by half a minute.
       const holdsIt = claimLease(String(body.bid ?? ''))
@@ -410,6 +561,8 @@ createServer(async (req, res) => {
            The cost is that someone can be cut off mid-sentence; the
            alternative is a robot nobody else can use. */
         const superseded = session.live && body.owner !== session.owner
+        const previousOwner = session.owner
+        const previousName = session.name
         const owner = (body.owner && body.owner === session.owner)
           ? body.owner
           : Math.random().toString(36).slice(2, 12)
@@ -418,7 +571,13 @@ createServer(async (req, res) => {
                     startedAt: Date.now(), owner, lang }
         // Tear the old call down before opening the new one, so the robot
         // does not greet the new guest in the old guest's language.
-        if (superseded) broadcast({ type: 'stop' })
+        if (superseded) {
+          logAdd({ kind: 'session', text: `END    ${previousName || '(no name)'} · cut off, the next guest scanned` })
+          endSession('superseded', previousOwner)
+          broadcast({ type: 'stop' })
+        }
+        startSession(session.name, lang, owner)
+        logAdd({ kind: 'session', text: `START  ${session.name || '(no name)'} · ${lang}${superseded ? '  (took over from the previous guest)' : ''}` })
         broadcast({ type: 'start', name: session.name, lang })
         standUp()   // get it on its feet before the first word, not after a refusal
         // `owner` goes to this guest alone; it is what lets them stop their
@@ -444,6 +603,8 @@ createServer(async (req, res) => {
         // Anyone may stop. A Stop that checks credentials is a Stop that
         // fails when it is most needed, and the worst case here is a session
         // ending early next to a machine that can walk.
+        logAdd({ kind: 'session', text: `END    ${session.name || '(no name)'} · finished on their phone` })
+        endSession('guest', session.owner)
         session = { live: false, name: '', consent: false, startedAt: 0, owner: '', lang: 'any' }
         broadcast({ type: 'stop' })
         return json(res, 200, publicState())
@@ -456,7 +617,9 @@ createServer(async (req, res) => {
   } catch (e) {
     json(res, 500, { error: e.message })
   }
-}).listen(PORT, BIND, () => {
+})
+await restore()
+server.listen(PORT, BIND, () => {
   const k = KEY ? `?k=${encodeURIComponent(KEY)}` : ''
   console.log(`\nRobot face   ->  ${PUBLIC_URL}/face${k}`)
   console.log(`Guest join   ->  ${PUBLIC_URL}/join${k}   (what the QR encodes)`)

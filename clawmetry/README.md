@@ -39,6 +39,84 @@ python3 clawmetry/scenarios.py --url http://127.0.0.1:8901
 `scenarios.py` drives ten scenarios — one per detector — through the real tap
 and the real `/ingest` door, not a test backdoor.
 
+## The trace view: where the time went, and did the forecast hold
+
+![trace](docs/06-trace-where-the-time-went.png)
+
+The Live tab answers *what is the latest state of each action*. Two questions
+it cannot answer are the ones asked most often in front of a robot: **which
+step was slow**, and **was the prediction any good**. The Trace tab is built
+around those, and is modelled deliberately on `tools/robot-face/debug.html` —
+that page is already how this robot gets debugged, it is built around the
+*gap* rather than the event, and it uses the same 1 s / 3 s colour thresholds
+so somebody moving between the two reads them identically.
+
+**The stage waterfall.** Every action is broken into the steps that produced
+it, each bar scaled to what it cost:
+
+```
+predict 48ms   world model 5.21s   verdict 40ms   dispatch 51ms   robot 42ms
+```
+
+That single row is the answer to "why is the robot slow to react": 96 % of
+5.40 s was Cosmos. No part of it was the gate. The stages come from the
+ledger's own timestamps, so the breakdown is evidence rather than
+instrumentation added for the view.
+
+The first stage, *guest spoke*, is placed by the age Vapi reported for the
+sentence, **not** by when we filed it — the transcript is re-entered against
+the action at command time, so its own `ts` would measure our bookkeeping
+instead of the guest's wait.
+
+**Predicted vs actual, side by side.** The Live view shows `0.3σ`; this one
+shows the two numbers that produced it, and says which of them was scored:
+
+| forecast | predicted | actual | Δ | deviation |
+|---|---|---|---|---|
+| end pose | x 0.96 y 0.00 | no pose | — | *not scored* |
+| duration | 11.39 s | 0.02 s | 11.37 s | 7.58σ |
+
+`not scored` is never shown as a pass. Position is unscored here because the
+robot published no odometry for that action, which is a finding about the
+instrumentation, not a clean result — the same reason `deviation_z` is `null`
+rather than `0` when nothing was comparable.
+
+**The honesty of the verdict badge.** An action that arrived through the edge
+tee is badged **not enforced**, never *allowed*: nobody allowed it, the gate
+was simply not in the path. If the gate's opinion was *deny*, the badge reads
+**would have refused** and the card carries `gate_could_not_enforce`.
+
+**The event river** is the raw ledger, newest first, one row per line, with
+the gap since the row above it. State samples are hidden by default — at 2 Hz
+they are the whole river and none of the decisions — and the gap is measured
+between *visible* rows, because a gap taken from a hidden neighbour would read
+`+0.5s` on a row that actually followed thirty seconds of silence. Clock skew
+is shown where a source disagrees with us by more than a second. Clicking any
+row isolates that action.
+
+Backfilled once, on first open, from `GET /api/ledger?limit=600&skip=state`;
+live from the same SSE stream as everything else.
+
+### The 1 Hz poll used to cost the robot four seconds of CPU
+
+`/api/state` is polled once a second by the page. It was taking **4 to 12
+seconds** on the Orin, so the dashboard header never filled in at all, and the
+robot spent more CPU on being watched than on anything else. Each poll walked
+the whole ledger five times: `verify()` re-hashed it, `_counts()` re-parsed it,
+and the compliance pack was built twice. At 10 MB that is not a poll, it is a
+denial of service with a nice UI.
+
+Three fixes, now **30 ms**:
+
+- the ledger counts kinds as it writes them (three code paths append to it, and
+  a counter kept outside the ledger missed one);
+- the compliance pack is built at most every 30 s;
+- `verify(max_age_s=20)` may return a cached verdict — and the answer carries
+  `checked_age_s`, which the header displays, because *"the chain was intact
+  7 seconds ago"* is a weaker claim than *"the chain is intact"* and must not
+  be shown as the stronger one. `/api/verify` and anything producing evidence
+  pass nothing and always get the full walk over the bytes on disk.
+
 ## The operator's guardrails
 
 `venue/leukerbad_therme.yaml` is **the spa's document**, written to be read and

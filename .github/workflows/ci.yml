@@ -1,0 +1,47 @@
+# Offline tests on every push and PR.
+#
+# API keys come from GitHub repo secrets (Settings -> Secrets and variables ->
+# Actions), never from a file in this repo. To set them once:
+#
+#   gh secret set VAPI_PRIVATE_KEY
+#   gh secret set D1_ROBOT_TOKEN
+#   gh secret set BRAIN_API_KEY
+#   gh secret set COSMOS_API_KEY
+#
+# A secret that is not set arrives as an empty string. Every suite below is
+# offline by design and passes with all four empty, so a fork PR (which gets
+# no secrets) is not a red build.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      VAPI_PRIVATE_KEY: ${{ secrets.VAPI_PRIVATE_KEY }}
+      D1_ROBOT_TOKEN: ${{ secrets.D1_ROBOT_TOKEN }}
+      BRAIN_API_KEY: ${{ secrets.BRAIN_API_KEY }}
+      COSMOS_API_KEY: ${{ secrets.COSMOS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: clawmetry (no robot, no camera, no network)
+        working-directory: clawmetry
+        run: python3 test_clawmetry.py
+
+      - name: frontend
+        working-directory: frontend
+        run: |
+          npm ci --include=dev
+          npm run typecheck
+          npm test

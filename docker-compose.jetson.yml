@@ -1,0 +1,7 @@
+# Added automatically by the Makefile on an NVIDIA Jetson: GPU access via the NVIDIA runtime.
+services:
+  perception:
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
