@@ -84,6 +84,10 @@ class Ledger:
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _seq: int = 0
     _prev: str = GENESIS
+    _verified: tuple = ()           # (when, verdict) - see verify(max_age_s=)
+    # Counted here rather than by the caller because there are three write
+    # paths into this file and a count kept outside missed one of them.
+    counts: dict = field(default_factory=dict)
     _subs: list = field(default_factory=list, repr=False)
 
     def __post_init__(self):
@@ -102,6 +106,11 @@ class Ledger:
                 line = line.strip()
                 if line:
                     last = line
+                    try:
+                        k = json.loads(line).get("kind")
+                    except ValueError:
+                        continue
+                    self.counts[k] = self.counts.get(k, 0) + 1
         if last:
             ev = json.loads(last)
             self._seq = ev.get("seq", 0)
@@ -134,6 +143,7 @@ class Ledger:
             }
             ev["hash"] = digest(ev)
             self._prev = ev["hash"]
+            self.counts[kind] = self.counts.get(kind, 0) + 1
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(ev, ensure_ascii=False) + "\n")
                 fh.flush()
@@ -165,20 +175,44 @@ class Ledger:
                     out.append(ev)
         return out[-limit:] if limit else out
 
-    def verify(self) -> dict:
-        """Walk the chain. Returns {ok, count, broken_at, reason}.
+    def verify(self, max_age_s: float = 0.0) -> dict:
+        """Walk the chain. Returns {ok, count, broken_at, reason, checked_age_s}.
 
         A tampered ledger is worth less than no ledger, because it is trusted.
-        So this is cheap enough to run on every dashboard load.
+
+        WHY THIS IS CACHEABLE AND THE DASHBOARD USES THAT
+        This re-reads and re-hashes the whole file, which is the point: it has
+        to see the bytes on disk to catch an edit made behind the process. On
+        a venue laptop with a few hundred events that is free. On the Orin
+        after a day of 2 Hz telemetry the file is ~10 MB, the walk takes
+        seconds, and a dashboard polling once a second had four of them
+        queued at all times - the robot's own CPU spent governing nothing but
+        the page watching it, and the page's header never filled in.
+
+        So a caller that asks repeatedly may accept a slightly stale answer by
+        passing `max_age_s`. The answer then carries `checked_age_s` and the
+        dashboard shows it, because "the chain was intact 7 seconds ago" is a
+        different and weaker claim than "the chain is intact", and the weaker
+        one must not be displayed as the stronger. `/api/verify` and anything
+        producing evidence pass nothing and get the full walk.
         """
+        if max_age_s > 0 and self._verified:
+            age = time.time() - self._verified[0]
+            if age < max_age_s:
+                return {**self._verified[1], "checked_age_s": round(age, 1)}
         prev, count = GENESIS, 0
         for ev in self.read():
             count += 1
             if ev.get("prev") != prev:
-                return {"ok": False, "count": count, "broken_at": ev.get("seq"),
-                        "reason": "prev hash does not match the previous line"}
+                return self._verdict({"ok": False, "count": count, "broken_at": ev.get("seq"),
+                                      "reason": "prev hash does not match the previous line"})
             if digest(ev) != ev.get("hash"):
-                return {"ok": False, "count": count, "broken_at": ev.get("seq"),
-                        "reason": "line contents do not match their own hash"}
+                return self._verdict({"ok": False, "count": count, "broken_at": ev.get("seq"),
+                                      "reason": "line contents do not match their own hash"})
             prev = ev["hash"]
-        return {"ok": True, "count": count, "broken_at": None, "reason": "chain intact"}
+        return self._verdict({"ok": True, "count": count, "broken_at": None,
+                              "reason": "chain intact"})
+
+    def _verdict(self, r: dict) -> dict:
+        self._verified = (time.time(), r)
+        return {**r, "checked_age_s": 0.0}

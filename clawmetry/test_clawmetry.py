@@ -1,6 +1,7 @@
 """No robot, no camera, no network. Run: python3 test_clawmetry.py"""
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -1234,6 +1235,65 @@ class TestGuardrailEditing(unittest.TestCase):
         self.assertFalse(h.venue_config()["configured"])
         code, _ = h.venue_apply([], operator="A. Operator")
         self.assertEqual(code, 400)
+
+
+class TestVerifyCache(unittest.TestCase):
+    """The dashboard polls once a second; the chain walk reads the whole file."""
+
+    def test_a_full_verify_reports_itself_as_fresh(self):
+        led = Ledger(path=Path(self.tmp.name) / "l.jsonl")
+        led.append("state", actor="robot", data={"x": 1})
+        self.assertEqual(led.verify()["checked_age_s"], 0.0)
+
+    def test_a_cached_verify_says_how_old_it_is(self):
+        led = Ledger(path=Path(self.tmp.name) / "l.jsonl")
+        led.append("state", actor="robot", data={"x": 1})
+        led.verify()
+        led._verified = (time.time() - 5.0, led._verified[1])
+        v = led.verify(max_age_s=20.0)
+        self.assertTrue(v["ok"])
+        self.assertGreaterEqual(v["checked_age_s"], 5.0)
+
+    def test_an_expired_cache_walks_the_chain_again(self):
+        led = Ledger(path=Path(self.tmp.name) / "l.jsonl")
+        led.append("state", actor="robot", data={"x": 1})
+        led.verify()
+        led._verified = (time.time() - 60.0, led._verified[1])
+        self.assertEqual(led.verify(max_age_s=20.0)["checked_age_s"], 0.0)
+
+    def test_asking_for_no_staleness_never_uses_the_cache(self):
+        """Evidence and /api/verify must see the bytes on disk, every time."""
+        led = Ledger(path=Path(self.tmp.name) / "l.jsonl")
+        led.append("state", actor="robot", data={"x": 1})
+        led.verify()
+        # A break introduced behind the process is invisible to a cache and
+        # must still be caught by the uncached call.
+        led.path.write_text(led.path.read_text().replace('"x": 1', '"x": 2'))
+        self.assertTrue(led.verify(max_age_s=3600)["ok"])      # cache says fine
+        self.assertFalse(led.verify()["ok"])                   # the file does not
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+
+class TestCountsAreNotReparsed(unittest.TestCase):
+    def test_counts_match_the_ledger_after_writes(self):
+        h = _hub()
+        h.emit("state", actor="robot", data={"x": 0})
+        h.emit("state", actor="robot", data={"x": 1})
+        h.emit("integrity", data={"event": "t"})
+        c = h._counts()
+        from collections import Counter
+        want = Counter(e["kind"] for e in h.led.read())
+        self.assertEqual(c, dict(want))
+
+    def test_counts_survive_a_restart_on_the_same_ledger(self):
+        h = _hub()
+        h.emit("state", actor="robot", data={"x": 0})
+        n = dict(h._counts())
+        h2 = _hub(ledger=str(h.led.path))
+        self.assertEqual(h2._counts()["state"], n["state"])
 
 
 class TestObservedFromEdge(unittest.TestCase):

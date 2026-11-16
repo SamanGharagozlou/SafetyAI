@@ -29,7 +29,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | `ros2_ws/src/d1_dashboard` | Developer web UI (`:8080`): start/stop pipeline, maps, click-to-navigate, E-STOP | working |
 | `frontend/` | Visitor web app (React 19 + Vite + TS), QR join, voice via Vapi | **demo mode only, no robot connection** |
 | `tools/robot-console/` | Operator console (Node, zero deps) behind Tailscale Serve | working |
-| `clawmetry/` | Physical-AI control plane: tap + collectors + hash-chained ledger + breach correlator + Cosmos world-model gate + Vapi voice sink + operator-editable venue guardrails + dashboard (pure stdlib) | runs on the robot in front of `d1-vapi-server`, but only governs the live path while `tailscale funnel` points 443 at 8901 instead of 8090; see [clawmetry/README.md](clawmetry/README.md#live-wiring-end-to-end) |
+| `clawmetry/` | Physical-AI control plane: tap + collectors + hash-chained ledger + breach correlator + Cosmos world-model gate + Vapi voice sink + operator-editable venue guardrails + live/trace/guardrails dashboard (pure stdlib) | runs on the robot in front of `d1-vapi-server`, but only governs the live path while `tailscale funnel` points 443 at 8901 instead of 8090; see [clawmetry/README.md](clawmetry/README.md#live-wiring-end-to-end) |
 | `tools/` | MetaCam relay and map tools, offline evaluation scripts | dev tools |
 | `maps/` | 2D occupancy maps built from MetaCam Lite scans | see `maps/README.md` |
 | `deploy/jetson/` | systemd units (bridge, watchdog, console) for the Jetson | in use |

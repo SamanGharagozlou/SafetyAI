@@ -46,7 +46,7 @@ const pg = await br.newPage()
 const errs = []
 pg.on('pageerror', e => errs.push('pageerror: ' + e.message))
 pg.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text()) })
-await pg.goto(B, { waitUntil: 'networkidle' })
+await pg.goto(B, { waitUntil: 'domcontentloaded' })   // SSE is open: networkidle never fires
 const pass = []
 await pg.click('.tab[data-v="guard"]')
 await pg.waitForSelector('#zones tbody tr', { timeout: 5000 })
@@ -54,7 +54,7 @@ pass.push(['guardrails tab renders zones', await pg.locator('#zones tbody tr td.
 pass.push(['floor plan drew polygons', await pg.locator('svg.plan polygon').count() >= 9])
 pass.push(['nothing pending at rest', (await pg.locator('#pending .empty').count()) === 1])
 pass.push(['the live view is hidden on the guardrails tab',
-  !(await pg.locator('main:not(#gview)').isVisible())])
+  !(await pg.locator('#lview').isVisible())])
 
 // tighten one cap
 await pg.fill('input[data-k="zones.concourse.speed_cap"]', '0.18')
