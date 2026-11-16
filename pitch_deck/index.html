@@ -345,7 +345,9 @@ body { font-family: var(--font-body); color: var(--text); }
 .s-ask .asks span { display: block; margin-top: 14px; font-size: 28px; line-height: 1.4; color: var(--mist); }
 .s-ask .close { position: absolute; left: var(--pad); top: 760px; width: 1680px; font-size: 46px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
 .s-ask .close i { font-style: normal; color: var(--accent); }
-.s-ask .contact { position: absolute; left: var(--pad); top: 880px; font-size: 26px; display: flex; gap: 60px; }
+.s-ask .contact { position: absolute; left: var(--pad); top: 880px; font-size: 30px; display: flex; align-items: baseline; gap: 32px; }
+.s-ask .contact b { font-weight: 700; letter-spacing: .04em; }
+.s-ask .contact a { color: var(--mist); text-decoration: none; border-bottom: 2px solid var(--accent); padding-bottom: 2px; }
 
 /* ===========================================
    DECK CHROME (outside the stage design system)
@@ -768,9 +770,8 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
 
     <!-- ===== SLIDE 9: ASK AND CLOSE (0:15) ===== -->
     <section class="slide s-ask" aria-label="The ask">
-        <!-- Real team photo, ideally with the robot. Drop at assets/team.jpg -->
+        <!-- Optional team photo, ideally with the robot: drop it at assets/team.jpg and it shows behind the veil -->
         <div class="media">
-            <div class="ph">PHOTO · assets/team.jpg · Sepazu team with the robot</div>
             <img src="assets/team.jpg" alt="The Sepazu team with the robot at the hackathon" onerror="this.remove()">
         </div>
         <div class="veil"></div>
@@ -785,7 +786,7 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
         </ul>
 
         <p class="close reveal" style="--d:.9s">Service robots, ready for <i>real people and real places.</i></p>
-        <p class="contact reveal" style="--d:1.05s"><span class="tbd">[TEAM EMAIL]</span><span class="tbd">[WEBSITE OR QR CODE]</span></p>
+        <p class="contact reveal" style="--d:1.05s"><b>Vivek Chand</b><a href="mailto:vivek@clawmetry.com">vivek@clawmetry.com</a></p>
         <p class="foot">SEPAZU</p>
 
         <aside class="notes" data-time="0:15">

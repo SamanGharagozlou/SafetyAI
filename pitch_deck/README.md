@@ -23,7 +23,7 @@ slide opens and pauses when you leave it. Click it to pause or resume.
 
 | Slide | What |
 |---|---|
-| 11 Ask | Team email and website (orange placeholders), optional `assets/team.jpg` background |
+| 12 Ask | Optional `assets/team.jpg` background (contact: Vivek Chand, vivek@clawmetry.com) |
 
 Use underscores in names: the brief bans dashes in visible slide text.
 
