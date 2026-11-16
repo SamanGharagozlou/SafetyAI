@@ -214,6 +214,14 @@ body { font-family: var(--font-body); color: var(--text); }
    =========================================== */
 .s-demo { background: radial-gradient(1200px 700px at 78% 22%, rgba(218,41,28,.18), transparent 60%), linear-gradient(180deg, #10242f 0%, var(--night) 70%); }
 .s-demo .media video { object-fit: contain; background: #000; }
+/* YouTube player never takes clicks: a click would steal keyboard focus and the clicker would stop
+   changing slides. The transparent layer above it toggles playback through the player API instead. */
+.s-demo .yt iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; pointer-events: none; }
+.s-demo .demo-hit { position: absolute; inset: 0; z-index: 2; cursor: pointer; }
+/* Opened from disk (file://) YouTube refuses to embed (error 153), so the slide offers a link instead */
+.s-demo .hint { display: none; position: absolute; left: 0; right: 0; top: 760px; text-align: center; font-size: 26px; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--mist); }
+.s-demo.no-embed .hint { display: block; }
 .s-demo .word { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     font-weight: 800; font-size: 260px; letter-spacing: .14em; padding-left: .14em; }
 .s-demo .word span { color: var(--accent); }
@@ -515,8 +523,9 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
     </section>
 
     <!-- ===== SLIDE 3B: DEMO (0:45) =====
-         Shows DEMO. If assets/demo.mp4 is added it covers the word, plays when this slide opens
-         and pauses when you leave. Click to pause/resume. -->
+         Plays the demo when this slide opens and stops when you leave. Click the slide to pause/resume.
+         Source: a local assets/demo.mp4 if present (git ignored, for offline presenting), otherwise the
+         YouTube upload https://youtu.be/R41dpTOY1Mg (needs internet). With neither, the slide shows DEMO. -->
     <section class="slide s-demo" aria-label="Demo">
         <svg class="ridge" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true">
             <path d="M0 800 L180 690 L320 760 L520 620 L700 740 L900 650 L1100 780 L1320 630 L1520 740 L1720 670 L1920 760 V1080 H0Z" fill="rgba(255,255,255,.04)"/>
@@ -524,8 +533,11 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
         </svg>
         <p class="word reveal" style="--d:.15s">DEMO<span>.</span></p>
         <div class="media" style="background: none; pointer-events: none">
-            <video id="demoVideo" src="assets/demo.mp4" preload="metadata" playsinline onerror="this.remove()" style="pointer-events: auto"></video>
+            <video id="demoVideo" src="assets/demo.mp4" preload="metadata" playsinline onerror="this.remove(); try { deck.syncVideo(deck.slides[deck.current]); } catch (e) {}"></video>
+            <div class="yt" id="demoYT" data-id="R41dpTOY1Mg"></div>
         </div>
+        <p class="hint" id="demoHint">Click to watch the demo on YouTube</p>
+        <div class="demo-hit" id="demoHit" title="Click to pause or resume"></div>
 
         <aside class="notes" data-time="0:45">
             <p>Do not speak over the video.</p>
@@ -870,15 +882,49 @@ class SlidePresentation {
             lock = true; this.go(e.deltaY > 0 ? 1 : -1); setTimeout(() => lock = false, 700);
         }, { passive: true });
     }
-    /* Demo video: click to pause/resume. Playback is driven by show(). */
+    /* Demo: local assets/demo.mp4 if it loaded, else the YouTube embed. Playback is driven by show();
+       a click on the slide pauses/resumes. The YouTube state comes from the player's postMessage feed. */
     setupVideo() {
-        const v = document.getElementById('demoVideo');
-        if (v) v.addEventListener('click', () => v.paused ? v.play() : v.pause());
+        this.ytState = -1;
+        addEventListener('message', e => {
+            if (!/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin)) return;
+            let d; try { d = JSON.parse(e.data); } catch (_) { return; }
+            if (d && d.info && typeof d.info.playerState === 'number') this.ytState = d.info.playerState;
+        });
+        const hit = document.getElementById('demoHit');
+        if (hit) hit.addEventListener('click', () => {
+            const v = document.getElementById('demoVideo');
+            if (v && v.isConnected) { v.paused ? v.play() : v.pause(); return; }
+            if (location.protocol === 'file:') { open('https://youtu.be/' + document.getElementById('demoYT').dataset.id, '_blank'); return; }
+            this.ytCommand(this.ytState === 1 ? 'pauseVideo' : 'playVideo');
+        });
+    }
+    ytCommand(func) {
+        const f = document.querySelector('#demoYT iframe');
+        if (f && f.contentWindow) f.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*');
     }
     syncVideo(slide) {
+        const onDemo = slide.classList.contains('s-demo');
         const v = document.getElementById('demoVideo');
-        if (!v || !v.isConnected) return;
-        if (slide.contains(v)) { v.currentTime = 0; v.play().catch(() => {}); } else { v.pause(); }
+        if (v && v.isConnected) {
+            if (onDemo) { v.currentTime = 0; v.play().catch(() => {}); } else { v.pause(); }
+            return;
+        }
+        const yt = document.getElementById('demoYT');
+        if (!yt) return;
+        if (location.protocol === 'file:') { yt.closest('.slide').classList.add('no-embed'); return; }
+        if (!onDemo || !navigator.onLine) { yt.innerHTML = ''; this.ytState = -1; return; } // leaving stops it; offline keeps DEMO
+        if (yt.firstChild) return;
+        const f = document.createElement('iframe');
+        f.title = 'Sepazu demo video';
+        f.allow = 'autoplay; encrypted-media; fullscreen';
+        f.referrerPolicy = 'strict-origin-when-cross-origin';
+        f.src = `https://www.youtube-nocookie.com/embed/${yt.dataset.id}?autoplay=1&enablejsapi=1&rel=0&playsinline=1&iv_load_policy=3&controls=0`;
+        f.addEventListener('load', () => {
+            f.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 'demo' }), '*');
+            this.ytCommand('playVideo');
+        });
+        yt.appendChild(f);
     }
     go(d) { this.show(this.current + d); }
     show(i) {

@@ -16,8 +16,18 @@ Open `index.html` in a browser.
 | E (or hover the top-left corner) | edit text in place, then **Save HTML** and copy the file over `index.html` |
 | `index.html?slide=5` | open at a given slide |
 
-The DEMO slide shows only the word DEMO. If `assets/demo.mp4` is added, it covers the word, starts when the
-slide opens and pauses when you leave it. Click it to pause or resume.
+## Demo video
+
+The DEMO slide (5) plays the demo when it opens and stops it when you leave; click the slide to pause or
+resume. The arrow keys and a clicker keep working while it plays. It picks the first source that works:
+
+1. `assets/demo.mp4`, if you put one there. Works offline. It is git ignored on purpose: recordings of people
+   stay out of git (AGENTS.md), so copy it onto the presenting laptop yourself.
+2. The YouTube upload [youtu.be/R41dpTOY1Mg](https://youtu.be/R41dpTOY1Mg), embedded. Needs internet **and**
+   the deck served over http (the online preview link, or `python3 -m http.server 8000 --directory pitch_deck`).
+   Opened by double clicking the file, YouTube refuses to embed (error 153), so the slide shows DEMO with
+   "Click to watch the demo on YouTube" and a click opens the video in a new tab.
+3. Offline with no local file: the slide shows only DEMO.
 
 ## Still open
 

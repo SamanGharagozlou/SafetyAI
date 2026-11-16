@@ -17,11 +17,15 @@ fonts and images bundled, works offline. GitHub shows only its source, so open i
 - **View online, nothing to install:**
   [raw.githack.com/SamanGharagozlou/SafetyAI/main/pitch_deck/index.html](https://raw.githack.com/SamanGharagozlou/SafetyAI/main/pitch_deck/index.html)
   (until the branch is merged: [feat/pitch_deck preview](https://raw.githack.com/SamanGharagozlou/SafetyAI/feat/pitch_deck/pitch_deck/index.html))
-- **Open locally:** clone the repo and double click `pitch_deck/index.html`, or serve it:
+- **Open locally:** clone the repo and serve it (needed for the embedded demo video):
 
   ```bash
   python3 -m http.server 8000 --directory pitch_deck   # then open http://localhost:8000
   ```
+
+  Double clicking `pitch_deck/index.html` also works, but the demo slide then links out to
+  [the demo on YouTube](https://youtu.be/R41dpTOY1Mg) instead of playing it inline.
+  For an offline talk, drop the video at `pitch_deck/assets/demo.mp4` (git ignored) and it plays from disk.
 
 - **PDF backup:** `node pitch_deck/tools/export_pdf.js` writes `pitch_deck/sepazu_pitch.pdf` (needs Playwright).
 
