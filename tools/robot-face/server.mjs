@@ -298,6 +298,55 @@ async function page(res, file, extra = {}) {
   }
 }
 
+/**
+ * WEATHER, as a Vapi tool.
+ *
+ * It lives here rather than on the info server because this box is on the
+ * stable Tailscale funnel: the venue tools sit on a quick tunnel that dies
+ * overnight, and a greeter that cannot say whether it is raining is worse
+ * than one that never offered.
+ *
+ * Open-Meteo needs no API key and no account, which is the whole reason it
+ * was chosen - one less credential to leak and one less thing to expire
+ * during a demo. Leukerbad sits at 1411 m, so the valley forecast for Leuk
+ * is routinely several degrees out; these are the village's own numbers.
+ */
+const LEUKERBAD = { lat: 46.3808, lon: 7.6283 }
+const SKY = {
+  0:'clear', 1:'mostly clear', 2:'partly cloudy', 3:'overcast', 45:'foggy', 48:'freezing fog',
+  51:'light drizzle', 53:'drizzle', 55:'heavy drizzle', 61:'light rain', 63:'rain', 65:'heavy rain',
+  66:'freezing rain', 67:'freezing rain', 71:'light snow', 73:'snow', 75:'heavy snow', 77:'snow grains',
+  80:'rain showers', 81:'rain showers', 82:'violent rain showers', 85:'snow showers', 86:'heavy snow showers',
+  95:'a thunderstorm', 96:'a thunderstorm with hail', 99:'a thunderstorm with hail',
+}
+let weatherCache = { at: 0, text: '' }
+
+async function weather() {
+  // Cached: a greeter can be asked ten times in a minute and the sky does
+  // not change between them.
+  if (Date.now() - weatherCache.at < 10 * 60 * 1000 && weatherCache.text) return weatherCache.text
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${LEUKERBAD.lat}&longitude=${LEUKERBAD.lon}`
+    + '&current=temperature_2m,apparent_temperature,weather_code,precipitation,wind_speed_10m'
+    + '&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Europe%2FZurich&forecast_days=2'
+  const r = await fetch(url, { signal: AbortSignal.timeout(6000) })
+  if (!r.ok) throw new Error(`weather service returned ${r.status}`)
+  const d = await r.json()
+  const c = d.current, day = d.daily
+  const sky = SKY[c.weather_code] ?? 'hard to call'
+  const now = Math.round(c.temperature_2m)
+  const feels = Math.round(c.apparent_temperature)
+  const hi = Math.round(day.temperature_2m_max[0]), lo = Math.round(day.temperature_2m_min[0])
+  const tomorrow = `${SKY[day.weather_code[1]] ?? 'unsettled'}, ${Math.round(day.temperature_2m_min[1])} to ${Math.round(day.temperature_2m_max[1])} degrees`
+  // Written as a line to SAY, not a data structure to read out. The whole
+  // point is the contrast between the cold outside and the warm water.
+  const cold = now <= 2 ? ' That is cold enough that the outdoor pool is the best thing in the village right now.'
+    : now <= 10 ? ' Cold enough outside to make forty degrees of water feel wonderful.' : ''
+  weatherCache = { at: Date.now(), text:
+    `Right now in Leukerbad it is ${now} degrees and ${sky}${feels !== now ? `, feels like ${feels}` : ''}. `
+    + `Today ${lo} to ${hi}. Tomorrow ${tomorrow}.${cold}` }
+  return weatherCache.text
+}
+
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`)
   const p = url.pathname
@@ -319,6 +368,30 @@ createServer(async (req, res) => {
       // The QR carries the key, so a guest scans their way in and never sees it.
       const joinUrl = `${PUBLIC_URL}/join${KEY ? `?k=${encodeURIComponent(KEY)}` : ''}`
       return json(res, 200, { publicKey: PUBLIC_KEY, assistantId: ASSISTANT_ID, joinUrl })
+    }
+
+    /* Vapi calls this directly as a tool. Same shape as the robot edge and
+       the info server, so the assistant sees one protocol everywhere. */
+    if (p === '/vapi' && req.method === 'POST') {
+      let body
+      try { body = JSON.parse(await readBody(req) || '{}') }
+      catch (e) { return json(res, 400, { error: `body is not JSON: ${e.message}` }) }
+      const calls = body?.message?.toolCallList ?? []
+      const results = []
+      for (const call of calls) {
+        let result
+        try {
+          if (call.name === 'get_weather') result = await weather()
+          else result = `Sorry, that failed: unknown tool '${call.name}'.`
+        } catch (e) {
+          // Said as a sentence, because whatever comes back here is spoken
+          // aloud to a guest standing in the weather they just asked about.
+          result = `I cannot see the forecast just now, sorry — but you can see the sky better than I can.`
+          console.log(`weather failed: ${e.message}`)
+        }
+        results.push({ toolCallId: call.id, result })
+      }
+      return json(res, 200, { results })
     }
 
     if (p === '/api/state') return json(res, 200, { ...publicState(), seq })
