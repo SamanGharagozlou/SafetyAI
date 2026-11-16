@@ -1,0 +1,35 @@
+# The greeter's two screens, served from the Jetson.
+#
+#   sudo cp deploy/jetson/d1-face.service /etc/systemd/system/
+#   sudo install -m 600 /dev/null /etc/d1-face.env   # then put FACE_KEY=... in it
+#   sudo systemctl enable --now d1-face
+#
+# And once, to publish it:
+#   sudo tailscale funnel --bg --https=10000 5180
+#
+# Port 10000, NOT 8443: AGENTS.md forbids funnelling the console port. Running
+# here rather than on a laptop is what makes it survive the laptop going home,
+# and it puts the UI on the same box as the ros-agent it reads robot state from.
+[Unit]
+Description=D1 greeter face and guest join pages
+After=network-online.target d1-ros-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sepa
+WorkingDirectory=/home/sepa/robot-face
+# Loopback: Tailscale Funnel proxies from 127.0.0.1, so nothing needs to be
+# listening on the event wifi for this to work.
+Environment=PORT=5180
+Environment=BIND=127.0.0.1
+Environment=AGENT_URL=http://127.0.0.1:8091
+Environment=PUBLIC_URL=https://d1-jetson.tail5ec076.ts.net:10000
+# FACE_KEY lives here, not in the unit, so it is not world-readable.
+EnvironmentFile=-/etc/d1-face.env
+ExecStart=/usr/bin/node server.mjs
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

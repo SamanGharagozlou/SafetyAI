@@ -84,7 +84,8 @@
     </div>
   </div>
 
-  <button class="go" id="start" disabled style="margin-top:16px">Start</button>
+  <div id="robot-state" style="text-align:center;font-size:14px;color:var(--pale);margin-top:14px;min-height:20px">checking the robot…</div>
+  <button class="go" id="start" disabled style="margin-top:8px">Start</button>
   <p class="privacy" style="margin-top:14px">
     You speak to the robot itself — this phone does not listen and does not play sound.
     No camera, no photos. Nothing is stored after you finish.
@@ -135,13 +136,39 @@ const render = (el, items) => {
 render($('places'), PLACES)
 render($('fun'), FUN)
 
+/* The session token proves this phone owns the conversation, so a second
+   guest scanning the QR cannot take it over or end it. Kept in sessionStorage
+   so a reload mid-chat rejoins instead of being locked out of its own call. */
+const OWNER_KEY = 'tropfi-owner'
+let owner = sessionStorage.getItem(OWNER_KEY) || ''
+
 const post = (body) => fetch('/api/session', {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ ...body, owner }),
 }).then(async r => {
   const d = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`)
+  if (!r.ok) { const e = new Error(d.error || `HTTP ${r.status}`); e.busy = d.busy === true; throw e }
+  if (d.owner) { owner = d.owner; sessionStorage.setItem(OWNER_KEY, owner) }
   return d
 })
+
+/* The robot's own state, shown plainly. A guest tapping Start at a robot
+   that is switched off should be told that, not left watching a button. */
+async function refreshRobot() {
+  try {
+    const d = await (await fetch('/api/state', { cache: 'no-store' })).json()
+    const ok = d.robot?.reachable && d.robot?.connected
+    const busyElsewhere = d.busy && d.owner !== owner && !during()
+    $('robot-state').textContent = !ok
+      ? 'The robot is not responding right now.'
+      : busyElsewhere ? 'The robot is with another guest just now.'
+      : d.robot.battery != null ? `Ready · battery ${Math.round(d.robot.battery)}%` : 'Ready'
+    $('robot-state').style.color = ok && !busyElsewhere ? 'var(--pale)' : '#ffb4ad'
+    if (!during()) $('start').disabled = !$('consent').checked || !ok || busyElsewhere
+  } catch { /* a missed poll is not worth a message */ }
+}
+const during = () => !$('during').classList.contains('hide')
+refreshRobot(); setInterval(refreshRobot, 3000)
 
 $('consent').addEventListener('change', e => { $('start').disabled = !e.target.checked })
 
@@ -159,7 +186,8 @@ $('start').addEventListener('click', async () => {
     // than the failure itself.
     $('start').disabled = false
     $('start').textContent = 'Start'
-    $('status').textContent = `Could not start: ${e.message}`
+    $('robot-state').textContent = e.busy ? e.message : `Could not start: ${e.message}`
+    $('robot-state').style.color = '#ffb4ad'
   }
 })
 

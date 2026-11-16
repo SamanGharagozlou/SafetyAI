@@ -39,6 +39,14 @@ import { networkInterfaces } from 'node:os'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT ?? 5180)
+/**
+ * Loopback by default, per the project rule: a service is exposed through a
+ * tunnel, not by listening on every interface. Tailscale Funnel proxies from
+ * 127.0.0.1, so the default is also what the funnelled deployment wants.
+ * BIND=0.0.0.0 is only for reaching it directly across the tailnet before a
+ * funnel exists, and FACE_KEY should always be set when it is.
+ */
+const BIND = process.env.BIND ?? '127.0.0.1'
 
 const PUBLIC_KEY = process.env.VAPI_PUBLIC_KEY ?? '2cdfae81-9e4a-4215-a17b-7ec2b7bf6aa4'
 // Default to the Leukerbad greeter, never the robot-only assistant. A dropped
@@ -78,7 +86,52 @@ const PUBLIC_URL = (process.env.PUBLIC_URL ?? `http://${lanAddress()}:${PORT}`).
  * a pairing failure mode to a demo whose whole risk is failing in front of
  * people. One session, reset on stop.
  */
-let session = { live: false, name: '', consent: false, startedAt: 0 }
+let session = { live: false, name: '', consent: false, startedAt: 0, owner: '' }
+
+/**
+ * ROBOT STATE, read from the ros-agent on the Jetson.
+ *
+ * :8091 answers /status with no token and is the honest source - the edge on
+ * :8090 runs auth before routing and 401s a GET even with the right token.
+ * Polled rather than asked on demand so a slow or dead agent delays nothing
+ * a guest is waiting on; `reachable` going false IS the answer in that case.
+ */
+const AGENT = process.env.AGENT_URL ?? 'http://127.0.0.1:8091'
+let robot = { reachable: false, connected: false, standing: false, moving: false,
+              gesture: null, battery: null, checkedAt: 0 }
+
+async function pollRobot() {
+  try {
+    const r = await fetch(`${AGENT}/status`, { signal: AbortSignal.timeout(2500) })
+    const d = await r.json()
+    robot = {
+      reachable: true,
+      connected: d.connected === true,
+      standing: d.standing === true,
+      moving: d.moving === true,
+      gesture: d.gesture_active ? (d.gesture_name ?? 'moving') : null,
+      battery: typeof d.battery_pct === 'number' ? d.battery_pct : null,
+      checkedAt: Date.now(),
+    }
+  } catch {
+    robot = { ...robot, reachable: false, checkedAt: Date.now() }
+  }
+}
+pollRobot()
+setInterval(pollRobot, 2000).unref?.()
+
+/** What a guest's phone is allowed to know, and what the face reacts to. */
+const publicState = () => ({
+  live: session.live,
+  name: session.name,
+  startedAt: session.startedAt,
+  // "Busy" to a second guest means someone else is already talking to it.
+  // The robot physically moving is NOT busy for this purpose - it moves
+  // constantly while talking to the person it is already with.
+  busy: session.live,
+  robot: { reachable: robot.reachable, connected: robot.connected, standing: robot.standing,
+           moving: robot.moving, gesture: robot.gesture, battery: robot.battery },
+})
 
 /**
  * A sequenced event log, polled - NOT Server-Sent Events.
@@ -147,13 +200,13 @@ createServer(async (req, res) => {
       return json(res, 200, { publicKey: PUBLIC_KEY, assistantId: ASSISTANT_ID, joinUrl })
     }
 
-    if (p === '/api/state') return json(res, 200, { ...session, seq })
+    if (p === '/api/state') return json(res, 200, { ...publicState(), seq })
 
     // The face phone polls this. `since` is the last seq it has acted on, so
     // a dropped request costs nothing: the next one still carries the event.
     if (p === '/api/events') {
       const since = Number(url.searchParams.get('since') ?? 0) || 0
-      return json(res, 200, { seq, session, events: events.filter(e => e.seq > since) })
+      return json(res, 200, { seq, session: publicState(), events: events.filter(e => e.seq > since) })
     }
 
     if (p === '/api/session' && req.method === 'POST') {
@@ -166,9 +219,19 @@ createServer(async (req, res) => {
         // A consent control that can be skipped by replaying a request is not
         // a consent control, and this one covers recording a stranger's voice.
         if (body.consent !== true) return json(res, 400, { error: 'consent is required before starting' })
-        session = { live: true, name: String(body.name ?? '').slice(0, 24), consent: true, startedAt: Date.now() }
-        broadcast({ type: 'start', ...session })
-        return json(res, 200, session)
+
+        // One robot, one guest. Without this, a second person scanning the
+        // QR mid-conversation silently takes over the first person's session
+        // - and the first person is standing right there, still talking.
+        if (session.live && body.owner !== session.owner) {
+          return json(res, 409, { error: 'The robot is with another guest just now.', busy: true, ...publicState() })
+        }
+        const owner = body.owner || Math.random().toString(36).slice(2, 12)
+        session = { live: true, name: String(body.name ?? '').slice(0, 24), consent: true, startedAt: Date.now(), owner }
+        broadcast({ type: 'start', name: session.name })
+        // `owner` goes to this guest alone; it is what lets them stop their
+        // own session later and stops anyone else ending it for them.
+        return json(res, 200, { ...publicState(), owner })
       }
       // A tapped button is just a sentence the guest did not have to say.
       // It is injected into the conversation as their turn, so the assistant
@@ -178,6 +241,7 @@ createServer(async (req, res) => {
       // spoken or tapped.
       if (body.action === 'say') {
         if (!session.live) return json(res, 409, { error: 'no session is running' })
+        if (body.owner !== session.owner) return json(res, 403, { error: 'this is not your session' })
         const text = String(body.text ?? '').slice(0, 200).trim()
         if (!text) return json(res, 400, { error: 'text is required' })
         broadcast({ type: 'say', text })
@@ -185,9 +249,12 @@ createServer(async (req, res) => {
       }
 
       if (body.action === 'stop') {
-        session = { live: false, name: '', consent: false, startedAt: 0 }
-        broadcast({ type: 'stop', ...session })
-        return json(res, 200, session)
+        // Anyone may stop. A Stop that checks credentials is a Stop that
+        // fails when it is most needed, and the worst case here is a session
+        // ending early next to a machine that can walk.
+        session = { live: false, name: '', consent: false, startedAt: 0, owner: '' }
+        broadcast({ type: 'stop' })
+        return json(res, 200, publicState())
       }
       return json(res, 400, { error: `unknown action '${body.action}'` })
     }
@@ -197,11 +264,12 @@ createServer(async (req, res) => {
   } catch (e) {
     json(res, 500, { error: e.message })
   }
-}).listen(PORT, () => {
+}).listen(PORT, BIND, () => {
   const k = KEY ? `?k=${encodeURIComponent(KEY)}` : ''
   console.log(`\nRobot face   ->  ${PUBLIC_URL}/face${k}`)
   console.log(`Guest join   ->  ${PUBLIC_URL}/join${k}   (what the QR encodes)`)
   console.log(`Key          ->  ${KEY ? 'set' : 'NOT SET - anyone with the URL can start the robot'}`)
+  console.log(`Listening    ->  ${BIND}:${PORT}${BIND === '0.0.0.0' && !KEY ? '   ** every interface, no key **' : ''}`)
   console.log(`Assistant    ->  ${ASSISTANT_ID}`)
   console.log(`\nOpen /face on the robot phone and tap once to arm it.`)
   console.log(`Browsers only allow a page to take the microphone after a tap,`)
