@@ -317,7 +317,9 @@ Check the floor is clear before any walk, and if you are unsure, do not walk - t
 The battery is shared with the computer that runs you. If someone asks for endless tricks, do a couple and then suggest they go in and enjoy the water.`
 
 const BASE = url => ({
-  name: 'Leukerbad Therme greeter (simulator)',
+  // The name is what an operator sees in the Vapi dashboard, so it must not
+  // claim "simulator" while the robot tools point at the real Jetson.
+  name: REAL_ROBOT ? 'Leukerbad Therme greeter' : 'Leukerbad Therme greeter (simulator)',
   // Spoken to someone WALKING PAST, not to someone who came to a desk. It has
   // about three seconds to earn a reply, so it is a hook, not a welcome.
   firstMessage: 'Oh, hello! Fancy a hot soak? Ten thermal pools in there, right under the mountains.',
