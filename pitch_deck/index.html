@@ -17,11 +17,8 @@
   with content from pitch_deck/docs/sepazu_pitch_master_brief.md.
 
   MEDIA: every image/video sits in a slot that shows a dashed, labelled placeholder until the
-  real file exists. To fill a slot, drop the file at the path printed on the placeholder.
-  Missing today: assets/event_square.jpg, assets/spa_reception.jpg, assets/demo.mp4,
-  assets/qr_code.png, assets/clawmetry_dashboard.png, assets/jetson_mounted.jpg,
-  assets/nav_still.jpg, assets/escort_still.jpg, assets/voice_still.jpg, assets/gesture_still.jpg,
-  assets/tourist_info_point.jpg, assets/team.jpg
+  real file exists. Slides use cropped, web sized copies in assets/web/ (see README.md).
+  Optional, not present: assets/demo.mp4 (covers the DEMO slide), assets/team.jpg (ask slide).
 
   RULE FROM THE BRIEF: no hyphen or dash characters in visible slide text (this is why asset
   file names use underscores).
@@ -139,17 +136,20 @@ body { font-family: var(--font-body); color: var(--text); }
 /* ===========================================
    SLIDE 0: TEAM OPENING
    =========================================== */
-.s-open .veil { position: absolute; inset: 0;
-    background: linear-gradient(0deg, rgba(11,22,32,.96) 0%, rgba(11,22,32,.7) 42%, rgba(11,22,32,.15) 75%),
-                linear-gradient(90deg, rgba(11,22,32,.55) 0%, transparent 60%); }
+/* Portrait event photo as a full height panel on the right, so it is barely cropped */
+.s-open .side { position: absolute; top: 0; right: 0; width: 820px; height: 1080px; }
+.s-open .side .media img { object-position: 50% 50%; }
+.s-open .side::after { content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, var(--night) 0%, rgba(11,22,32,.35) 22%, transparent 50%),
+                linear-gradient(0deg, rgba(11,22,32,.45) 0%, transparent 30%); }
 .s-open .eyebrow { position: absolute; left: var(--pad); top: 88px; font-size: 26px; }
-.s-open .brand { position: absolute; left: var(--pad); bottom: 400px; font-weight: 800; font-size: 250px; line-height: .9; letter-spacing: .06em; }
+.s-open .brand { position: absolute; left: var(--pad); top: 270px; font-weight: 800; font-size: 200px; line-height: .9; letter-spacing: .06em; }
 .s-open .brand span { color: var(--accent); }
-.s-open .track { position: absolute; left: calc(var(--pad) + 8px); bottom: 320px; font-size: 34px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: var(--mist); }
-.s-open .team { position: absolute; left: var(--pad); bottom: 90px; width: 1680px; }
+.s-open .track { position: absolute; left: calc(var(--pad) + 6px); top: 500px; font-size: 32px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: var(--mist); }
+.s-open .team { position: absolute; left: var(--pad); top: 700px; width: 920px; }
 .s-open .team h3 { font-size: 18px; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 20px;
     padding-bottom: 14px; border-bottom: 1px solid var(--line); }
-.s-open .team ul { list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 40px; }
+.s-open .team ul { list-style: none; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 40px; }
 .s-open .team li { font-size: 28px; font-weight: 500; line-height: 1.3; }
 
 /* ===========================================
@@ -204,17 +204,20 @@ body { font-family: var(--font-body); color: var(--text); }
 .s-journey .steps li::before { counter-increment: step; content: counter(step, decimal-leading-zero); font-size: 40px; font-weight: 700; color: var(--accent); }
 .s-journey .steps b { font-size: 30px; font-weight: 700; letter-spacing: .14em; }
 .s-journey .steps span { font-size: 28px; line-height: 1.35; color: var(--mist); }
-.s-journey .qr { position: absolute; left: 64px; bottom: 64px; z-index: 2; width: 200px; height: 200px; border-radius: 12px; background: rgba(11,22,32,.85); border: 1px solid var(--line); }
-.s-journey .qr .ph { font-size: 14px; padding: 10px 12px; }
-.s-journey .qr img { position: absolute; inset: 14px; width: calc(100% - 28px); height: calc(100% - 28px); object-fit: contain; background: #fff; border-radius: 6px; }
+/* Guest web app on a phone, straddling the photo edge */
+.s-journey .phone { position: absolute; left: 420px; top: 470px; z-index: 2; width: 290px; height: 544px; padding: 12px; border-radius: 42px;
+    background: #05090d; border: 2px solid rgba(207,230,238,.3); box-shadow: 0 40px 90px rgba(0,0,0,.6); }
+.s-journey .phone img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; border-radius: 30px; }
 .s-journey .next { position: absolute; right: var(--pad); top: 74px; }
 
 /* ===========================================
    SLIDE 3B: DEMO VIDEO (full bleed, no narration)
    =========================================== */
+.s-demo { background: radial-gradient(1200px 700px at 78% 22%, rgba(218,41,28,.18), transparent 60%), linear-gradient(180deg, #10242f 0%, var(--night) 70%); }
 .s-demo .media video { object-fit: contain; background: #000; }
-.s-demo .ph.center { font-size: 26px; padding: 28px 40px; }
-.s-demo .pill { position: absolute; left: 64px; top: 56px; z-index: 3; }
+.s-demo .word { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 260px; letter-spacing: .14em; padding-left: .14em; }
+.s-demo .word span { color: var(--accent); }
 
 /* ===========================================
    SLIDE 4: SAFETY MONITORING AND ASSURANCE LAYER
@@ -234,9 +237,10 @@ body { font-family: var(--font-body); color: var(--text); }
 .s-safe .verbs { position: absolute; left: 1420px; top: 250px; font-size: 62px; font-weight: 800; line-height: 1.12; letter-spacing: .02em; text-transform: uppercase; }
 .s-safe .verbs span { display: block; }
 .s-safe .verbs span:last-child { color: var(--alert); }
-.s-safe .dash { left: 1420px; top: 500px; width: 380px; height: 260px; }
-.s-safe .dash .ph { font-size: 14px; }
-.s-safe .dash .pill { position: absolute; left: 14px; top: 14px; z-index: 3; font-size: 13px; padding: 6px 12px; }
+.s-safe .dash { left: 1420px; top: 500px; width: 380px; height: 260px; background: var(--dusk); }
+.s-safe .dash .media { background: radial-gradient(320px 220px at 50% 40%, rgba(218,41,28,.14), transparent 70%), var(--dusk); }
+.s-safe .dash .media img { object-fit: contain; padding: 26px 40px 62px; }
+.s-safe .dash figcaption { padding: 14px 20px 18px; font-size: 15px; letter-spacing: .16em; text-align: center; background: none; color: var(--text-dim); }
 .s-safe .strip { position: absolute; left: var(--pad); top: 810px; width: 1680px; display: grid; grid-template-columns: 1fr 64px 1.35fr 64px 1fr; align-items: center; }
 .s-safe .strip .box { height: 110px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 12px; border: 1px solid var(--line);
     background: var(--card); font-size: 24px; font-weight: 700; letter-spacing: .14em; }
@@ -244,6 +248,26 @@ body { font-family: var(--font-body); color: var(--text); }
 .s-safe .strip .box.alert { border-color: rgba(255,107,94,.7); color: var(--alert); }
 .s-safe .strip .arrow { text-align: center; font-size: 40px; color: var(--text-dim); }
 .s-safe .caption { position: absolute; left: var(--pad); top: 950px; font-size: 22px; color: var(--text-dim); letter-spacing: .02em; }
+
+/* ===========================================
+   SLIDE 4B: CLAWMETRY DASHBOARD (screenshot left, numbered callouts right)
+   =========================================== */
+.s-claw .eyebrow { position: absolute; left: var(--pad); top: 80px; }
+.s-claw .title { position: absolute; left: var(--pad); top: 136px; width: 1680px; font-size: 58px; }
+.s-claw .shot { position: absolute; left: var(--pad); top: 268px; width: 1300px; height: 669px; }
+.s-claw .shot .frame { inset: 0; border-radius: 12px; }
+.s-claw .shot .media { background: #0d1117; }
+.s-claw .shot .media img { object-fit: contain; }
+.s-claw .mk { position: absolute; z-index: 3; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--accent); color: #fff; font-size: 20px; font-weight: 800; box-shadow: 0 0 0 4px var(--night), 0 8px 20px rgba(0,0,0,.5); }
+.s-claw .keys { position: absolute; left: 1500px; top: 300px; width: 300px; list-style: none; }
+.s-claw .keys li { position: relative; padding: 0 0 22px 58px; margin-bottom: 22px; border-bottom: 1px solid var(--line); }
+.s-claw .keys li:last-child { border-bottom: 0; }
+.s-claw .keys .mk { position: absolute; left: 0; top: -4px; width: 40px; height: 40px; margin: 0; display: grid; font-size: 18px; line-height: 1; color: #fff; box-shadow: none; }
+.s-claw .keys b { display: block; font-size: 22px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.s-claw .keys span { display: block; margin-top: 8px; font-size: 21px; line-height: 1.35; color: var(--mist); }
+.s-claw .caption { position: absolute; left: var(--pad); top: 962px; display: flex; align-items: center; gap: 22px; font-size: 22px; color: var(--text-dim); letter-spacing: .02em; }
+.s-claw .caption .pill { font-size: 14px; padding: 7px 14px; }
 
 /* ===========================================
    SLIDE 5: CUSTOMER VALIDATION
@@ -254,14 +278,11 @@ body { font-family: var(--font-body); color: var(--text); }
 .s-proof .ph2 { left: 544px; top: 340px; width: 400px; height: 640px; }
 .s-proof .ph1 img { object-position: 50% 62%; }
 .s-proof .ph2 img { object-position: 50% 60%; }
-.s-proof .points { position: absolute; left: 1040px; top: 300px; width: 760px; list-style: none; }
+.s-proof .points { position: absolute; left: 1040px; top: 420px; width: 760px; list-style: none; }
 .s-proof .points li { padding: 26px 0; border-top: 1px solid var(--line); }
 .s-proof .points b { display: block; font-size: 28px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .s-proof .points li:last-child b { color: var(--accent); }
 .s-proof .points span { display: block; margin-top: 10px; font-size: 28px; line-height: 1.35; color: var(--mist); }
-.s-proof .quote { position: absolute; left: 1040px; top: 790px; width: 760px; padding: 22px 26px; border-left: 4px solid var(--ember); background: var(--card); border-radius: 0 10px 10px 0; }
-.s-proof .quote p { font-size: 26px; line-height: 1.4; }
-.s-proof .quote small { display: block; margin-top: 8px; font-size: 18px; letter-spacing: .06em; }
 
 /* ===========================================
    SLIDE 6: WHAT WE BUILT (five capability cards)
@@ -277,19 +298,21 @@ body { font-family: var(--font-body); color: var(--text); }
 .s-build .card b { display: block; font-size: 24px; font-weight: 700; letter-spacing: .14em; }
 .s-build .card b::before { content: ''; display: block; width: 28px; height: 4px; background: var(--accent); margin-bottom: 16px; }
 .s-build .card span { display: block; margin-top: 10px; font-size: 24px; line-height: 1.35; color: var(--mist); }
+/* The nav map is a light occupancy grid: dim it so it sits with the photos */
+.s-build .card .thumb img.map { filter: brightness(.82) contrast(1.1); }
 
 /* ===========================================
    SLIDE 7: ROADMAP, LOCAL TOURISM GUIDE (full bleed placeholder + text left)
    =========================================== */
-.s-road .veil { position: absolute; inset: 0;
-    background: linear-gradient(90deg, rgba(11,22,32,.96) 0%, rgba(11,22,32,.82) 50%, rgba(11,22,32,.3) 100%); }
-.s-road .moon { position: absolute; right: 260px; top: 170px; width: 150px; height: 150px; border-radius: 50%;
-    box-shadow: inset -34px 10px 0 0 var(--mist); opacity: .55; }
+/* Portrait photo of the tourist information point as a full height panel on the right */
+.s-road .side { position: absolute; top: 0; right: 0; width: 720px; height: 1080px; }
+.s-road .side .media img { object-position: 50% 0%; }
+.s-road .side::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, var(--night) 0%, rgba(11,22,32,.3) 25%, transparent 55%); }
 .s-road .eyebrow { position: absolute; left: var(--pad); top: 88px; }
 .s-road .pill { position: absolute; left: var(--pad); top: 150px; }
-.s-road .title { position: absolute; left: var(--pad); top: 240px; width: 1150px; font-size: 80px; }
-.s-road .sub { position: absolute; left: var(--pad); top: 520px; font-size: 32px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--mist); }
-.s-road .help { position: absolute; left: var(--pad); top: 610px; width: 1100px; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 0 60px; }
+.s-road .title { position: absolute; left: var(--pad); top: 240px; width: 1020px; font-size: 76px; }
+.s-road .sub { position: absolute; left: var(--pad); top: 540px; font-size: 32px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--mist); }
+.s-road .help { position: absolute; left: var(--pad); top: 630px; width: 1020px; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 0 60px; }
 .s-road .help li { padding: 24px 0; border-top: 1px solid var(--line); font-size: 32px; font-weight: 500; }
 .s-road .help li::before { content: ''; display: inline-block; width: 12px; height: 12px; background: var(--accent); margin-right: 20px; vertical-align: .2em; }
 
@@ -306,6 +329,7 @@ body { font-family: var(--font-body); color: var(--text); }
 .s-biz .card span { display: block; margin-top: 16px; font-size: 28px; line-height: 1.4; color: var(--mist); }
 .s-biz .card .price { position: absolute; left: 44px; right: 44px; bottom: 40px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 24px; line-height: 1.4; color: var(--text-dim); }
 .s-biz .card .price small { display: block; margin-bottom: 6px; font-size: 16px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+.s-biz .card .price .amt { margin-top: 4px; font-size: 38px; font-weight: 700; line-height: 1.2; color: var(--text); }
 .s-biz .note { position: absolute; left: var(--pad); top: 920px; width: 1500px; font-size: 24px; line-height: 1.4; color: var(--text-dim); }
 
 /* ===========================================
@@ -357,12 +381,13 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
 
     <!-- ===== SLIDE 0: TEAM OPENING (0:05) ===== -->
     <section class="slide s-open active" aria-label="Team opening">
-        <!-- Real event photo: robots and people in the town square. Drop at assets/event_square.jpg -->
-        <div class="media">
-            <div class="ph">PHOTO · assets/event_square.jpg · robots and people in the town square</div>
-            <img src="assets/event_square.jpg" alt="Robots and visitors in the town square during the hackathon" onerror="this.remove()">
+        <!-- Event photo: robots and people in the town square (web copy of assets/robot_event_square.jpg) -->
+        <div class="side">
+            <div class="media">
+                <div class="ph">PHOTO · robots and people in the town square</div>
+                <img src="assets/web/event_square.jpg" alt="Robots and visitors in the Leukerbad town square during the hackathon" onerror="this.remove()">
+            </div>
         </div>
-        <div class="veil"></div>
 
         <p class="eyebrow reveal" style="--d:.1s">Leukerbad Robotics Hackathon</p>
         <h1 class="brand reveal" style="--d:.3s">SEPAZU<span>.</span></h1>
@@ -431,10 +456,10 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
     <!-- ===== SLIDE 2: TOURISM GUEST SERVICE PROBLEM (0:20) ===== -->
     <section class="slide s-need" aria-label="When staff are busy">
         <div class="side">
-            <!-- Real photo of the spa reception or service area (ideally without the robot). Drop at assets/spa_reception.jpg -->
+            <!-- Spa reception, busy with guests (web copy of assets/reception.png, rotated upright) -->
             <div class="media">
-                <div class="ph">PHOTO · assets/spa_reception.jpg · spa reception or service area</div>
-                <img src="assets/spa_reception.jpg" alt="Reception area of the thermal spa" onerror="this.remove()">
+                <div class="ph">PHOTO · spa reception</div>
+                <img src="assets/web/spa_reception.jpg" alt="Guests queueing at the thermal spa reception desk" onerror="this.remove()">
             </div>
         </div>
 
@@ -463,11 +488,10 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
                 <div class="ph">PHOTO · robot with guests</div>
                 <img src="assets/web/robot_with_guests.jpg" alt="A guest on a phone next to the robot inside the spa" onerror="this.remove()">
             </div>
-            <!-- Real guest QR code, only if active and safe to show publicly. Drop at assets/qr_code.png -->
-            <div class="qr reveal" style="--d:1s">
-                <div class="ph">QR · assets/qr_code.png</div>
-                <img src="assets/qr_code.png" alt="QR code to connect to the robot" onerror="this.remove()">
-            </div>
+        </div>
+        <!-- Guest web app after the QR scan (web copy of assets/UI_page_2.jpeg, browser bar cropped off) -->
+        <div class="phone reveal" style="--d:1s">
+            <img src="assets/web/frontend_ui.jpg" alt="Guest web app on a phone: take me to a place, or ask a question">
         </div>
 
         <p class="eyebrow reveal" style="--d:.1s">Guest journey</p>
@@ -490,14 +514,18 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
         </aside>
     </section>
 
-    <!-- ===== SLIDE 3B: DEMO VIDEO (0:45, play without narration) =====
-         Plays automatically when this slide opens and pauses when you leave. Click to pause/resume. -->
-    <section class="slide s-demo" aria-label="Live demo video">
-        <div class="media">
-            <div class="ph center">DEMO VIDEO · assets/demo.mp4<br>45 seconds · 16:9 · captions included</div>
-            <video id="demoVideo" src="assets/demo.mp4" preload="metadata" playsinline onerror="this.remove()"></video>
+    <!-- ===== SLIDE 3B: DEMO (0:45) =====
+         Shows DEMO. If assets/demo.mp4 is added it covers the word, plays when this slide opens
+         and pauses when you leave. Click to pause/resume. -->
+    <section class="slide s-demo" aria-label="Demo">
+        <svg class="ridge" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 800 L180 690 L320 760 L520 620 L700 740 L900 650 L1100 780 L1320 630 L1520 740 L1720 670 L1920 760 V1080 H0Z" fill="rgba(255,255,255,.04)"/>
+            <path d="M0 900 L240 810 L420 870 L640 760 L860 860 L1080 790 L1300 880 L1560 770 L1760 840 L1920 800 V1080 H0Z" fill="rgba(207,230,238,.06)"/>
+        </svg>
+        <p class="word reveal" style="--d:.15s">DEMO<span>.</span></p>
+        <div class="media" style="background: none; pointer-events: none">
+            <video id="demoVideo" src="assets/demo.mp4" preload="metadata" playsinline onerror="this.remove()" style="pointer-events: auto"></video>
         </div>
-        <span class="pill live"><span class="dot"></span>Live demo</span>
 
         <aside class="notes" data-time="0:45">
             <p>Do not speak over the video.</p>
@@ -534,13 +562,13 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
 
         <p class="verbs reveal" style="--d:.65s"><span>Monitor.</span><span>Predict.</span><span>Alert.</span></p>
 
-        <!-- Clawmetry dashboard screenshot showing the alert. Keep the CONTROLLED TEST tag if the alert was staged. -->
+        <!-- ClawMetry logo (assets/clawmetry_logo.svg, from github.com/vivekchand/clawmetry, MIT).
+             The dashboard screenshot is on the next slide. -->
         <figure class="frame dash reveal" style="--d:.8s">
             <div class="media">
-                <div class="ph center">SCREENSHOT<br>assets/clawmetry_dashboard.png</div>
-                <img src="assets/clawmetry_dashboard.png" alt="Clawmetry dashboard showing a safety alert" onerror="this.remove()">
+                <img src="assets/clawmetry_logo.svg" alt="ClawMetry">
             </div>
-            <span class="pill ember">Clawmetry · controlled test</span>
+            <figcaption>Physical AI control plane</figcaption>
         </figure>
 
         <div class="strip reveal" style="--d:.95s">
@@ -556,6 +584,41 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
         <aside class="notes" data-time="0:35">
             <p>"A robot in a clear area can operate with its available capabilities. Around people, its behaviour must be more restricted. During the hackathon, we added an independent Jetson computer running at the edge beside the robot's main stack. It monitors robot state and intent, predicts potentially unsafe next states, flags anomalies, and alerts the fleet operator. This is our safety monitoring and assurance layer."</p>
             <p>Say monitor, predict, flag, alert. Never: certified, fail safe, prevents accidents. Confirm whether the restricted state is enforced on the robot in the demo or only flagged; reword the right panel if it only alerts.</p>
+        </aside>
+    </section>
+
+    <!-- ===== SLIDE 4B: CLAWMETRY DASHBOARD (0:15), continues slide 4 ===== -->
+    <section class="slide s-claw" aria-label="ClawMetry dashboard">
+        <p class="eyebrow reveal" style="--d:.1s">ClawMetry control plane</p>
+        <h2 class="title reveal" style="--d:.2s">Every command checked. <i>Every action on record.</i></h2>
+
+        <div class="shot reveal" style="--d:.35s">
+            <figure class="frame">
+                <div class="media">
+                    <div class="ph">SCREENSHOT · ClawMetry dashboard</div>
+                    <img src="assets/Clawmetry.jpeg" alt="ClawMetry dashboard: authority pipeline, ledger of intention versus action, gate decisions and breach feed" onerror="this.remove()">
+                </div>
+            </figure>
+            <!-- Markers sit on the screenshot sections; positions are for the 1300x669 frame -->
+            <span class="mk" style="left: -34px; top: 68px">1</span>
+            <span class="mk" style="left: -34px; top: 182px">2</span>
+            <span class="mk" style="left: -34px; top: 398px">3</span>
+            <span class="mk" style="left: 1334px; top: 68px">4</span>
+        </div>
+
+        <ol class="keys">
+            <li class="reveal" style="--d:.5s"><span class="mk">1</span><b>Authority</b><span>Who is acting, and whether each part is still talking.</span></li>
+            <li class="reveal" style="--d:.6s"><span class="mk">2</span><b>Ledger</b><span>What was asked versus what the robot did, hash chained.</span></li>
+            <li class="reveal" style="--d:.7s"><span class="mk">3</span><b>Gate</b><span>A walk onto the wet pool deck, denied with the venue's rule.</span></li>
+            <li class="reveal" style="--d:.8s"><span class="mk">4</span><b>Breaches</b><span>Breaches and divergences flagged to the operator.</span></li>
+        </ol>
+
+        <p class="caption reveal" style="--d:.95s"><span class="pill ember">Controlled test</span>ClawMetry on the D1 during the hackathon. Monitoring and evidence, not a certified safety function.</p>
+        <p class="foot">SEPAZU</p>
+
+        <aside class="notes" data-time="0:15">
+            <p>"This is ClawMetry, the dashboard behind that layer. It shows who is acting, records what was asked against what the robot actually did, and denies unsafe commands. Here the robot was asked to walk onto the wet pool deck, and the gate refused it with the venue's own rule. Every breach is flagged to the operator."</p>
+            <p>Say denied, flagged, recorded. Never: certified, guaranteed safe. Drop the CONTROLLED TEST tag only if this screen came from a real guest session.</p>
         </aside>
     </section>
 
@@ -582,16 +645,11 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
             <li class="reveal" style="--d:.75s"><b>The robot attracted attention</b><span>Children and adults wanted to see what it could do.</span></li>
             <li class="reveal" style="--d:.9s"><b>Staff saw another use case</b><span>Welcome passers by and invite them into the venue.</span></li>
         </ul>
-
-        <!-- Optional: approved staff quote and a measured interaction count. Replace or delete before presenting. -->
-        <div class="quote reveal" style="--d:1.05s">
-            <p class="tbd">“[APPROVED STAFF QUOTE]”</p>
-            <small class="tbd">[NAME, ROLE, VENUE, PERMISSION CONFIRMED] · [N] guest interactions in [X] hours</small>
-        </div>
         <p class="foot">SEPAZU</p>
 
         <aside class="notes" data-time="0:25">
             <p>"We deployed the robot at a thermal spa and saw strong curiosity. Guests approached, spent time with it, and wanted to discover what it could do. Staff also suggested a new use: placing it outside to welcome passers by and invite them in. That gave us a second, customer suggested use case."</p>
+            <p>Add the staff quote here, spoken, not on the slide.</p>
             <p>Qualitative only. No adoption rates, no "ready to pay". Confirm consent for the children in the photos or blur faces.</p>
         </aside>
     </section>
@@ -605,36 +663,36 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
         <div class="cards">
             <div class="card reveal" style="--d:.4s">
                 <div class="thumb"><div class="media">
-                    <div class="ph">PHOTO · assets/jetson_mounted.jpg</div>
-                    <img src="assets/jetson_mounted.jpg" alt="Jetson computer mounted on the robot" onerror="this.remove()">
+                    <div class="ph">PHOTO · Jetson on the robot</div>
+                    <img src="assets/web/jetson_mounted.jpg" alt="Jetson Orin Nano mounted on the back of the robot" onerror="this.remove()">
                 </div></div>
                 <div class="body"><b>EDGE COMPUTER</b><span>Jetson integration</span></div>
             </div>
             <div class="card reveal" style="--d:.5s">
                 <div class="thumb"><div class="media">
-                    <div class="ph">STILL · assets/nav_still.jpg</div>
-                    <img src="assets/nav_still.jpg" alt="Robot navigating the venue" onerror="this.remove()">
+                    <div class="ph">MAP · navigation</div>
+                    <img class="map" src="assets/web/nav_map.png" alt="Occupancy map of the venue with the robot trajectory in red" onerror="this.remove()">
                 </div></div>
                 <div class="body"><b>NAVIGATION</b><span>Robot movement in the venue</span></div>
             </div>
             <div class="card reveal" style="--d:.6s">
                 <div class="thumb"><div class="media">
-                    <div class="ph">STILL · assets/escort_still.jpg</div>
-                    <img src="assets/escort_still.jpg" alt="Robot escorting a person" onerror="this.remove()">
+                    <div class="ph">PHOTO · escort robot</div>
+                    <img src="assets/web/escort.jpg" alt="The robot ready to escort, with a phone and a tray mounted on its back" onerror="this.remove()">
                 </div></div>
                 <div class="body"><b>ESCORT</b><span>Guide a guest to a location</span></div>
             </div>
             <div class="card reveal" style="--d:.7s">
                 <div class="thumb"><div class="media">
-                    <div class="ph">STILL · assets/voice_still.jpg</div>
-                    <img src="assets/voice_still.jpg" alt="Guest talking to the robot through a phone" onerror="this.remove()">
+                    <div class="ph">PHOTO · voice assistant</div>
+                    <img src="assets/web/voice.jpg" alt="Guest talking to the robot through a phone" onerror="this.remove()">
                 </div></div>
                 <div class="body"><b>VOICE</b><span>Audio integration and voice interaction</span></div>
             </div>
             <div class="card reveal" style="--d:.8s">
                 <div class="thumb"><div class="media">
-                    <div class="ph">STILL · assets/gesture_still.jpg</div>
-                    <img src="assets/gesture_still.jpg" alt="Robot nodding or greeting" onerror="this.remove()">
+                    <div class="ph">PHOTO · gestures</div>
+                    <img src="assets/web/gestures.jpg" alt="The robot giving a paw shake to a person at the spa reception" onerror="this.remove()">
                 </div></div>
                 <div class="body"><b>GESTURES</b><span>Greeting, nodding, and expressive responses</span></div>
             </div>
@@ -649,13 +707,13 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
 
     <!-- ===== SLIDE 7: ROADMAP, LOCAL TOURISM GUIDE (0:20) ===== -->
     <section class="slide s-road" aria-label="Roadmap: local tourism guide">
-        <!-- Real tourist information point or visitor centre (concept location). Drop at assets/tourist_info_point.jpg -->
-        <div class="media">
-            <div class="ph">PHOTO · assets/tourist_info_point.jpg · tourist information point</div>
-            <img src="assets/tourist_info_point.jpg" alt="Tourist information point" onerror="this.remove()">
+        <!-- The robot at the Leukerbad tourist information point (web copy of assets/tourist_info_point.jpg) -->
+        <div class="side">
+            <div class="media">
+                <div class="ph">PHOTO · tourist information point</div>
+                <img src="assets/web/tourist_info_point.jpg" alt="The robot outside the Leukerbad tourist information office" onerror="this.remove()">
+            </div>
         </div>
-        <div class="veil"></div>
-        <div class="moon" aria-hidden="true"></div>
 
         <p class="eyebrow reveal" style="--d:.1s">Where this can scale</p>
         <span class="pill ember reveal" style="--d:.2s"><span class="dot" style="background: var(--ember)"></span>Roadmap</span>
@@ -685,17 +743,17 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
             <div class="card reveal" style="--d:.35s">
                 <div class="n">01</div>
                 <b>Paid pilot</b><span>Short term deployment and evaluation</span>
-                <p class="price"><small>Pilot</small><span class="tbd">CHF [PRICE] for [DURATION]</span></p>
+                <p class="price"><small>Pilot</small><span class="amt">CHF 1,500 for 2 weeks</span></p>
             </div>
             <div class="card reveal" style="--d:.5s">
                 <div class="n">02</div>
                 <b>Monthly subscription</b><span>Ongoing service access</span>
-                <p class="price"><small>Monthly</small><span class="tbd">CHF [PRICE] per month</span></p>
+                <p class="price"><small>Monthly</small><span class="amt">CHF 2,000 per month</span></p>
             </div>
             <div class="card reveal" style="--d:.65s">
                 <div class="n">03</div>
                 <b>Prepaid operating hours</b><span>A block of robot operating time</span>
-                <p class="price"><small>Prepaid use</small><span class="tbd">CHF [PRICE] per operating hour or [HOURS] hour bundle</span></p>
+                <p class="price"><small>Prepaid use</small><span class="amt">CHF 20 per hour</span></p>
             </div>
         </div>
 
@@ -704,7 +762,7 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
 
         <aside class="notes" data-time="0:20">
             <p>"We sell the service, not the hardware. A customer can start with a paid pilot, continue with a monthly subscription, or buy prepaid operating hours. The package covers the robot service and the agreed deployment and support. We will validate the price with pilot customers."</p>
-            <p>Never invent CHF figures. Once prices are agreed, label them "pilot pricing hypothesis" if not validated.</p>
+            <p>Prices set by the team: pilot CHF 1,500 for 2 weeks, CHF 2,000 per month, CHF 20 per operating hour. Not yet validated with a paying customer; say so if asked.</p>
         </aside>
     </section>
 
