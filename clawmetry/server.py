@@ -354,12 +354,20 @@ class Hub:
     # -- the tap ---------------------------------------------------------
 
     def handle_tool(self, name: str, args_: dict, raw: dict, call_id: str = "",
-                    forward=None, source: str = "vapi_tap", deny=None) -> dict:
+                    forward=None, source: str = "vapi_tap", deny=None,
+                    enforced: bool = True) -> dict:
         """Record -> predict -> gate -> forward -> score. Returns the upstream reply.
 
         `forward` and `deny` let a caller that is not Vapi reuse this exact
         pipeline with its own wire shapes - the governing decision must not
         depend on which door the command came through.
+
+        `enforced=False` means the tap is WATCHING, not standing in the path:
+        the edge already ran the command and told us afterwards. The gate still
+        forms an opinion, because the opinion is worth recording, but it is
+        written down as an opinion. A ledger that said "allowed" about a
+        command it could not have stopped would claim an authority it did not
+        have, and that is the first claim an auditor should test.
         """
         corr = self.corr_id()
         # WHO ASKED. The tap sees the tool call; only Vapi's transcript sees
@@ -417,8 +425,17 @@ class Hub:
                     decision, reason = "deny", v.get("reason", "world model refused")
 
         self.emit("decision", actor="gate", corr=corr,
-                  data={"decision": decision, "reason": reason, "tool": name})
-        if decision == "deny":
+                  data={"decision": decision, "reason": reason, "tool": name,
+                        "enforced": enforced})
+        if decision == "deny" and not enforced:
+            # It already happened. Saying "denied" here would be a lie, and
+            # returning early would lose the record of what the robot actually
+            # did - the only part of this we still have.
+            self.emit("integrity", corr=corr, data={
+                "event": "gate_could_not_enforce", "tool": name, "reason": reason,
+                "detail": "the gate would have refused this, but the tap is not in "
+                          "the path: the edge ran it and reported afterwards"})
+        elif decision == "deny":
             if deny:
                 return deny(reason)
             return {"results": [{"toolCallId": call_id,
@@ -446,6 +463,22 @@ class Hub:
         return reply
 
     # -- the robot's own REST surface, governed ---------------------------
+
+    def handle_observed_tool(self, name: str, args_: dict, call_id: str = "",
+                             result: str = "", code: int = 200,
+                             source: str = "tee_from_edge") -> dict:
+        """A tool call the EDGE already executed, reported to us afterwards.
+
+        This exists because the public funnel points at d1-vapi-server, not at
+        this tap. Rather than open a second public door, the edge tees a copy
+        of every call here over loopback. The tap cannot refuse anything on
+        this path, and says so in the record - see `enforced` above.
+        """
+        err = None if code < 400 else f"the robot returned HTTP {code}: {result}"
+        return self.handle_tool(
+            name, args_, {}, call_id=call_id, source=source, enforced=False,
+            forward=lambda _raw: ({"results": [{"toolCallId": call_id,
+                                                "result": result}]}, err))
 
     def handle_rest(self, path: str, body: dict) -> tuple[int, dict]:
         """A direct POST to the robot's REST surface, through the same gate.
@@ -939,6 +972,16 @@ class Handler(BaseHTTPRequestHandler):
                                corr=payload.get("corr", ""),
                                src_ts=payload.get("src_ts"))
             return self._json(200, {"ok": True, "seq": ev["seq"]})
+
+        if p == "/observe/tool":
+            # The edge tees its traffic here. Loopback only - see the bind
+            # address; nothing about this path is reachable from outside.
+            return self._json(200, self.hub.handle_observed_tool(
+                payload.get("name", ""), payload.get("args") or {},
+                call_id=payload.get("call_id", ""),
+                result=str(payload.get("result", ""))[:2000],
+                code=int(payload.get("code", 200) or 200),
+                source=payload.get("source", "tee_from_edge")))
 
         if p == "/api/venue/plan":
             # Dry run: says what each edit does to the robot and never writes.

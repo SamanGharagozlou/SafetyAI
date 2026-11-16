@@ -1236,5 +1236,56 @@ class TestGuardrailEditing(unittest.TestCase):
         self.assertEqual(code, 400)
 
 
+class TestObservedFromEdge(unittest.TestCase):
+    """The tee path: the edge ran it, we only get told."""
+
+    def test_an_observed_call_is_recorded(self):
+        h = _hub()
+        h.handle_observed_tool("do_gesture", {"gesture": "nod"}, call_id="c1",
+                               result="Nodding.")
+        kinds = [e["kind"] for e in h.led.read()]
+        for k in ("intent", "decision", "command", "outcome"):
+            self.assertIn(k, kinds)
+
+    def test_the_decision_says_it_was_not_enforced(self):
+        h = _hub()
+        h.handle_observed_tool("do_gesture", {"gesture": "nod"}, call_id="c1")
+        d = [e for e in h.led.read() if e["kind"] == "decision"][0]
+        self.assertIs(d["data"]["enforced"], False,
+                      "a gate that could not stop anything must not claim it allowed it")
+
+    def test_the_normal_path_is_still_enforced(self):
+        h = _hub()
+        h.handle_tool("robot_status", {}, {}, call_id="c1",
+                      forward=lambda _r: ({"results": []}, None))
+        d = [e for e in h.led.read() if e["kind"] == "decision"][0]
+        self.assertIs(d["data"]["enforced"], True)
+
+    def test_a_refusal_it_could_not_make_is_flagged_not_silently_dropped(self):
+        import server
+        h = _hub()
+        zp = Path(h._tmp.name) / "zones.json"
+        zp.write_text(json.dumps([{"zone": "pool_deck", "forbidden": True,
+                                   "x0": 1.5, "x1": 4.0, "y0": -2.0, "y1": 2.0}]))
+        h.zones = server.Hub._load_zones(str(zp))
+        h.last_state = {"x": 0.0, "y": 0.0, "yaw": 0.0, "has_pose": True}
+        h._poll_bridge_once = lambda: h.last_state
+        # A walk straight into the forbidden zone, reported after the fact.
+        h.handle_observed_tool("walk_distance", {"distance_cm": 250},
+                               call_id="c1", result="Walking.")
+        ev = [e for e in h.led.read()
+              if e["kind"] == "integrity"
+              and e["data"].get("event") == "gate_could_not_enforce"]
+        self.assertTrue(ev, "a deny the tap could not enforce must be on the record")
+        # and it must NOT have stopped recording what actually happened
+        self.assertIn("outcome", [e["kind"] for e in h.led.read()])
+
+    def test_the_source_distinguishes_it_from_a_governed_call(self):
+        h = _hub()
+        h.handle_observed_tool("do_gesture", {"gesture": "nod"}, call_id="c1")
+        i = [e for e in h.led.read() if e["kind"] == "intent"][0]
+        self.assertEqual(i["data"]["source"], "tee_from_edge")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -254,6 +254,44 @@ That is why keyboard teleop used to reach the ledger only afterwards, as
 `unattributed_motion`: the command never passed a gate, so only its consequences
 were visible.
 
+### When the funnel cannot be repointed: the edge tees
+
+Flipping the funnel puts the tap *in* the path, where it can refuse. If that
+switch is not available - someone else owns the tunnel, or the change is not
+one you want to make mid-demo - `d1-vapi-server` can instead send the collector
+a **copy** of everything over loopback. No second public door.
+
+```
+Vapi ──► funnel 443 ──► d1-vapi-server :8090 ──► ROS ──► robot
+                              │ copy (fire and forget, loopback)
+                              ▼
+                        the tap :8901   POST /observe/tool
+                                        POST /vapi/events
+```
+
+`deploy/jetson/d1-vapi-server-clawmetry-tee.patch` is the edge-side change:
+a `tee()` that never blocks, never retries and swallows its own errors, because
+oversight must not be able to delay or break the robot answering a guest. Set
+`CLAWMETRY_TEE=` to turn it off.
+
+**What this costs, stated plainly: the tap cannot refuse anything on this
+path.** The edge has already acted by the time we hear about it. So every
+decision recorded this way carries `enforced: false`, and a gate verdict of
+*deny* becomes an `integrity` event named `gate_could_not_enforce` rather than
+a refusal - a ledger claiming it "allowed" a command it could not have stopped
+would be claiming an authority it did not have, and that is the first claim an
+auditor should test. Recording continues past that point, because what the
+robot actually did is the only part still available.
+
+The attribution still works, which is the point:
+
+```
+utterance  guest   "can you nod at me please"
+intent     agent   do_gesture   asked="can you nod at me please"
+decision   gate    allow        enforced=false
+command / outcome
+```
+
 ### The voice layer
 
 `POST /vapi/events` takes Vapi's server messages, configured on the assistant as
