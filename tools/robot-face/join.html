@@ -61,11 +61,33 @@
   button:disabled { opacity: .4; }
   button.go { background: var(--bright); border-color: #4fc8ef; color: #03202f; font-size: 19px; padding: 19px; }
   button.stop { background: var(--stop); border-color: #ff6b63; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .grid button { padding: 15px 10px; font-size: 15px; text-align: left; line-height: 1.3; }
-  .grid .em { font-size: 21px; display: block; margin-bottom: 5px; }
-  h2 { font-size: 12px; letter-spacing: .13em; text-transform: uppercase; color: var(--pale);
-       opacity: .75; margin: 6px 0 0; }
+  /* Rows, not tiles. A tile grid of emoji reads as a game; a guest wants a
+     list they can run a thumb down. Each row is icon + words on one line,
+     which also lets the labels be sentences instead of stubs. */
+  .grid { display: flex; flex-direction: column; gap: 8px; }
+  .grid button { display: flex; align-items: center; gap: 13px; padding: 13px 15px;
+                 font-size: 16px; font-weight: 600; text-align: left; line-height: 1.25;
+                 background: #0e4467; border-color: #1b5e86; }
+  .grid button:active { background: #156291; transform: scale(.99); }
+  .grid .em { font-size: 21px; line-height: 1; flex: 0 0 auto; }
+  h2 { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--pale);
+       opacity: .6; margin: 14px 0 2px; }
+
+  /* What the robot is saying, so the guest can follow it in a noisy foyer
+     and can see that their tap did something. */
+  #saying { background: #06304a; border: 1px solid var(--line); border-radius: 13px;
+            padding: 13px 15px; font-size: 15px; line-height: 1.45; color: var(--white);
+            min-height: 48px; display: flex; align-items: center; gap: 10px; }
+  #saying .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bright);
+                 flex: 0 0 auto; opacity: .35; }
+  #saying.live .dot { opacity: 1; animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.6); } }
+  #saying span { color: var(--pale); }
+  #saying.live span { color: var(--white); }
+
+  /* Stop belongs under the thumb, always, not at the end of a scroll. */
+  .dock { position: sticky; bottom: 0; padding-top: 10px; margin-top: 4px;
+          background: linear-gradient(to top, var(--deep) 62%, transparent); }
   #status { font-size: 14px; color: var(--pale); min-height: 20px; text-align: center; }
   .hide { display: none !important; }
   .privacy { font-size: 12px; color: var(--pale); opacity: .7; line-height: 1.5; margin: 0; }
@@ -90,6 +112,11 @@
       <option value="Spanish">Español</option>
       <option value="Portuguese">Português</option>
       <option value="Dutch">Nederlands</option>
+      <option value="Chinese">中文</option>
+      <option value="Hindi">हिन्दी</option>
+      <option value="Tamil">தமிழ்</option>
+      <option value="Kannada">ಕನ್ನಡ</option>
+      <option value="Malayalam">മലയാളം</option>
     </select>
     <div class="consent">
       <input type="checkbox" id="consent">
@@ -110,16 +137,21 @@
 
 <div id="during" class="hide">
   <h1 id="greet">Talk to me</h1>
-  <p class="sub">Just speak — I am listening from up here on the robot. Or tap one of these.</p>
+  <p class="sub">Just speak — I am listening from up on the robot.</p>
+
+  <div id="saying"><span class="dot"></span><span id="saying-text">…</span></div>
 
   <h2>Take me to</h2>
   <div class="grid" id="places"></div>
+
+  <h2>Ask me</h2>
+  <div class="grid" id="ask"></div>
 
   <h2>For fun</h2>
   <div class="grid" id="fun"></div>
 
   <div id="status"></div>
-  <button class="stop" id="stop">Stop · finish</button>
+  <div class="dock"><button class="stop" id="stop">Finish</button></div>
 </div>
 
 <script type="module">
@@ -135,13 +167,17 @@ const PLACES = [
   ['🎫', 'Reception',      'Can you take me to the reception desk?'],
   ['🧺', 'Shop',           'Where can I buy a towel?'],
 ]
+const ASK = [
+  ['🎟️', 'What does a ticket cost?',   'What does a ticket cost?'],
+  ['🍴', 'What can I eat here?',        'What can I eat here?'],
+  ['🕒', 'How late are you open?',      'How late are you open?'],
+  ['👶', 'Is it good for children?',    'Is it good for small children?'],
+]
 const FUN = [
-  ['💃', 'Do a dance',       'Can you do a little dance for me?'],
-  ['🎄', 'A Christmas song', 'Can you sing me a Christmas song?'],
-  ['🤝', 'Shake hands',      'Can we shake hands?'],
-  ['🐕', 'Say hello',        'Say hello to me!'],
-  ['💰', 'What does it cost','What does a ticket cost?'],
-  ['🍴', 'What is for lunch','What can I eat here?'],
+  ['💃', 'Do a little dance',   'Can you do a little dance for me?'],
+  ['🎄', 'Sing a Christmas song','Can you sing me a Christmas song?'],
+  ['🤝', 'Shake hands',          'Can we shake hands?'],
+  ['🐕', 'Say hello',            'Say hello to me!'],
 ]
 
 const render = (el, items) => {
@@ -150,6 +186,7 @@ const render = (el, items) => {
     .join('')
 }
 render($('places'), PLACES)
+render($('ask'), ASK)
 render($('fun'), FUN)
 
 /* The session token proves this phone owns the conversation, so a second
@@ -157,6 +194,11 @@ render($('fun'), FUN)
    so a reload mid-chat rejoins instead of being locked out of its own call. */
 const OWNER_KEY = 'tropfi-owner'
 let owner = sessionStorage.getItem(OWNER_KEY) || ''
+let myStartedAt = 0     // which session is OURS; startedAt is public, the token is not
+/* Sticky until they act. Without it the 3-second status poll overwrote
+   "another guest has the robot" with "Ready" a moment later, and the person
+   whose turn had just ended was told everything was fine. */
+let handedOverMsg = false
 
 const post = (body) => fetch('/api/session', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -165,6 +207,7 @@ const post = (body) => fetch('/api/session', {
   const d = await r.json().catch(() => ({}))
   if (!r.ok) { const e = new Error(d.error || `HTTP ${r.status}`); e.busy = d.busy === true; throw e }
   if (d.owner) { owner = d.owner; sessionStorage.setItem(OWNER_KEY, owner) }
+  if (d.startedAt) myStartedAt = d.startedAt
   return d
 })
 
@@ -181,7 +224,10 @@ async function refreshRobot() {
        on a dead battery, which is precisely when you most want one. */
     const voice = d.brain?.connected === true
     const body_ = d.robot?.reachable && d.robot?.connected
-    const busyElsewhere = d.busy && !during()
+    // Our turn is over the moment the live session is a different one.
+    if (during() && myStartedAt && (!d.live || d.startedAt !== myStartedAt)) handedOver()
+    const busyElsewhere = false   // a new scan always takes the robot now
+    if (handedOverMsg) { if (!during()) $('start').disabled = !$('consent').checked || !voice; return }
     $('robot-state').textContent =
         !voice ? 'The robot is not awake yet — its voice is not connected.'
       : busyElsewhere ? 'The robot is with another guest just now.'
@@ -189,6 +235,15 @@ async function refreshRobot() {
       : d.robot.battery != null ? `Ready · battery ${Math.round(d.robot.battery)}%` : 'Ready'
     $('robot-state').style.color = voice && body_ && !busyElsewhere ? 'var(--pale)' : '#ffb4ad'
     if (!during()) $('start').disabled = !$('consent').checked || !voice || busyElsewhere
+
+    // Show what the robot is saying. In an echoing foyer, in a third
+    // language, this is often easier to follow than the loudspeaker.
+    const f = d.face ?? {}
+    const speaking = f.state === 'speaking'
+    $('saying').classList.toggle('live', speaking)
+    if (f.caption) $('saying-text').textContent = f.caption
+    else if (speaking) $('saying-text').textContent = '…'
+    else if (f.state === 'listening') $('saying-text').textContent = 'Listening…'
   } catch { /* a missed poll is not worth a message */ }
 }
 const during = () => !$('during').classList.contains('hide')
@@ -197,6 +252,7 @@ refreshRobot(); setInterval(refreshRobot, 3000)
 $('consent').addEventListener('change', e => { $('start').disabled = !e.target.checked })
 
 $('start').addEventListener('click', async () => {
+  handedOverMsg = false
   $('start').disabled = true
   $('start').textContent = 'Waking the robot…'
   try {
@@ -218,15 +274,35 @@ $('start').addEventListener('click', async () => {
 // A tap is only a request to speak; the robot's reply is the feedback that
 // matters, so the button goes quiet again quickly rather than claiming
 // anything about what the robot did.
+/* 403 means someone else scanned and the robot is theirs now. Say so once
+   and go back to the start, rather than leaving a dead page whose buttons
+   quietly do nothing. */
+function handedOver() {
+  $('during').classList.add('hide')
+  $('before').classList.remove('hide')
+  $('start').textContent = 'Start'
+  $('robot-state').textContent = 'Another guest has the robot now. Tap Start for your turn.'
+  $('robot-state').style.color = '#ffb4ad'
+  handedOverMsg = true
+  owner = ''; myStartedAt = 0
+  sessionStorage.removeItem(OWNER_KEY)
+}
+
 const tapped = async (text, btn) => {
   const was = btn.style.opacity
   btn.style.opacity = '.45'
   try { await post({ action: 'say', text }) ; $('status').textContent = '' }
-  catch (e) { $('status').textContent = `Could not send that: ${e.message}` }
+  catch (e) {
+    if (/not your session/i.test(e.message)) return handedOver()
+    $('status').textContent = `Could not send that: ${e.message}`
+  }
   setTimeout(() => { btn.style.opacity = was }, 600)
 }
 $('places').addEventListener('click', e => {
   const b = e.target.closest('button'); if (b) tapped(PLACES[b.dataset.i][2], b)
+})
+$('ask').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (b) tapped(ASK[b.dataset.i][2], b)
 })
 $('fun').addEventListener('click', e => {
   const b = e.target.closest('button'); if (b) tapped(FUN[b.dataset.i][2], b)

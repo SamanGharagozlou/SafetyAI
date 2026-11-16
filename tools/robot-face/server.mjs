@@ -229,12 +229,28 @@ const brainUp = () => Date.now() - brainSeenAt < 30000   // a long poll returns 
  * The lease lapses if its holder stops polling, so closing the laptop and
  * opening another one still works, just not both at once.
  */
+/* A guest who walks away without pressing Finish must not keep the robot.
+   The next scan takes it anyway, but between guests the face should go back
+   to inviting the next person rather than sitting in a dead conversation. */
+const SESSION_MAX_MS = Number(process.env.SESSION_MAX_MS ?? 8 * 60 * 1000)
+setInterval(() => {
+  if (session.live && Date.now() - session.startedAt > SESSION_MAX_MS) {
+    session = { live: false, name: '', consent: false, startedAt: 0, owner: '', lang: 'any' }
+    broadcast({ type: 'stop' })
+    console.log('session timed out and was released')
+  }
+}, 15000).unref?.()
+
 let lease = { id: '', at: 0 }
 /* Short, because the lease is refreshed by the 3 s /api/face heartbeat and
    not only by the long poll. At 30 s - long enough to cover a 20 s poll -
    every restart left a half-minute window where the new voice stood down
    waiting for a holder that was already gone. */
-const LEASE_MS = Number(process.env.LEASE_MS ?? 8000)
+/* Never shorter than twice the brain's 3 s heartbeat. A lease that expires
+   between beats hands the robot to a second voice while the first is still
+   talking - two assistants in one room, which is the echo this was written
+   to prevent. Found by setting it to 2 s in a test. */
+const LEASE_MS = Math.max(6000, Number(process.env.LEASE_MS ?? 8000))
 function claimLease(id) {
   const now = Date.now()
   if (!id) return false
@@ -350,22 +366,31 @@ createServer(async (req, res) => {
         // a consent control, and this one covers recording a stranger's voice.
         if (body.consent !== true) return json(res, 400, { error: 'consent is required before starting' })
 
-        // One robot, one guest. Without this, a second person scanning the
-        // QR mid-conversation silently takes over the first person's session
-        // - and the first person is standing right there, still talking.
         // Only the voice is required. A robot with a flat battery can still
         // hold a conversation; it simply refuses to move, which the
         // assistant already handles.
         if (!brainUp()) {
           return json(res, 503, { error: 'The robot is not awake yet — its voice is not connected.', ...publicState() })
         }
-        if (session.live && body.owner !== session.owner) {
-          return json(res, 409, { error: 'The robot is with another guest just now.', busy: true, ...publicState() })
-        }
-        const owner = body.owner || Math.random().toString(36).slice(2, 12)
+
+        /* A NEW SCAN TAKES THE ROBOT.
+           This used to refuse a second guest while someone else was talking.
+           In a queue - a hackathon stand, a spa doorway - that is the wrong
+           way round: nobody presses Finish, they walk off, and the next
+           person finds a robot owned by a stranger who left. So the newest
+           scan wins and every earlier session is void from that instant.
+           The cost is that someone can be cut off mid-sentence; the
+           alternative is a robot nobody else can use. */
+        const superseded = session.live && body.owner !== session.owner
+        const owner = (body.owner && body.owner === session.owner)
+          ? body.owner
+          : Math.random().toString(36).slice(2, 12)
         const lang = String(body.lang ?? 'any').slice(0, 20)
         session = { live: true, name: String(body.name ?? '').slice(0, 24), consent: true,
                     startedAt: Date.now(), owner, lang }
+        // Tear the old call down before opening the new one, so the robot
+        // does not greet the new guest in the old guest's language.
+        if (superseded) broadcast({ type: 'stop' })
         broadcast({ type: 'start', name: session.name, lang })
         standUp()   // get it on its feet before the first word, not after a refusal
         // `owner` goes to this guest alone; it is what lets them stop their

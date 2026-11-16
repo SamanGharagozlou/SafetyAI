@@ -87,26 +87,33 @@
   /* ---------- idle ---------- */
 
   /* ---------- face ---------- */
-  #face { width: min(104vmin, 99vw); height: auto; max-height: 90vh; overflow: visible; }
+  /* The element is #facesvg - this rule used to say #face and matched
+     nothing, so the face was sized by whatever the flexbox felt like. */
+  #facesvg { flex: 0 1 auto; width: 54vmin; height: auto; max-height: 72vh; overflow: visible;
+             transition: width .9s cubic-bezier(.4,0,.2,1); }
+  .pair:has(#qrpanel.on) #facesvg { width: 36vmin; }   /* yields room, never vanishes */
   #caption { position: fixed; left: 0; right: 0; bottom: 3vmin; z-index: 2; text-align: center;
              font-size: 3vmin; color: var(--pale); opacity: .85; padding: 0 6vmin; min-height: 4vmin; }
   #badge { position: fixed; top: 2.5vmin; left: 50%; transform: translateX(-50%); z-index: 3;
            font-size: 2.3vmin; letter-spacing: .18em; text-transform: uppercase; color: var(--pale); opacity: .5; }
 
-  /* The QR rides over the face rather than replacing the screen, so the
-     thing that drew the guest in is still there underneath. */
-  #qrpanel {
-    position: fixed; inset: 0; z-index: 4; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 0;
-    background: rgba(4,36,58,.93); backdrop-filter: blur(6px);
-    opacity: 0; pointer-events: none; transition: opacity .55s ease;
-  }
-  #qrpanel.on { opacity: 1; }
-  #qrpanel h1 { font-size: 5.6vmin; margin: 4vmin 0 1vmin; font-weight: 800; letter-spacing: -.02em; }
-  #qrpanel p  { font-size: 3.1vmin; margin: 0; color: var(--pale); text-align: center; max-width: 72vmin; }
-  .card { background: var(--white); border-radius: 6vmin; padding: 4vmin;
-          box-shadow: 0 2vmin 6vmin rgba(0,0,0,.45); }
-  #qr { width: 46vmin; height: 46vmin; display: grid; place-items: center; }
+  /* Face and code side by side, both always visible. Earlier the QR took
+     the whole screen on a timer, which meant a guest glancing over at the
+     wrong moment saw no face, and one glancing over at another saw no code
+     to scan. Now the cycle only changes the proportion. */
+  .pair { display: flex; align-items: center; justify-content: center;
+          gap: 3vmin; width: 100%; height: 100%; }
+  @media (orientation: portrait) { .pair { flex-direction: column; gap: 2vmin; } }
+
+  #qrpanel { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center;
+             transition: width .9s cubic-bezier(.4,0,.2,1); width: 30vmin; }
+  #qrpanel.on { width: 52vmin; }                 /* the "look at me" half of the cycle */
+  .qrcap { font-size: 2.4vmin; margin: 1.6vmin 0 0; color: var(--pale); text-align: center;
+           white-space: nowrap; transition: font-size .9s; }
+  #qrpanel.on .qrcap { font-size: 3.2vmin; }
+  .card { background: var(--white); border-radius: 4vmin; padding: 2.2vmin;
+          box-shadow: 0 2vmin 6vmin rgba(0,0,0,.45); width: 100%; }
+  #qr { width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
   #qr canvas { width: 100% !important; height: 100% !important; image-rendering: pixelated; }
   #qr-fallback { color: #04202f; font: 600 2.2vmin/1.5 ui-monospace, monospace; word-break: break-all;
                  text-align: center; padding: 2vmin; }
@@ -138,6 +145,7 @@
      the thing they already walked up to. -->
 <section class="screen" id="stage" hidden>
   <div id="badge"></div>
+  <div class="pair" id="pair">
   <svg id="facesvg" viewBox="0 0 200 230" aria-hidden="true">
     <defs>
       <radialGradient id="body" cx="38%" cy="28%" r="78%">
@@ -184,14 +192,16 @@
       </g>
     </g>
   </svg>
-  <div id="caption"></div>
 
-  <!-- Slides over the face on a cycle while idle. Never during a call. -->
+  <!-- Always on screen, never covering the face. The cycle changes how much
+       room it takes, not whether it is there: a guest who looks up at the
+       wrong moment must still find a code to scan. -->
   <div id="qrpanel">
     <div class="card"><div id="qr"><div id="qr-fallback">loading…</div></div></div>
-    <h1>Scan to say hello</h1>
-    <p>I am the greeter at Leukerbad Therme. Scan this, then just talk to me.</p>
+    <p class="qrcap">Scan to say hello</p>
   </div>
+  </div>
+  <div id="caption"></div>
 </section>
 
 <div id="fault"></div>
@@ -215,10 +225,10 @@ const show = which => {
  * at something with eyes. By the time the code appears they are already
  * standing in front of it and it only has to say what to do next.
  *
- * It opens on the QR for a few seconds so that whoever is setting the robot
- * up can scan it immediately, then settles into mostly-face.
+ * Both are always on screen; this only swaps which one is bigger. It opens
+ * on the large code so whoever is setting the robot up can scan it at once.
  */
-const FACE_MS = 18000, QR_MS = 7000
+const FACE_MS = 14000, QR_MS = 7000
 let cycleTimer = null
 function startIdleCycle() {
   stopIdleCycle()
@@ -234,7 +244,7 @@ function startIdleCycle() {
 }
 function stopIdleCycle() {
   clearTimeout(cycleTimer); cycleTimer = null
-  $('qrpanel').classList.remove('on')   // never over a live conversation
+  $('qrpanel').classList.remove('on')   // settle back to the small code
 }
 
 /* ------------------------------------------------------------------ *
@@ -481,19 +491,117 @@ async function brain() {
     if (m?.type === 'transcript' && m.transcriptType === 'final' && m.role === 'assistant') set(state, m.transcript)
   })
 
-  /* A rotating Swiss welcome. The canton has four national languages and the
-     foyer has tourists from everywhere, so a greeter that always opens in the
-     same one is telling most of the room it was not expecting them. Picked at
-     random per guest, then the conversation settles into whatever they chose.
-     Romansh is in here because it is a national language and almost nothing
-     ever greets anyone in it. */
-  const WELCOME = [
-    'Grüezi! Fancy a hot soak?',
-    'Bonjour! Envie d\'un bain chaud?',
-    'Buongiorno! Voglia di un bagno caldo?',
-    'Allegra! Fancy a hot soak?',
-    'Hoi! Lust auf ein warmes Bad?',
-    'Hello! Fancy a hot soak?',
+  /* THE OPENING LINE IS NOT GENERATED BY THE MODEL.
+     firstMessageMode is 'assistant-speaks-first', so Vapi speaks this string
+     verbatim and the prompt never sees it - which is why picking French once
+     produced an English greeting. Every language needs its own words here.
+
+     They are warm rather than efficient, and there are several per language
+     picked at random, because the same line twice in a row in a small foyer
+     makes a robot sound like a vending machine. These are the greetings
+     people actually use here: Grüezi and Salü in the German cantons, Salut
+     in Romandy, Ciao in Ticino, Allegra in Romansh. */
+  const pick = a => a[Math.floor(Math.random() * a.length)]
+  /* The opener is spoken verbatim, so the name has to be put into the string
+     here - the model never sees this line. Without a name the slot and its
+     separator both disappear, so "Grüezi, Anna!" degrades to "Grüezi!"
+     rather than to "Grüezi, !". */
+  const withName = (line, name) => name
+    ? line.replace('{name}', (/[\u0900-\u0DFF\u4e00-\u9fff]/.test(line) ? ' ' : ', ') + name)
+    : line.replace('{name}', '')
+
+  const OPENERS = {
+    German: [
+      'Grüezi{name}! Schön, dass Sie da sind. Zehn Thermalbecken warten, direkt unter den Bergen.',
+      'Hoi{name}! Was für ein Tag für ein warmes Bad. Das Wasser kommt frisch aus dem Berg.',
+      'Salü{name}! Willkommen in Leukerbad. Draussen zweiundvierzig Grad im Wasser, und die Alpen gleich davor.',
+    ],
+    French: [
+      'Bonjour{name}, bienvenue ! Dix bassins thermaux vous attendent, juste sous les montagnes.',
+      'Salut{name} ! Quelle belle journée pour un bain chaud. L\'eau sort directement de la montagne.',
+      'Bonjour{name} ! Vous tombez bien : quarante-deux degrés, en plein air, face aux Alpes.',
+    ],
+    Italian: [
+      'Buongiorno{name}, benvenuto! Dieci vasche termali vi aspettano, proprio sotto le montagne.',
+      'Ciao{name}! Che giornata per un bagno caldo. L\'acqua sgorga direttamente dalla montagna.',
+      'Salve{name}! Quarantadue gradi, all\'aperto, con le Alpi davanti. Vi va?',
+    ],
+    English: [
+      'Oh, hello{name}! Lovely to see you. Ten thermal pools in there, right under the mountains.',
+      'Hello{name}! You have picked a good day for a hot soak. Forty-two degrees, outdoors, facing the Alps.',
+      'Welcome{name}! The water comes straight out of the mountain, still warm. Fancy a soak?',
+    ],
+    Spanish: [
+      '¡Hola{name}, bienvenido! Diez piscinas termales le esperan, justo bajo las montañas.',
+      '¡Hola{name}! Qué día para un baño caliente. El agua sale directamente de la montaña.',
+    ],
+    Portuguese: [
+      'Olá{name}, bem-vindo! Dez piscinas termais à sua espera, mesmo debaixo das montanhas.',
+      'Olá{name}! Que dia para um banho quente. A água vem diretamente da montanha.',
+    ],
+    Dutch: [
+      'Hoi{name}, welkom! Tien thermaalbaden wachten op je, pal onder de bergen.',
+      'Hoi{name}! Wat een dag voor een warm bad. Het water komt zo uit de berg.',
+    ],
+    Chinese: [
+      '您好{name}，欢迎来到洛伊克巴德温泉！十个温泉池，就在雪山脚下。',
+      '你好{name}！今天很适合泡温泉。水是直接从山里流出来的。',
+      '欢迎{name}！四十二度的露天温泉，正对着阿尔卑斯山。',
+    ],
+    Hindi: [
+      'नमस्ते{name}! आपका स्वागत है। दस गरम पानी के कुंड, पहाड़ों के ठीक नीचे।',
+      'नमस्ते{name}! गरम पानी में उतरने का बढ़िया दिन है। पानी सीधे पहाड़ से आता है।',
+    ],
+    Tamil: [
+      'வணக்கம்{name}! வருக! பத்து வெந்நீர் குளங்கள், மலைகளுக்கு அடியில்.',
+      'வணக்கம்{name}! வெந்நீரில் குளிக்க நல்ல நாள். தண்ணீர் மலையிலிருந்தே வருகிறது.',
+    ],
+    Kannada: [
+      'ನಮಸ್ಕಾರ{name}! ಸುಸ್ವಾಗತ. ಹತ್ತು ಬಿಸಿನೀರಿನ ಕೊಳಗಳು, ಪರ್ವತಗಳ ಕೆಳಗೆ.',
+    ],
+    Malayalam: [
+      'നമസ്കാരം{name}! സ്വാഗതം. പത്ത് ചൂടുവെള്ള കുളങ്ങൾ, മലകൾക്ക് താഴെ.',
+    ],
+  }
+
+  /* Deepgram's nova-3 'multi' covers around ten languages with
+     code-switching, and Chinese is not among them - the assistant would
+     have spoken Mandarin perfectly and understood none of it. nova-3 DOES
+     support Chinese on its own, so a guest who picks it gets a monolingual
+     transcriber for that call. Everything else stays on 'multi', which is
+     better for the very common case of a guest drifting between two
+     European languages mid-sentence. */
+  const stt = language => ({ provider: 'deepgram', model: 'nova-3', language, smartFormat: true })
+  const STT_OVERRIDE = {
+    Chinese:   stt('zh'),
+    Hindi:     stt('hi'),
+    Tamil:     stt('ta'),
+    Kannada:   stt('kn'),
+    Malayalam: stt('ml'),
+  }
+
+  /* VOICE MODEL, per language.
+     eleven_turbo_v2_5 covers 32 languages including Hindi and Tamil, but
+     NOT Malayalam or Kannada - those exist only in Eleven v3. Sending
+     Malayalam text to turbo does not fail, it mispronounces confidently,
+     which is worse than refusing. So those two switch model for the call.
+     UNVERIFIED BY EAR: if v3 is not on the account these two will sound
+     wrong and should be removed from the menu - the European and the other
+     Indian languages are unaffected either way. */
+  const VOICE_OVERRIDE = {
+    Kannada:   { provider: '11labs', voiceId: 'matilda', model: 'eleven_v3', speed: 0.88 },
+    Malayalam: { provider: '11labs', voiceId: 'matilda', model: 'eleven_v3', speed: 0.88 },
+  }
+
+  /* For a guest who did not choose. Four national languages and a foyer full
+     of visitors from everywhere, so always opening in one of them tells most
+     of the room it was not expecting them. */
+  const ANY = [
+    'Grüezi{name}! Schön, dass Sie da sind. Ten thermal pools in there, right under the mountains.',
+    'Bonjour ! Buongiorno! Grüezi! Whichever you prefer, you are very welcome here.',
+    'Allegra{name}! That is Romansh for welcome. Fancy a hot soak? Forty-two degrees, under the Alps.',
+    'Salü{name}! Hello! Lovely to see you. The water comes straight out of the mountain.',
+    'Buongiorno! Hello! Ten thermal pools waiting, and the Alps right in front of them.',
   ]
 
   const start = async (name, lang) => {
@@ -507,13 +615,16 @@ async function brain() {
       // The DJI microphone and the Bluetooth speaker both belong to this
       // machine. Default audioSource and default echo cancellation: one
       // device holding both is the case AEC is built for.
-      const overrides = {
-        variableValues: { name: name || 'there', language: lang && lang !== 'any' ? lang : 'any' },
-      }
-      // Only choose the opener when they did not: if a guest picked a
-      // language, the assistant should open in THAT one, not in a random one.
-      if (!lang || lang === 'any') overrides.firstMessage = WELCOME[Math.floor(Math.random() * WELCOME.length)]
-      await vapi.start(c.assistantId, overrides)
+      const picked = lang && lang !== 'any' ? lang : ''
+      await vapi.start(c.assistantId, {
+        variableValues: { name: name || 'there', language: picked || 'any' },
+        // Always sent: the assistant's stored firstMessage is English, and
+        // it is spoken verbatim, so leaving it alone is how a French guest
+        // gets greeted in English.
+        firstMessage: withName(picked ? pick(OPENERS[picked] ?? OPENERS.English) : pick(ANY), name),
+        ...(STT_OVERRIDE[picked] ? { transcriber: STT_OVERRIDE[picked] } : {}),
+        ...(VOICE_OVERRIDE[picked] ? { voice: VOICE_OVERRIDE[picked] } : {}),
+      })
     } catch (e) { calling = false; clearTimeout(wedged); fault(`could not start: ${e?.message ?? e}`) }
   }
   const stop = () => {
