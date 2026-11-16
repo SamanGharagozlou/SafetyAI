@@ -34,7 +34,8 @@ untouched. To redo a crop, change the original and regenerate the copy at the sa
 
 | Copy | Original | Slide | Treatment |
 |---|---|---|---|
-| `event_square.jpg` | `robot_event_square.jpg` | 1 | full width, sky and pavement trimmed, right panel |
+| `spa_terrace_robot.jpg` | `WhatsApp Image 2026-11-16 at 12.05.03.jpeg` | 1 | copied as is, full bleed (16:9, no crop) |
+| `event_square.jpg` | `robot_event_square.jpg` | not used | earlier opening photo, right panel crop |
 | `spa_entrance.jpg` | `IMG_8225.JPG` | 2 | |
 | `spa_reception.jpg` | `reception.png` | 3 | rotated 90 degrees clockwise, top of frame |
 | `robot_with_guests.jpg` | `PXL_20261115_184822865_exported_30769.jpg` | 4 | |

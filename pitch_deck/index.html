@@ -136,17 +136,16 @@ body { font-family: var(--font-body); color: var(--text); }
 /* ===========================================
    SLIDE 0: TEAM OPENING
    =========================================== */
-/* Portrait event photo as a full height panel on the right, so it is barely cropped */
-.s-open .side { position: absolute; top: 0; right: 0; width: 820px; height: 1080px; }
-.s-open .side .media img { object-position: 50% 50%; }
-.s-open .side::after { content: ''; position: absolute; inset: 0;
-    background: linear-gradient(90deg, var(--night) 0%, rgba(11,22,32,.35) 22%, transparent 50%),
-                linear-gradient(0deg, rgba(11,22,32,.45) 0%, transparent 30%); }
+/* 16:9 photo of the robot on the spa terrace, full bleed and uncropped; the veil darkens the sky behind the text */
+.s-open .media img { object-position: 50% 50%; }
+.s-open .veil { position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(11,22,32,.94) 0%, rgba(11,22,32,.78) 34%, rgba(11,22,32,.25) 58%, transparent 72%),
+                linear-gradient(0deg, rgba(11,22,32,.6) 0%, transparent 35%); }
 .s-open .eyebrow { position: absolute; left: var(--pad); top: 88px; font-size: 26px; }
 .s-open .brand { position: absolute; left: var(--pad); top: 270px; font-weight: 800; font-size: 200px; line-height: .9; letter-spacing: .06em; }
 .s-open .brand span { color: var(--accent); }
 .s-open .track { position: absolute; left: calc(var(--pad) + 6px); top: 500px; font-size: 32px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: var(--mist); }
-.s-open .team { position: absolute; left: var(--pad); top: 700px; width: 920px; }
+.s-open .team { position: absolute; left: var(--pad); top: 700px; width: 780px; }
 .s-open .team h3 { font-size: 18px; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 20px;
     padding-bottom: 14px; border-bottom: 1px solid var(--line); }
 .s-open .team ul { list-style: none; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 40px; }
@@ -383,13 +382,12 @@ body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); 
 
     <!-- ===== SLIDE 0: TEAM OPENING (0:05) ===== -->
     <section class="slide s-open active" aria-label="Team opening">
-        <!-- Event photo: robots and people in the town square (web copy of assets/robot_event_square.jpg) -->
-        <div class="side">
-            <div class="media">
-                <div class="ph">PHOTO · robots and people in the town square</div>
-                <img src="assets/web/event_square.jpg" alt="Robots and visitors in the Leukerbad town square during the hackathon" onerror="this.remove()">
-            </div>
+        <!-- The robot on the thermal spa terrace (copy of "assets/WhatsApp Image 2026-11-16 at 12.05.03.jpeg") -->
+        <div class="media">
+            <div class="ph">PHOTO · robot on the spa terrace</div>
+            <img src="assets/web/spa_terrace_robot.jpg" alt="The robot on the Leukerbad thermal spa terrace, steam rising in front of the mountains" onerror="this.remove()">
         </div>
+        <div class="veil"></div>
 
         <p class="eyebrow reveal" style="--d:.1s">Leukerbad Robotics Hackathon</p>
         <h1 class="brand reveal" style="--d:.3s">SEPAZU<span>.</span></h1>
