@@ -1,0 +1,335 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1530 -795 3190 4870" width="3190" height="4870" font-family="Inter, Helvetica, Arial, sans-serif">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8a93a0"/></marker></defs>
+<rect x="-1530.0" y="-795.0" width="3190.0" height="4870.0" fill="#ffffff"/>
+<rect x="-1430.0" y="-715.0" width="3010.0" height="1430.0" rx="18" fill="#fafbfc" stroke="#c9d1d9" stroke-width="2"/>
+<text x="-1402.0" y="-667.0" font-size="30" font-weight="700" fill="#1b2026">1 · The governed command path — everything left of the dashed line is a CLAIM</text>
+<rect x="-1450.0" y="1135.0" width="3030.0" height="1010.0" rx="18" fill="#fafbfc" stroke="#c9d1d9" stroke-width="2"/>
+<text x="-1422.0" y="1183.0" font-size="30" font-weight="700" fill="#1b2026">2 · What changes when a child is within 2 m</text>
+<rect x="-1450.0" y="2595.0" width="3030.0" height="1400.0" rx="18" fill="#fafbfc" stroke="#c9d1d9" stroke-width="2"/>
+<text x="-1422.0" y="2643.0" font-size="30" font-weight="700" fill="#1b2026">3 · Defence in depth against a hijacked or prompt-injected agent</text>
+<line x1="-800" y1="-645.0" x2="-800" y2="685.0" stroke="#d94c4c" stroke-width="3" stroke-dasharray="14 10"/>
+<text x="-814" y="-615.0" font-size="20" font-weight="700" fill="#d94c4c" text-anchor="end">CLAIM ←</text>
+<text x="-786" y="-615.0" font-size="20" font-weight="700" fill="#2f8f4e">→ GROUND TRUTH (hardware you own)</text>
+<line x1="-1150" y1="-445" x2="-1150" y2="-365" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-1150" y1="-235" x2="-1150" y2="-185" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-1150" y1="-55" x2="-1150" y2="-5" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-1150" y1="-5" x2="-1150" y2="-445" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="-1150" y="-233" font-size="17" fill="#5b6670" text-anchor="middle">audio out</text>
+<line x1="-960" y1="-120" x2="-700" y2="-300" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="-830" y="-218" font-size="17" fill="#5b6670" text-anchor="middle">tool call</text>
+<line x1="-480" y1="-40" x2="-480" y2="250" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="-480" y="97" font-size="17" fill="#5b6670" text-anchor="middle">before</text>
+<line x1="-480" y1="-40" x2="-480" y2="485" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="-480" y="214" font-size="17" fill="#5b6670" text-anchor="middle">behind the gate</text>
+<line x1="-260" y1="-300" x2="-30" y2="-300" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="-145" y="-308" font-size="17" fill="#5b6670" text-anchor="middle">forward, or REFUSE</text>
+<line x1="160" y1="-235" x2="160" y2="-185" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="160" y1="-55" x2="160" y2="-15" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="160" y1="135" x2="160" y2="195" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="160" y="157" font-size="17" fill="#5b6670" text-anchor="middle">SDK, one client</text>
+<line x1="350" y1="270" x2="570" y2="270" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="460" y="262" font-size="17" fill="#5b6670" text-anchor="middle">RTSP</text>
+<line x1="570" y1="270" x2="350" y2="-300" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="460" y="-23" font-size="17" fill="#5b6670" text-anchor="middle">stop_robot while unsafe</text>
+<line x1="-30" y1="-120" x2="-260" y2="-300" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="-145" y="-218" font-size="17" fill="#5b6670" text-anchor="middle">confirmed state, 2 Hz</text>
+<line x1="-260" y1="-300" x2="570" y2="-300" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="155" y="-308" font-size="17" fill="#5b6670" text-anchor="middle">every event</text>
+<line x1="770" y1="-140" x2="770" y2="-15" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="1090" y1="-300" x2="-260" y2="-300" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="415" y="-308" font-size="17" fill="#5b6670" text-anchor="middle">the rules</text>
+<line x1="1290" y1="5" x2="1290" y2="-140" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="1290" y="-76" font-size="17" fill="#5b6670" text-anchor="middle">signs / edits</text>
+<line x1="-940" y1="1420" x2="-720" y2="1420" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-1150" y1="1795" x2="-1150" y2="1875" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-940" y1="1970" x2="-720" y2="1650" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="-830" y="1802" font-size="17" fill="#5b6670" text-anchor="middle">presumed present</text>
+<line x1="-520" y1="1505" x2="-520" y2="1580" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="-520" y="1534" font-size="17" fill="#5b6670" text-anchor="middle">yes</text>
+<line x1="-520" y1="1720" x2="-520" y2="1785" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="-520" y="1744" font-size="17" fill="#5b6670" text-anchor="middle">yes</text>
+<line x1="-320" y1="1650" x2="-120" y2="1420" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="-220" y="1527" font-size="17" fill="#5b6670" text-anchor="middle">yes</text>
+<line x1="-120" y1="1830" x2="-320" y2="1870" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-320" y1="1870" x2="490" y2="1420" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="85" y="1637" font-size="17" fill="#5b6670" text-anchor="middle">if it moves anyway</text>
+<line x1="700" y1="1520" x2="700" y2="1585" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="1090" y1="1420" x2="-320" y2="1420" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="385" y="1412" font-size="17" fill="#5b6670" text-anchor="middle">sets the numbers</text>
+<line x1="-1150" y1="3235" x2="-1150" y2="3315" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-940" y1="3400" x2="-760" y2="3060" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-520" y1="3145" x2="-520" y2="3195" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-520" y1="3345" x2="-520" y2="3385" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-520" y1="3535" x2="-520" y2="3575" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-520" y1="3725" x2="-520" y2="3765" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-280" y1="3460" x2="-110" y2="3060" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="-280" y1="3840" x2="-110" y2="3620" stroke="#8a93a0" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="-1340.0" y="-595.0" width="380" height="150" rx="12" fill="#eef0f2" stroke="#5b6670" stroke-width="2.5"/>
+<text x="-1324.0" y="-561" font-size="21" font-weight="700" fill="#2d3339">Guest</text>
+<text x="-1324.0" y="-531" font-size="16" fill="#2d3339" opacity="0.92">speaks to the dog · scans the QR · can</text>
+<text x="-1324.0" y="-511" font-size="16" fill="#2d3339" opacity="0.92">always press Stop</text>
+<rect x="-1340.0" y="-365.0" width="380" height="130" rx="12" fill="#fde8e8" stroke="#d94c4c" stroke-width="2.5"/>
+<text x="-1324.0" y="-331" font-size="21" font-weight="700" fill="#7a1f1f">Deepgram nova-3</text>
+<text x="-1324.0" y="-301" font-size="16" fill="#7a1f1f" opacity="0.92">speech to text · language: multi</text>
+<rect x="-1340.0" y="-185.0" width="380" height="130" rx="12" fill="#fde8e8" stroke="#d94c4c" stroke-width="2.5"/>
+<text x="-1324.0" y="-151" font-size="21" font-weight="700" fill="#7a1f1f">Claude (Sonnet)</text>
+<text x="-1324.0" y="-121" font-size="16" fill="#7a1f1f" opacity="0.92">13 typed tools · temperature 0.4</text>
+<rect x="-1340.0" y="-5.0" width="380" height="130" rx="12" fill="#fde8e8" stroke="#d94c4c" stroke-width="2.5"/>
+<text x="-1324.0" y="29" font-size="21" font-weight="700" fill="#7a1f1f">ElevenLabs turbo</text>
+<text x="-1324.0" y="59" font-size="16" fill="#7a1f1f" opacity="0.92">speed 0.88 · stability 0.45</text>
+<rect x="-1340.0" y="175.0" width="380" height="170" rx="12" fill="#fde8e8" stroke="#d94c4c" stroke-width="2.5"/>
+<text x="-1324.0" y="209" font-size="21" font-weight="700" fill="#7a1f1f">Vapi cloud</text>
+<text x="-1324.0" y="239" font-size="16" fill="#7a1f1f" opacity="0.92">SELF-REPORT ONLY. No OpenTelemetry; the</text>
+<text x="-1324.0" y="259" font-size="16" fill="#7a1f1f" opacity="0.92">only instrumentation is</text>
+<text x="-1324.0" y="279" font-size="16" fill="#7a1f1f" opacity="0.92">artifact.performanceMetrics on the</text>
+<text x="-1324.0" y="299" font-size="16" fill="#7a1f1f" opacity="0.92">webhook.</text>
+<rect x="-700.0" y="-560.0" width="440" height="520" rx="12" fill="#fff4d6" stroke="#d19b00" stroke-width="2.5"/>
+<text x="-684.0" y="-526" font-size="21" font-weight="700" fill="#6b4e00">THE TAP :8901</text>
+<text x="-684.0" y="-496" font-size="16" fill="#6b4e00" opacity="0.92">1 record intent</text>
+<text x="-684.0" y="-476" font-size="16" fill="#6b4e00" opacity="0.92">2 predict (kinematic, ~0 ms)</text>
+<text x="-684.0" y="-456" font-size="16" fill="#6b4e00" opacity="0.92">3 judge (Cosmos, best effort)</text>
+<text x="-684.0" y="-436" font-size="16" fill="#6b4e00" opacity="0.92">4 GATE: allow / deny</text>
+<text x="-684.0" y="-416" font-size="16" fill="#6b4e00" opacity="0.92">5 forward unchanged</text>
+<text x="-684.0" y="-396" font-size="16" fill="#6b4e00" opacity="0.92">6 score the outcome</text>
+<text x="-684.0" y="-356" font-size="16" fill="#6b4e00" opacity="0.92">Binds 127.0.0.1. Unknown routes are refused, not</text>
+<text x="-684.0" y="-336" font-size="16" fill="#6b4e00" opacity="0.92">tunnelled.</text>
+<rect x="-700.0" y="250.0" width="440" height="160" rx="12" fill="#fff4d6" stroke="#d19b00" stroke-width="2.5"/>
+<text x="-684.0" y="284" font-size="21" font-weight="700" fill="#6b4e00">Kinematic predictor</text>
+<text x="-684.0" y="314" font-size="16" fill="#6b4e00" opacity="0.92">0.1373 m/s · 4.11 s overhead · 4.1 cm undershoot</text>
+<text x="-684.0" y="334" font-size="16" fill="#6b4e00" opacity="0.92">— MEASURED, not guessed. Validation walk: 0.13σ</text>
+<rect x="-700.0" y="485.0" width="440" height="150" rx="12" fill="#fde8e8" stroke="#d94c4c" stroke-width="2.5"/>
+<text x="-684.0" y="519" font-size="21" font-weight="700" fill="#7a1f1f">Cosmos-Reason2 (judge)</text>
+<text x="-684.0" y="549" font-size="16" fill="#7a1f1f" opacity="0.92">~4 s, off-box. Never gates a stop. unavailable ≠</text>
+<text x="-684.0" y="569" font-size="16" fill="#7a1f1f" opacity="0.92">approved</text>
+<rect x="-30.0" y="-365.0" width="380" height="130" rx="12" fill="#e6f6ec" stroke="#2f8f4e" stroke-width="2.5"/>
+<text x="-14.0" y="-331" font-size="21" font-weight="700" fill="#14532d">d1-vapi-server :8090</text>
+<text x="-14.0" y="-301" font-size="16" fill="#14532d" opacity="0.92">the public edge</text>
+<rect x="-30.0" y="-185.0" width="380" height="130" rx="12" fill="#e6f6ec" stroke="#2f8f4e" stroke-width="2.5"/>
+<text x="-14.0" y="-151" font-size="21" font-weight="700" fill="#14532d">d1-ros-agent :8091</text>
+<text x="-14.0" y="-121" font-size="16" fill="#14532d" opacity="0.92">owns the robot · loopback · no token</text>
+<rect x="-30.0" y="-15.0" width="380" height="150" rx="12" fill="#e6f6ec" stroke="#2f8f4e" stroke-width="2.5"/>
+<text x="-14.0" y="19" font-size="21" font-weight="700" fill="#14532d">agibot_d1_bridge</text>
+<text x="-14.0" y="49" font-size="16" fill="#14532d" opacity="0.92">the ONE SDK client · velocity caps · 0.5</text>
+<text x="-14.0" y="69" font-size="16" fill="#14532d" opacity="0.92">s watchdog</text>
+<rect x="-30.0" y="195.0" width="380" height="150" rx="12" fill="#e4f0fb" stroke="#2b6cb0" stroke-width="2.5"/>
+<text x="-14.0" y="229" font-size="21" font-weight="700" fill="#153e75">AgiBot D1 Ultra W</text>
+<text x="-14.0" y="259" font-size="16" fill="#153e75" opacity="0.92">16 kg · SDK UDP 43988 · RTSP :8554 · no</text>
+<text x="-14.0" y="279" font-size="16" fill="#153e75" opacity="0.92">LiDAR, no depth</text>
+<rect x="570.0" y="155.0" width="400" height="230" rx="12" fill="#e6f6ec" stroke="#2f8f4e" stroke-width="2.5"/>
+<text x="586.0" y="189" font-size="21" font-weight="700" fill="#14532d">Camera people-guard</text>
+<text x="586.0" y="219" font-size="16" fill="#14532d" opacity="0.92">GO / SLOW / HOLD / FREEZE from one monocular</text>
+<text x="586.0" y="239" font-size="16" fill="#14532d" opacity="0.92">camera.</text>
+<text x="586.0" y="259" font-size="16" fill="#14532d" opacity="0.92">Sends stop_robot every tick while unsafe —</text>
+<text x="586.0" y="279" font-size="16" fill="#14532d" opacity="0.92">the layer that interrupts a walk already in</text>
+<text x="586.0" y="299" font-size="16" fill="#14532d" opacity="0.92">flight.</text>
+<rect x="570.0" y="-460.0" width="400" height="320" rx="12" fill="#efe8fb" stroke="#6b46c1" stroke-width="2.5"/>
+<text x="586.0" y="-426" font-size="21" font-weight="700" fill="#3c2a6b">Hash-chained ledger</text>
+<text x="586.0" y="-396" font-size="16" fill="#3c2a6b" opacity="0.92">append-only · sha256 per line · fsynced</text>
+<text x="586.0" y="-356" font-size="16" fill="#3c2a6b" opacity="0.92">11 event kinds: utterance · intent ·</text>
+<text x="586.0" y="-336" font-size="16" fill="#3c2a6b" opacity="0.92">prediction · decision · intervention ·</text>
+<text x="586.0" y="-316" font-size="16" fill="#3c2a6b" opacity="0.92">command · state · outcome · breach ·</text>
+<text x="586.0" y="-296" font-size="16" fill="#3c2a6b" opacity="0.92">integrity · policy</text>
+<text x="586.0" y="-256" font-size="16" fill="#3c2a6b" opacity="0.92">GET /api/verify names the first broken line</text>
+<rect x="570.0" y="-15.0" width="400" height="150" rx="12" fill="#efe8fb" stroke="#6b46c1" stroke-width="2.5"/>
+<text x="586.0" y="19" font-size="21" font-weight="700" fill="#3c2a6b">Control plane dashboard</text>
+<text x="586.0" y="49" font-size="16" fill="#3c2a6b" opacity="0.92">Live · Trace · Guardrails · SSE · 30 ms</text>
+<text x="586.0" y="69" font-size="16" fill="#3c2a6b" opacity="0.92">/api/state</text>
+<rect x="1090.0" y="-460.0" width="400" height="320" rx="12" fill="#eef0f2" stroke="#5b6670" stroke-width="2.5"/>
+<text x="1106.0" y="-426" font-size="21" font-weight="700" fill="#2d3339">venue/leukerbad_therme.yaml</text>
+<text x="1106.0" y="-396" font-size="16" fill="#2d3339" opacity="0.92">THE SPA'S DOCUMENT, signed by the person</text>
+<text x="1106.0" y="-376" font-size="16" fill="#2d3339" opacity="0.92">accountable for guest safety.</text>
+<text x="1106.0" y="-336" font-size="16" fill="#2d3339" opacity="0.92">Config can only TIGHTEN.</text>
+<text x="1106.0" y="-316" font-size="16" fill="#2d3339" opacity="0.92">Anything unset is FORBIDDEN.</text>
+<text x="1106.0" y="-296" font-size="16" fill="#2d3339" opacity="0.92">Unsigned means CAUTIOUS: 0.15 m/s everywhere</text>
+<text x="1106.0" y="-276" font-size="16" fill="#2d3339" opacity="0.92">and no guiding at all.</text>
+<rect x="1090.0" y="5.0" width="400" height="190" rx="12" fill="#eef0f2" stroke="#5b6670" stroke-width="2.5"/>
+<text x="1106.0" y="39" font-size="21" font-weight="700" fill="#2d3339">Operator</text>
+<text x="1106.0" y="69" font-size="16" fill="#2d3339" opacity="0.92">Guardrails tab · console (Tailscale Serve,</text>
+<text x="1106.0" y="89" font-size="16" fill="#2d3339" opacity="0.92">tailnet only) · E-STOP.</text>
+<text x="1106.0" y="109" font-size="16" fill="#2d3339" opacity="0.92">Every edit is classified more-freedom /</text>
+<text x="1106.0" y="129" font-size="16" fill="#2d3339" opacity="0.92">more-restraint and lands on the ledger</text>
+<text x="1106.0" y="149" font-size="16" fill="#2d3339" opacity="0.92">BEFORE the reload.</text>
+<rect x="1090.0" y="310.0" width="400" height="180" rx="12" fill="#fbe0e0" stroke="#c53030" stroke-width="2.5"/>
+<text x="1106.0" y="344" font-size="21" font-weight="700" fill="#742a2a">The switch that decides if any of</text>
+<text x="1106.0" y="370" font-size="21" font-weight="700" fill="#742a2a">this is real</text>
+<text x="1106.0" y="400" font-size="16" fill="#742a2a" opacity="0.92">funnel 443 → 8901 = GOVERNED</text>
+<text x="1106.0" y="420" font-size="16" fill="#742a2a" opacity="0.92">funnel 443 → 8090 = BYPASSED</text>
+<text x="1106.0" y="460" font-size="16" fill="#742a2a" opacity="0.92">Bypassed, the tap runs idle — which looks</text>
+<text x="1106.0" y="480" font-size="16" fill="#742a2a" opacity="0.92">exactly like a quiet robot.</text>
+<rect x="-1360.0" y="1320.0" width="420" height="200" rx="12" fill="#e6f6ec" stroke="#2f8f4e" stroke-width="2.5"/>
+<text x="-1344.0" y="1354" font-size="21" font-weight="700" fill="#14532d">One camera, no depth</text>
+<text x="-1344.0" y="1384" font-size="16" fill="#14532d" opacity="0.92">DFOV 122° · VFOV 70°. Range from the pixel row</text>
+<text x="-1344.0" y="1404" font-size="16" fill="#14532d" opacity="0.92">of someone's FEET on a known floor plane. 2.0</text>
+<text x="-1344.0" y="1424" font-size="16" fill="#14532d" opacity="0.92">cm/px at 2 m.</text>
+<rect x="-1360.0" y="1565.0" width="420" height="230" rx="12" fill="#fbe0e0" stroke="#c53030" stroke-width="2.5"/>
+<text x="-1344.0" y="1599" font-size="21" font-weight="700" fill="#742a2a">The blind spot IS the problem</text>
+<text x="-1344.0" y="1629" font-size="16" fill="#742a2a" opacity="0.92">A camera 0.40 m up cannot see the floor inside</text>
+<text x="-1344.0" y="1649" font-size="16" fill="#742a2a" opacity="0.92">0.40–0.57 m.</text>
+<text x="-1344.0" y="1689" font-size="16" fill="#742a2a" opacity="0.92">A two-year-old who toddles up to touch the</text>
+<text x="-1344.0" y="1709" font-size="16" fill="#742a2a" opacity="0.92">robot VANISHES from frame.</text>
+<text x="-1344.0" y="1729" font-size="16" fill="#742a2a" opacity="0.92">Disappearance at close range does not mean</text>
+<text x="-1344.0" y="1749" font-size="16" fill="#742a2a" opacity="0.92">absence. It means CLOSER.</text>
+<rect x="-1360.0" y="1875.0" width="420" height="190" rx="12" fill="#fff4d6" stroke="#d19b00" stroke-width="2.5"/>
+<text x="-1344.0" y="1909" font-size="21" font-weight="700" fill="#6b4e00">So the guard LATCHES</text>
+<text x="-1344.0" y="1939" font-size="16" fill="#6b4e00" opacity="0.92">adult lost close → presumed present 3 s,</text>
+<text x="-1344.0" y="1959" font-size="16" fill="#6b4e00" opacity="0.92">decays to HOLD</text>
+<text x="-1344.0" y="1979" font-size="16" fill="#6b4e00" opacity="0.92">child lost close → presumed present 5 s,</text>
+<text x="-1344.0" y="1999" font-size="16" fill="#6b4e00" opacity="0.92">decays to FREEZE</text>
+<text x="-1344.0" y="2039" font-size="16" fill="#6b4e00" opacity="0.92">Confidence decays towards danger, not</text>
+<text x="-1344.0" y="2059" font-size="16" fill="#6b4e00" opacity="0.92">convenience.</text>
+<rect x="-720.0" y="1335.0" width="400" height="170" rx="12" fill="#fff4d6" stroke="#d19b00" stroke-width="2.5"/>
+<text x="-704.0" y="1369" font-size="21" font-weight="700" fill="#6b4e00">Is this a child?</text>
+<text x="-704.0" y="1399" font-size="16" fill="#6b4e00" opacity="0.92">height &lt; 1.25 m</text>
+<text x="-704.0" y="1419" font-size="16" fill="#6b4e00" opacity="0.92">(a 2-year-old is ~0.85 m; 1.25 clears</text>
+<text x="-704.0" y="1439" font-size="16" fill="#6b4e00" opacity="0.92">toddlers without flagging short adults)</text>
+<rect x="-720.0" y="1580.0" width="400" height="140" rx="12" fill="#fff4d6" stroke="#d19b00" stroke-width="2.5"/>
+<text x="-704.0" y="1614" font-size="21" font-weight="700" fill="#6b4e00">Within 2 m?</text>
+<text x="-704.0" y="1644" font-size="16" fill="#6b4e00" opacity="0.92">double the adult hold radius, because the</text>
+<text x="-704.0" y="1664" font-size="16" fill="#6b4e00" opacity="0.92">cost of being wrong is categorically</text>
+<text x="-704.0" y="1684" font-size="16" fill="#6b4e00" opacity="0.92">different</text>
+<rect x="-720.0" y="1785.0" width="400" height="170" rx="12" fill="#fbe0e0" stroke="#c53030" stroke-width="2.5"/>
+<text x="-704.0" y="1819" font-size="21" font-weight="700" fill="#742a2a">→ FULL STOP</text>
+<text x="-704.0" y="1849" font-size="16" fill="#742a2a" opacity="0.92">not a slow-down. No walking, no turning, no</text>
+<text x="-704.0" y="1869" font-size="16" fill="#742a2a" opacity="0.92">strafing.</text>
+<text x="-704.0" y="1889" font-size="16" fill="#742a2a" opacity="0.92">A frozen robot still talks, still listens,</text>
+<text x="-704.0" y="1909" font-size="16" fill="#742a2a" opacity="0.92">can still be stopped.</text>
+<rect x="-120.0" y="1255.0" width="440" height="330" rx="12" fill="#fff4d6" stroke="#d19b00" stroke-width="2.5"/>
+<text x="-104.0" y="1289" font-size="21" font-weight="700" fill="#6b4e00">Gestures: an ALLOWLIST, never a</text>
+<text x="-104.0" y="1315" font-size="21" font-weight="700" fill="#6b4e00">denylist</text>
+<text x="-104.0" y="1345" font-size="16" fill="#6b4e00" opacity="0.92">ALLOWED (feet never leave the ground):</text>
+<text x="-104.0" y="1365" font-size="16" fill="#6b4e00" opacity="0.92">nod · shake (a 14° yaw, 'no') · tilt · bow ·</text>
+<text x="-104.0" y="1385" font-size="16" fill="#6b4e00" opacity="0.92">squat · wiggle · look_around · sway_circle</text>
+<text x="-104.0" y="1425" font-size="16" fill="#6b4e00" opacity="0.92">REFUSED near a child:</text>
+<text x="-104.0" y="1445" font-size="16" fill="#6b4e00" opacity="0.92">greet · welcome · shake_hand — all three end in</text>
+<text x="-104.0" y="1465" font-size="16" fill="#6b4e00" opacity="0.92">shakeHand(), which raises a paw to the head</text>
+<text x="-104.0" y="1485" font-size="16" fill="#6b4e00" opacity="0.92">height of a two-year-old.</text>
+<text x="-104.0" y="1525" font-size="16" fill="#6b4e00" opacity="0.92">Anything unclassified is REFUSED. An earlier</text>
+<text x="-104.0" y="1545" font-size="16" fill="#6b4e00" opacity="0.92">denylist let greet and welcome straight through.</text>
+<rect x="-120.0" y="1755.0" width="440" height="150" rx="12" fill="#fbe0e0" stroke="#c53030" stroke-width="2.5"/>
+<text x="-104.0" y="1789" font-size="21" font-weight="700" fill="#742a2a">No fresh frame for 0.5 s → FREEZE</text>
+<text x="-104.0" y="1819" font-size="16" fill="#742a2a" opacity="0.92">A dead feed reads as danger, never as a clear</text>
+<text x="-104.0" y="1839" font-size="16" fill="#742a2a" opacity="0.92">path. This stack shipped the opposite bug once:</text>
+<text x="-104.0" y="1859" font-size="16" fill="#742a2a" opacity="0.92">200 OK with nulls while the robot lay on the</text>
+<text x="-104.0" y="1879" font-size="16" fill="#742a2a" opacity="0.92">floor.</text>
+<rect x="490.0" y="1320.0" width="420" height="200" rx="12" fill="#efe8fb" stroke="#6b46c1" stroke-width="2.5"/>
+<text x="506.0" y="1354" font-size="21" font-weight="700" fill="#3c2a6b">child_proximity — CRITICAL</text>
+<text x="506.0" y="1384" font-size="16" fill="#3c2a6b" opacity="0.92">Raised on CONFIRMED PHYSICAL STATE, not on</text>
+<text x="506.0" y="1404" font-size="16" fill="#3c2a6b" opacity="0.92">intent. Fires even if the gate allowed it,</text>
+<text x="506.0" y="1424" font-size="16" fill="#3c2a6b" opacity="0.92">even if the guard was down, even if a human</text>
+<text x="506.0" y="1444" font-size="16" fill="#3c2a6b" opacity="0.92">did it.</text>
+<rect x="490.0" y="1585.0" width="420" height="190" rx="12" fill="#efe8fb" stroke="#6b46c1" stroke-width="2.5"/>
+<text x="506.0" y="1619" font-size="21" font-weight="700" fill="#3c2a6b">A clock, written into the ledger</text>
+<text x="506.0" y="1649" font-size="16" fill="#3c2a6b" opacity="0.92">duty manager 15 min</text>
+<text x="506.0" y="1669" font-size="16" fill="#3c2a6b" opacity="0.92">ISO/IEC 42001 auditor 1440 min</text>
+<text x="506.0" y="1709" font-size="16" fill="#3c2a6b" opacity="0.92">A deadline that exists only in a UI is one</text>
+<text x="506.0" y="1729" font-size="16" fill="#3c2a6b" opacity="0.92">nobody can prove was known.</text>
+<rect x="490.0" y="1830.0" width="420" height="200" rx="12" fill="#fbe0e0" stroke="#c53030" stroke-width="2.5"/>
+<text x="506.0" y="1864" font-size="21" font-weight="700" fill="#742a2a">AND THE HONEST PART</text>
+<text x="506.0" y="1894" font-size="16" fill="#742a2a" opacity="0.92">child_safety_verified is a BLOCKING GAP.</text>
+<text x="506.0" y="1914" font-size="16" fill="#742a2a" opacity="0.92">The rule is enforced; the detector behind it</text>
+<text x="506.0" y="1934" font-size="16" fill="#742a2a" opacity="0.92">has NEVER been tested against a child. The</text>
+<text x="506.0" y="1954" font-size="16" fill="#742a2a" opacity="0.92">guard is currently inactive on the Jetson.</text>
+<rect x="1090.0" y="1275.0" width="400" height="290" rx="12" fill="#eef0f2" stroke="#5b6670" stroke-width="2.5"/>
+<text x="1106.0" y="1309" font-size="21" font-weight="700" fill="#2d3339">The venue sets these numbers</text>
+<text x="1106.0" y="1339" font-size="16" fill="#2d3339" opacity="0.92">height_under_m: 1.25</text>
+<text x="1106.0" y="1359" font-size="16" fill="#2d3339" opacity="0.92">freeze_within_m: 2.0</text>
+<text x="1106.0" y="1379" font-size="16" fill="#2d3339" opacity="0.92">forbid_limb_gestures: true</text>
+<text x="1106.0" y="1399" font-size="16" fill="#2d3339" opacity="0.92">latch_s: 5.0</text>
+<text x="1106.0" y="1439" font-size="16" fill="#2d3339" opacity="0.92">Editable from the Guardrails tab without</text>
+<text x="1106.0" y="1459" font-size="16" fill="#2d3339" opacity="0.92">SSH. Every change is classified, named,</text>
+<text x="1106.0" y="1479" font-size="16" fill="#2d3339" opacity="0.92">reasoned and recorded.</text>
+<rect x="-1360.0" y="3005.0" width="420" height="230" rx="12" fill="#fbe0e0" stroke="#c53030" stroke-width="2.5"/>
+<text x="-1344.0" y="3039" font-size="21" font-weight="700" fill="#742a2a">The threat</text>
+<text x="-1344.0" y="3069" font-size="16" fill="#742a2a" opacity="0.92">Untrusted content entering an agent's context</text>
+<text x="-1344.0" y="3089" font-size="16" fill="#742a2a" opacity="0.92">is treated as instruction, and the agent uses</text>
+<text x="-1344.0" y="3109" font-size="16" fill="#742a2a" opacity="0.92">its LEGITIMATE tool access against its</text>
+<text x="-1344.0" y="3129" font-size="16" fill="#742a2a" opacity="0.92">operator.</text>
+<text x="-1344.0" y="3169" font-size="16" fill="#742a2a" opacity="0.92">Here the untrusted input IS the product: a</text>
+<text x="-1344.0" y="3189" font-size="16" fill="#742a2a" opacity="0.92">guest speaking.</text>
+<rect x="-1360.0" y="3315.0" width="420" height="170" rx="12" fill="#fff4d6" stroke="#d19b00" stroke-width="2.5"/>
+<text x="-1344.0" y="3349" font-size="21" font-weight="700" fill="#6b4e00">The assumption</text>
+<text x="-1344.0" y="3379" font-size="16" fill="#6b4e00" opacity="0.92">Do not ask whether the model is trustworthy.</text>
+<text x="-1344.0" y="3399" font-size="16" fill="#6b4e00" opacity="0.92">Ask what it can do if it is not.</text>
+<rect x="-760.0" y="2975.0" width="480" height="170" rx="12" fill="#e6f6ec" stroke="#2f8f4e" stroke-width="2.5"/>
+<text x="-744.0" y="3009" font-size="21" font-weight="700" fill="#14532d">L1 · Bounded vocabulary</text>
+<text x="-744.0" y="3039" font-size="16" fill="#14532d" opacity="0.92">13 named tools, typed and range-checked. No shell, no</text>
+<text x="-744.0" y="3059" font-size="16" fill="#14532d" opacity="0.92">code, no arbitrary HTTP, no new tools. Max</text>
+<text x="-744.0" y="3079" font-size="16" fill="#14532d" opacity="0.92">displacement per call: 2 m.</text>
+<rect x="-760.0" y="3195.0" width="480" height="150" rx="12" fill="#e6f6ec" stroke="#2f8f4e" stroke-width="2.5"/>
+<text x="-744.0" y="3229" font-size="21" font-weight="700" fill="#14532d">L2 · Irreversible actions are absent</text>
+<text x="-744.0" y="3259" font-size="16" fill="#14532d" opacity="0.92">damp (drops the robot) is on NO agent-reachable</text>
+<text x="-744.0" y="3279" font-size="16" fill="#14532d" opacity="0.92">surface. estop is never exposed to voice or guests.</text>
+<rect x="-760.0" y="3385.0" width="480" height="150" rx="12" fill="#fff4d6" stroke="#d19b00" stroke-width="2.5"/>
+<text x="-744.0" y="3419" font-size="21" font-weight="700" fill="#6b4e00">L3 · The gate refuses before, not after</text>
+<text x="-744.0" y="3449" font-size="16" fill="#6b4e00" opacity="0.92">Predicted consequence, not stated intent. A hijacked</text>
+<text x="-744.0" y="3469" font-size="16" fill="#6b4e00" opacity="0.92">agent and a buggy one get the same refusal.</text>
+<rect x="-760.0" y="3575.0" width="480" height="150" rx="12" fill="#e6f6ec" stroke="#2f8f4e" stroke-width="2.5"/>
+<text x="-744.0" y="3609" font-size="21" font-weight="700" fill="#14532d">L4 · One command path</text>
+<text x="-744.0" y="3639" font-size="16" fill="#14532d" opacity="0.92">No raw /cmd_vel from voice. Guest taps are injected</text>
+<text x="-744.0" y="3659" font-size="16" fill="#14532d" opacity="0.92">as SENTENCES, so a tap and speech go through the same</text>
+<text x="-744.0" y="3679" font-size="16" fill="#14532d" opacity="0.92">gate.</text>
+<rect x="-760.0" y="3765.0" width="480" height="150" rx="12" fill="#efe8fb" stroke="#6b46c1" stroke-width="2.5"/>
+<text x="-744.0" y="3799" font-size="21" font-weight="700" fill="#3c2a6b">L5 · Attribution + tamper evidence</text>
+<text x="-744.0" y="3829" font-size="16" fill="#3c2a6b" opacity="0.92">utterance → intent → prediction → decision → command</text>
+<text x="-744.0" y="3849" font-size="16" fill="#3c2a6b" opacity="0.92">→ outcome, sha256-chained.</text>
+<rect x="-110.0" y="2915.0" width="440" height="290" rx="12" fill="#fff4d6" stroke="#d19b00" stroke-width="2.5"/>
+<text x="-94.0" y="2949" font-size="21" font-weight="700" fill="#6b4e00">Fail closed — four times, each a real</text>
+<text x="-94.0" y="2975" font-size="21" font-weight="700" fill="#6b4e00">bug</text>
+<text x="-94.0" y="3005" font-size="16" fill="#6b4e00" opacity="0.92">1 unrecognised judge verdict shape</text>
+<text x="-94.0" y="3025" font-size="16" fill="#6b4e00" opacity="0.92">2 unauthenticated collector → 401 all session</text>
+<text x="-94.0" y="3045" font-size="16" fill="#6b4e00" opacity="0.92">3 a feed that never started was invisible</text>
+<text x="-94.0" y="3065" font-size="16" fill="#6b4e00" opacity="0.92">4 the judge contradicted its own prose</text>
+<text x="-94.0" y="3105" font-size="16" fill="#6b4e00" opacity="0.92">EVERY ONE turned an absence or a misread into an</text>
+<text x="-94.0" y="3125" font-size="16" fill="#6b4e00" opacity="0.92">APPROVAL. That is the failure mode this layer</text>
+<text x="-94.0" y="3145" font-size="16" fill="#6b4e00" opacity="0.92">exists to prevent, and it kept reappearing inside</text>
+<text x="-94.0" y="3165" font-size="16" fill="#6b4e00" opacity="0.92">the layer itself.</text>
+<rect x="-110.0" y="3335.0" width="440" height="150" rx="12" fill="#e6f6ec" stroke="#2f8f4e" stroke-width="2.5"/>
+<text x="-94.0" y="3369" font-size="21" font-weight="700" fill="#14532d">Never gate a stop</text>
+<text x="-94.0" y="3399" font-size="16" fill="#14532d" opacity="0.92">stop_robot is ungated, always. Esc and Space are</text>
+<text x="-94.0" y="3419" font-size="16" fill="#14532d" opacity="0.92">STOP even while typing. Anyone may end a session,</text>
+<text x="-94.0" y="3439" font-size="16" fill="#14532d" opacity="0.92">no credentials.</text>
+<rect x="-110.0" y="3535.0" width="440" height="170" rx="12" fill="#efe8fb" stroke="#6b46c1" stroke-width="2.5"/>
+<text x="-94.0" y="3569" font-size="21" font-weight="700" fill="#3c2a6b">The observer cannot actuate</text>
+<text x="-94.0" y="3599" font-size="16" fill="#3c2a6b" opacity="0.92">No endpoint in the control plane commands the</text>
+<text x="-94.0" y="3619" font-size="16" fill="#3c2a6b" opacity="0.92">robot. Fleet-wide oversight that can also drive</text>
+<text x="-94.0" y="3639" font-size="16" fill="#3c2a6b" opacity="0.92">is a fleet-wide remote control.</text>
+<rect x="490.0" y="2915.0" width="420" height="290" rx="12" fill="#e6f6ec" stroke="#2f8f4e" stroke-width="2.5"/>
+<text x="506.0" y="2949" font-size="21" font-weight="700" fill="#14532d">Network and credentials</text>
+<text x="506.0" y="2979" font-size="16" fill="#14532d" opacity="0.92">Everything binds 127.0.0.1.</text>
+<text x="506.0" y="2999" font-size="16" fill="#14532d" opacity="0.92">Console on Tailscale SERVE (tailnet), never</text>
+<text x="506.0" y="3019" font-size="16" fill="#14532d" opacity="0.92">Funnel — funnelling is a PORT-level property,</text>
+<text x="506.0" y="3039" font-size="16" fill="#14532d" opacity="0.92">so /console under 443 would be public.</text>
+<text x="506.0" y="3059" font-size="16" fill="#14532d" opacity="0.92">The token never reaches the browser.</text>
+<text x="506.0" y="3079" font-size="16" fill="#14532d" opacity="0.92">Tokens from env, not argv (ps is</text>
+<text x="506.0" y="3099" font-size="16" fill="#14532d" opacity="0.92">world-readable).</text>
+<text x="506.0" y="3119" font-size="16" fill="#14532d" opacity="0.92">348 files scanned, 0 findings.</text>
+<rect x="490.0" y="3255.0" width="420" height="330" rx="12" fill="#fbe0e0" stroke="#c53030" stroke-width="2.5"/>
+<text x="506.0" y="3289" font-size="21" font-weight="700" fill="#742a2a">NOT defended — the honest list</text>
+<text x="506.0" y="3319" font-size="16" fill="#742a2a" opacity="0.92">• No /cmd_vel arbitration, and DDS is</text>
+<text x="506.0" y="3339" font-size="16" fill="#742a2a" opacity="0.92">unauthenticated. Anyone on the subnet can</text>
+<text x="506.0" y="3359" font-size="16" fill="#742a2a" opacity="0.92">drive the robot past every control on this</text>
+<text x="506.0" y="3379" font-size="16" fill="#742a2a" opacity="0.92">board. LARGEST HOLE.</text>
+<text x="506.0" y="3399" font-size="16" fill="#742a2a" opacity="0.92">• The tap only governs while the funnel points</text>
+<text x="506.0" y="3419" font-size="16" fill="#742a2a" opacity="0.92">at it.</text>
+<text x="506.0" y="3439" font-size="16" fill="#742a2a" opacity="0.92">• The ledger is not signed: internal</text>
+<text x="506.0" y="3459" font-size="16" fill="#742a2a" opacity="0.92">consistency, not origin.</text>
+<text x="506.0" y="3479" font-size="16" fill="#742a2a" opacity="0.92">• Prompt injection WITHIN the allowed envelope</text>
+<text x="506.0" y="3499" font-size="16" fill="#742a2a" opacity="0.92">is not prevented. The gate bounds the physics,</text>
+<text x="506.0" y="3519" font-size="16" fill="#742a2a" opacity="0.92">not the intent.</text>
+<rect x="1090.0" y="2715.0" width="400" height="690" rx="12" fill="#fff4d6" stroke="#d19b00" stroke-width="2.5"/>
+<text x="1106.0" y="2749" font-size="21" font-weight="700" fill="#6b4e00">The principles, extracted</text>
+<text x="1106.0" y="2779" font-size="16" fill="#6b4e00" opacity="0.92">1 Assume the agent is adversarial</text>
+<text x="1106.0" y="2799" font-size="16" fill="#6b4e00" opacity="0.92">2 Bound capability, not intent</text>
+<text x="1106.0" y="2819" font-size="16" fill="#6b4e00" opacity="0.92">3 Gate on predicted physical consequence</text>
+<text x="1106.0" y="2839" font-size="16" fill="#6b4e00" opacity="0.92">4 Allowlist, never denylist</text>
+<text x="1106.0" y="2859" font-size="16" fill="#6b4e00" opacity="0.92">5 Anything unset is forbidden</text>
+<text x="1106.0" y="2879" font-size="16" fill="#6b4e00" opacity="0.92">6 Never gate a stop</text>
+<text x="1106.0" y="2899" font-size="16" fill="#6b4e00" opacity="0.92">7 Never expose the irreversible</text>
+<text x="1106.0" y="2919" font-size="16" fill="#6b4e00" opacity="0.92">8 Governance must not actuate</text>
+<text x="1106.0" y="2939" font-size="16" fill="#6b4e00" opacity="0.92">9 Absence is a finding</text>
+<text x="1106.0" y="2959" font-size="16" fill="#6b4e00" opacity="0.92">10 Record intention and action separately,</text>
+<text x="1106.0" y="2979" font-size="16" fill="#6b4e00" opacity="0.92">then correlate</text>
+<text x="1106.0" y="2999" font-size="16" fill="#6b4e00" opacity="0.92">11 Make the honest claim: 'not enforced' is</text>
+<text x="1106.0" y="3019" font-size="16" fill="#6b4e00" opacity="0.92">never 'allowed'; 'not scored' is never</text>
+<text x="1106.0" y="3039" font-size="16" fill="#6b4e00" opacity="0.92">'passed'</text>
+</svg>

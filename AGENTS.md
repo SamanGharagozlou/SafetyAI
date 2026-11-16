@@ -31,6 +31,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | `tools/robot-console/` | Operator console (Node, zero deps) behind Tailscale Serve | working |
 | `clawmetry/` | Physical-AI control plane: tap + collectors + hash-chained ledger + breach correlator + Cosmos world-model gate + Vapi voice sink + operator-editable venue guardrails + live/trace/guardrails dashboard (pure stdlib) | runs on the robot in front of `d1-vapi-server`, but only governs the live path while `tailscale funnel` points 443 at 8901 instead of 8090; see [clawmetry/README.md](clawmetry/README.md#live-wiring-end-to-end) |
 | `tools/` | MetaCam relay and map tools, offline evaluation scripts | dev tools |
+| `scripts/` | Credential scan (`audit_secrets.py` + tests, `make audit-secrets`), opt-in pre-commit hook installer, WSL webcam pipe | working |
 | `maps/` | 2D occupancy maps built from MetaCam Lite scans | see `maps/README.md` |
 | `deploy/jetson/` | systemd units (bridge, watchdog, console) for the Jetson | in use |
 | `docker/` | `Dockerfile` (PC perception image), `d1-jetson/` (Orin image: Humble + Nav2 + RTAB-Map + PyTorch) | in use |
@@ -41,6 +42,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 
 | Topic | Doc |
 |---|---|
+| **Start here — the full technical documentation, 15 chapters** | **[docs/README.md](docs/README.md)** |
 | Product requirements, user journeys, MVP scope | [docs/product_requirements.md](docs/product_requirements.md) |
 | System architecture, hardware, network, interfaces | [docs/system_architecture.md](docs/system_architecture.md) |
 | Feature: ROS 2 monocular camera on the Orin | [docs/feature_ros2_camera.md](docs/feature_ros2_camera.md) |
@@ -57,6 +59,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | Frontend/voice vs robot stack | [docs/frontend_robot_integration.md](docs/frontend_robot_integration.md) |
 | Dashboard | [docs/dashboard.md](docs/dashboard.md) |
 | Observability + governance (ClawMetry control plane) | [clawmetry/README.md](clawmetry/README.md) |
+| Secrets: credential inventory + the repo-wide scan | [docs/secrets.md](docs/secrets.md) |
 | Jetson services / watchdog | [deploy/jetson/README.md](deploy/jetson/README.md) |
 | Frontend | [frontend/README.md](frontend/README.md) |
 
@@ -71,6 +74,9 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 ## Build and test
 
 ```bash
+# Credential scan - no ROS, no Docker, no network. Fastest check in the repo.
+make audit-secrets && python3 scripts/test_audit_secrets.py
+
 # ROS workspace (inside docker/d1-jetson/run.sh on the Orin, or a Humble host)
 source /opt/ros/humble/setup.bash
 cd ros2_ws && colcon build --symlink-install && source install/setup.bash
@@ -101,6 +107,14 @@ cd frontend && npm ci --include=dev && npm run typecheck && npm test && npm run 
 
 ### Secrets and network
 - Never commit tokens, Vapi private keys, SSH passwords or Tailscale auth keys. Use env vars.
+  Every variable the stack reads is documented in [`.env.example`](.env.example); the inventory of
+  which ones are real credentials and where they live is [docs/secrets.md](docs/secrets.md).
+- `make audit-secrets` scans the tree (stdlib Python, no network, <1 s). Run it before a PR.
+  `make install-hooks` runs it on every commit. If it flags something public by design, add an
+  `ALLOW` entry in `scripts/audit_secrets.py` with the path, the exact value and a reason -
+  never widen a rule to silence a hit.
+- The Vapi **public** key and the assistant ids are compiled in on purpose and are not secrets
+  (reasons at each site and in docs/secrets.md). The Vapi **private** key is in no file here.
 - Network services bind to `127.0.0.1` by default. Expose only with a token, via Tailscale Serve. **Never `tailscale funnel` the console port (8443).**
 
 ### Code style
