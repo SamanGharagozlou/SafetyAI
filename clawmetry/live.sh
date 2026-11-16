@@ -3,6 +3,7 @@
 #
 #   bash clawmetry/live.sh open      # tunnel + open the dashboard in a browser
 #   bash clawmetry/live.sh status    # one-line health check, no browser
+#   bash clawmetry/live.sh push      # rsync this directory to the Orin and test
 #   bash clawmetry/live.sh restart   # restart the collector on the Orin
 #
 # The collector binds 127.0.0.1 on the Orin on purpose: the only public thing
@@ -56,10 +57,20 @@ print("robot  ", "connected=" + str(r["connected"]),
 print("sources", "  ".join(k + " " + str(v["age_s"]) + "s" for k, v in d["sources"].items()))
 print("breaches", len(d["breaches"]))'
     ;;
+  push)
+    # --delete keeps the Orin clean, but start.sh lives ONLY there (it reads the
+    # robot token at run time and must never be in the repo). Excluding it is
+    # not optional: a sync without this line deletes it and the collector will
+    # not come back up.
+    rsync -az --delete --exclude __pycache__ --exclude 'ledger.jsonl*' \
+      --exclude '*.bak' --exclude start.sh --exclude docs/ \
+      "$(dirname "$0")/" "$JET:/home/sepa/clawmetry-live/"
+    ssh -o BatchMode=yes "$JET" 'cd ~/clawmetry-live && python3 -m pytest test_clawmetry.py -q 2>&1 | tail -2'
+    ;;
   restart)
     # pkill pattern is bracketed so it cannot match this very command line -
     # an unbracketed one kills the shell running it and reports exit 255.
     ssh -o BatchMode=yes "$JET" 'pkill -f "python3 -u serv[e]r.py"; sleep 1; cd ~/clawmetry-live && (setsid ./start.sh > run.log 2>&1 < /dev/null &); sleep 5; tail -6 run.log'
     ;;
-  *) echo "usage: $0 {open|status|restart}" >&2; exit 2 ;;
+  *) echo "usage: $0 {open|status|push|restart}" >&2; exit 2 ;;
 esac
