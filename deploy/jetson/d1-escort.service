@@ -1,0 +1,55 @@
+[Unit]
+# The "follow me" escort. Walks a leg, turns round to check the guest is still
+# behind, turns back, carries on.
+#
+# It exists because of one piece of geometry: the camera faces forward and the
+# person being led is behind. There is no pan-tilt head, so checking on them
+# means turning the whole robot. That is why the escort stutters - it is not a
+# bug to tune out.
+Description=D1 follow-me escort (leads a guest, checks they are following)
+After=network-online.target d1-guard.service
+Wants=network-online.target
+
+# Requires the guard, and this one IS a hard dependency, unlike the guard's own
+# relationship to the bridge: this process WALKS THE ROBOT. Without the guard
+# it would lead a guest across a forecourt with nothing watching for anyone
+# stepping into the path.
+Requires=d1-guard.service
+
+[Service]
+Type=simple
+User=sepa
+Group=sepa
+WorkingDirectory=/home/sepa/SafetyAI/tools/robot-guard
+EnvironmentFile=/etc/d1-guard.env
+
+# --turn-deg-per-sec IS A MEASURED VALUE AND 43 IS A GUESS.
+# move_robot takes a duration and a speed fraction, never an angle, and the
+# bridge does not forward getRPY() - so every turn is open-loop and the
+# bearings drift by whatever this number is wrong by. Run
+#   python3 calibrate.py turnrate --robot http://127.0.0.1:8090
+# on the real robot and replace it before anyone leads a guest anywhere.
+ExecStart=/usr/bin/python3 escort.py \
+  --guard http://127.0.0.1:8092 \
+  --robot http://127.0.0.1:8090 \
+  --port 8093 \
+  --host 127.0.0.1 \
+  --leg-cm 150 \
+  --look-back 135 \
+  --turn-speed 0.25 \
+  --turn-deg-per-sec 43.0
+
+Restart=always
+RestartSec=3
+
+# An escort killed mid-walk leaves the robot wherever it stopped. That is the
+# right outcome - walk_distance is bounded and self-terminating, so nothing
+# keeps moving after this process dies. The guest is left standing next to a
+# stationary robot dog rather than following one that has gone quiet.
+KillSignal=SIGINT
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

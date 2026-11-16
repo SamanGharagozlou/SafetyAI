@@ -85,6 +85,17 @@ def test_intent_cancel_preempt_stop():
     run(_with_gateway(t, speed=1.0))
 
 
+def test_follow_intents():
+    async def t(url, core):
+        async with websockets.connect(url) as ws:
+            hello = json.loads(await ws.recv())
+            assert {'follow_lock', 'follow_release'} <= set(hello['intents'])
+            for name in ('follow_lock', 'follow_release'):
+                await ws.send(json.dumps({'type': 'intent', 'id': name, 'name': name}))
+                m, _ = await _until(ws, lambda m: m['type'] == 'intent_done' and m['id'] == name)
+    run(_with_gateway(t))
+
+
 def test_bad_messages_do_not_kill_the_connection():
     async def t(url, core):
         async with websockets.connect(url) as ws:

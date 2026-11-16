@@ -39,6 +39,7 @@ class RosRobot(Node):
         p('base_frame', 'base_footprint')
         p('cmd_vel_topic', 'cmd_vel')
         p('say_topic', 'say')
+        p('follow_node', 'd1_follow')
         p('progress_period_s', 0.5)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.map_frame, self.odom_frame, self.base_frame = g('map_frame'), g('odom_frame'), g('base_frame')
@@ -61,6 +62,9 @@ class RosRobot(Node):
         self.create_subscription(String, '/lidar_localization/status', self._on_loc, 10)
         bn = g('bridge_node')
         self.trig = {s: self.create_client(Trigger, f'/{bn}/{s}') for s in set(SERVICE_FOR.values())}
+        fn = g('follow_node')
+        self.follow = {'follow_lock': self.create_client(Trigger, f'/{fn}/lock'),
+                       'follow_release': self.create_client(Trigger, f'/{fn}/release')}
 
     # ---- RobotPort
     def start(self, emit):
@@ -116,9 +120,10 @@ class RosRobot(Node):
             self.pub_say.publish(String(data=str(args.get('text', ''))))
             self._emit({'type': 'intent_started', 'id': iid, 'name': name})
             return self._emit({'type': 'intent_done', 'id': iid, 'name': name})
-        cli = self.trig[SERVICE_FOR[name]]
+        cli = self.follow.get(name) or self.trig[SERVICE_FOR[name]]
         if not cli.service_is_ready():
-            return self._emit({'type': 'intent_failed', 'id': iid, 'name': name, 'reason': 'robot bridge service not available'})
+            why = 'follow node not running' if name in self.follow else 'robot bridge service not available'
+            return self._emit({'type': 'intent_failed', 'id': iid, 'name': name, 'reason': why})
         self._emit({'type': 'intent_started', 'id': iid, 'name': name})
         if name == 'say_hi' and args.get('text'):
             self.pub_say.publish(String(data=str(args['text'])))

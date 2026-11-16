@@ -1,0 +1,185 @@
+# =============================================================================
+# GUARDRAILS FOR LEUKERBAD THERME — the operator's document
+# =============================================================================
+# This file is the spa's instruction to the robot. It is meant to be read and
+# signed by the person responsible for guest safety, not only by an engineer.
+#
+# Three rules govern how it is read:
+#
+#   1. CONFIG CAN ONLY TIGHTEN. The robot's own firmware caps and the bridge's
+#      limits sit underneath every number here. A value here can lower a speed
+#      or forbid a place; it can never raise a speed or permit something the
+#      machine already refuses.
+#   2. ANYTHING UNSET IS FORBIDDEN, NOT ALLOWED. A zone that is not described
+#      is treated as restricted. A guest type with no rule gets the strictest
+#      rule. Silence is never permission.
+#   3. EVERY NUMBER CARRIES ITS PROVENANCE. `verified: on_site` means somebody
+#      measured it at the venue. `verified: plan` means it came from a floor
+#      plan or a walkthrough video and HAS NOT BEEN CHECKED. The robot runs
+#      with reduced speed anywhere unverified.
+#
+# Changing this file changes what a 16 kg machine does next to guests in
+# bathrobes. Review it with the same seriousness as a staff rota.
+# =============================================================================
+
+venue:
+  name: Leukerbad Therme
+  area: level-4 concourse
+  frame_origin: >
+    Outer corner of the Kasse counter. x runs along the concourse toward the
+    shop and cafe, y toward the bath entrance turnstiles. No floor tape is
+    permitted at the venue, so the frame is anchored on existing features.
+  signed_off_by: ""            # <- the spa's name here. Empty = NOT signed off.
+  signed_off_date: ""
+  # Until signed, the robot runs in the most cautious profile regardless of
+  # anything below.
+
+# -----------------------------------------------------------------------------
+# WHERE THE ROBOT MAY AND MAY NOT GO
+# -----------------------------------------------------------------------------
+# restricted: true    the robot never enters, for any reason, on anyone's say-so
+# camera_off: true    no frame is captured here at all - not even for the safety
+#                     judge. The complex forbids photography everywhere; behind
+#                     the turnstiles that is absolute.
+# requires_approval   a human must approve before the robot acts here. For a
+#                     restricted zone this only decides whether STAFF escort the
+#                     guest; the robot still never enters.
+zones:
+  reception:
+    label: Reception / Kasse
+    polygon: [[0, 0], [5, 0], [5, 4], [0, 4]]
+    speed_cap: 0.3
+    verified: plan
+
+  concourse:
+    label: Level-4 concourse
+    polygon: [[5, 0], [14, 0], [14, 4], [5, 4]]
+    speed_cap: 0.3
+    verified: plan
+
+  shop_cafe:
+    label: Souvenir shop and cafe
+    polygon: [[14, 0], [19, 0], [19, 4], [14, 4]]
+    speed_cap: 0.2
+    verified: plan
+
+  bath_entrance:
+    label: Therme entrance, in front of the turnstiles
+    polygon: [[8, 4], [12, 4], [12, 6], [8, 6]]
+    speed_cap: 0.2
+    verified: plan
+
+  pool_deck:
+    label: Pool deck, behind the turnstiles
+    polygon: [[8, 6], [14, 6], [14, 12], [8, 12]]
+    speed_cap: 0.15
+    restricted: true           # wet floor, bare feet, undressed guests
+    camera_off: true           # no photography behind the turnstiles, ever
+    requires_approval: true    # approval sends STAFF; the robot does not enter
+    reason: Wet floor and guest privacy. The robot has no ingress rating and no wet-floor traction data.
+    verified: plan
+
+  sauna_world:
+    label: Sauna world and steam baths
+    polygon: [[14, 6], [19, 6], [19, 12], [14, 12]]
+    speed_cap: 0.15
+    restricted: true
+    camera_off: true
+    reason: >
+      Heat and humidity outside the robot's and the Jetson's rated range, guests
+      undressed, and the area is 16+. Never enter, never photograph, never guide
+      a guest further than the door.
+    verified: plan
+
+  relax_level:
+    label: Relax level (level 3, barefoot zone)
+    polygon: [[0, 4], [5, 4], [5, 8], [0, 8]]
+    speed_cap: 0.15
+    restricted: true
+    camera_off: true
+    reason: Barefoot hygiene zone, and it is down a level. Staff escort only.
+    verified: plan
+
+  stairs:
+    label: Stairs and lift lobby
+    polygon: [[5, 4], [8, 4], [8, 6], [5, 6]]
+    speed_cap: 0.15
+    restricted: true
+    reason: >
+      A wheeled-leg quadruped must never approach a stairwell in a crowd. Nothing
+      in the stack detects a step, a handrail or the top of a flight.
+    verified: plan
+
+  technik:
+    label: Technik, levels 1-2, staff only
+    polygon: [[12, 4], [19, 4], [19, 6], [12, 6]]
+    speed_cap: 0.15
+    restricted: true
+    reason: Staff only - Kein Eingang.
+    verified: plan
+
+# -----------------------------------------------------------------------------
+# PEOPLE — the rules that matter most, and the ones that were missing
+# -----------------------------------------------------------------------------
+# Distances are to the nearest person the camera can see AHEAD of the robot.
+# The robot cannot see behind itself and cannot see the floor closer than about
+# 0.40 m, so these numbers are enforced together with the latch rule below.
+people:
+  # Any adult
+  slow_within_m: 2.0           # someone this close -> drop to near_person_speed
+  hold_within_m: 1.0           # someone this close -> stop moving, stay standing
+  near_person_speed: 0.15
+
+  # CHILDREN. A person under this height is treated as a child. The robot is
+  # roughly waist-height to an adult and head-height to a toddler, and the
+  # handshake gesture raises a paw to about the head height of a two-year-old.
+  child:
+    height_under_m: 1.25
+    freeze_within_m: 2.0       # a child this close -> FULL STOP, no movement at all
+    # Gestures that lift a foot or a paw are refused near a child. `greet` and
+    # `welcome` both end in a handshake and are on this list for that reason.
+    forbid_limb_gestures: true
+    # A small person who disappears at close range has almost certainly entered
+    # the blind spot UNDER the camera - they are closer, not gone. The robot
+    # keeps treating them as present for this long.
+    latch_s: 5.0
+
+  # Any person lost at close range is presumed still there for this long.
+  latch_s: 3.0
+
+  # No fresh camera frame for this long and the robot stops. A dead feed reads
+  # as danger, never as a clear path.
+  stale_frame_s: 0.5
+
+  # Crowding: when this many people are within slow_within_m, the robot stops
+  # taking new guide requests and waits rather than threading through a group.
+  crowd_count: 4
+
+# -----------------------------------------------------------------------------
+# WHAT THE ROBOT MAY DO AT ALL
+# -----------------------------------------------------------------------------
+limits:
+  max_speed: 0.4               # hard ceiling; the bridge's own cap sits under it
+  max_walk_distance_m: 2.0
+  max_tilt_deg: 15.0
+  min_battery_pct: 25          # below this it refuses new escorts
+  unverified_zone_speed: 0.15  # speed anywhere marked `verified: plan`
+
+escort:
+  max_duration_s: 240
+  check_follower_every_m: 3.0  # stop, look back, confirm the guest is still there
+  give_up_after_lost_checks: 2 # then stop, say so, and wait - never arrive alone
+  step_free_required_for: [cane, wheelchair, pram, unsteady]
+
+# Places a guest may be guided to. Anything not listed is refused, including
+# places the robot could physically reach.
+guide_destinations: [reception, concourse, shop_cafe, bath_entrance]
+
+# -----------------------------------------------------------------------------
+# WHAT HAPPENS WHEN THE ROBOT IS UNSURE
+# -----------------------------------------------------------------------------
+on_uncertainty:
+  lost_localisation: stop_and_call_staff
+  judge_unavailable: continue_with_kinematic_gate_only   # recorded as unjudged
+  link_lost_to_operator: stop
+  no_camera: stop

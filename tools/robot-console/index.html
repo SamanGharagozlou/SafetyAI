@@ -96,6 +96,73 @@
   .banner.bad { background: #3d1518; border: 1px solid #6e2b2b; color: #ffb4ab; }
   .banner.warn { background: #3a2d10; border: 1px solid #6b5420; color: #ecc48d; }
 
+  /* The command bus. Deliberately the loudest thing on the page: when a robot
+     is about to move in front of people, "what was just sent" matters more
+     than any other number here. */
+  .cmdbar {
+    margin-bottom: 14px; border-left: 4px solid var(--line);
+    transition: border-color .15s, background .15s;
+  }
+  .cmdbar.live { border-left-color: var(--accent); background: #111f2e; }
+  .cmdbar.ok   { border-left-color: var(--ok); }
+  .cmdbar.bad  { border-left-color: var(--bad); background: #2a1416; }
+  .cmd-k {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--muted); font-weight: 600;
+  }
+  .cmd-main {
+    font-size: 27px; font-weight: 700; letter-spacing: -0.02em;
+    margin: 5px 0 3px; line-height: 1.15;
+  }
+  .cmd-raw {
+    font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #8fb6dd; word-break: break-all;
+  }
+  .cmd-res { font-size: 13px; color: var(--muted); margin-top: 5px; }
+  @media (max-width: 560px) { .cmd-main { font-size: 21px; } }
+
+  /* The camera guard. Sits directly under the command bar because the two
+     answer the same question from opposite ends: what did we just ask for,
+     and will the robot be allowed to do it. */
+  .guardbar { margin-bottom: 14px; border-left: 4px solid var(--line); }
+  .guardbar.go     { border-left-color: var(--ok); }
+  .guardbar.slow   { border-left-color: #c8a33a; }
+  .guardbar.hold   { border-left-color: #d8862a; background: #241a10; }
+  .guardbar.freeze { border-left-color: var(--bad); background: #2a1416; }
+  .g-row { display: flex; align-items: baseline; gap: 10px; margin: 5px 0 3px; }
+  .g-state { font-size: 23px; font-weight: 700; letter-spacing: -0.01em; }
+  .g-dist { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #8fb6dd; }
+  .g-child {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: #0b0d10; background: var(--bad);
+    padding: 2px 6px; border-radius: 3px;
+  }
+  .g-escort { margin-top: 9px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .g-escort-row { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+  .g-escort-phase {
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--accent);
+  }
+  .g-escort-note { font-size: 12.5px; color: var(--muted); }
+  .g-escort-btns { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+  .mini {
+    font-size: 12px; padding: 5px 9px; background: #16202c;
+    color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
+    cursor: pointer;
+  }
+  .mini:hover { background: #1d2a39; }
+  .mini.bad { border-color: #6b2b30; color: #ffb3b8; }
+
+  #meter {
+    height: 12px; background: #0a0d12; border: 1px solid var(--line);
+    border-radius: 6px; overflow: hidden;
+  }
+  #meter-fill {
+    height: 100%; width: 0%; background: var(--ok);
+    transition: width .07s linear, background .2s;
+  }
+  #meter-fill.loud { background: var(--warn); }
+
   #transcript, #analysis {
     max-height: 300px; overflow-y: auto; font-size: 14px;
     background: #0a0d12; border: 1px solid var(--line); border-radius: 9px;
@@ -124,6 +191,7 @@
   .lat.fast { background: #10301a; color: #5fd97a; }
   .lat.mid  { background: #35290d; color: #e3b341; }
   .lat.slow { background: #3d1518; color: #ff8b82; }
+  .lat.cont { background: #1c2230; color: var(--muted); }
   #log {
     font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
     background: #0a0d12; border: 1px solid var(--line); border-radius: 9px;
@@ -133,6 +201,23 @@
   .log-ok { color: var(--ok); }
   .log-err { color: var(--bad); }
   .log-send { color: var(--accent); }
+
+  /* Keyboard help overlay */
+  #kbd-help { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 90;
+              display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .kbd-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+               padding: 22px; max-width: 760px; width: 100%; max-height: 86vh; overflow: auto; }
+  .kbd-panel h3 { margin: 0 0 14px; font-size: 17px; }
+  .kbd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+  .kbd-group h4 { margin: 0 0 7px; font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+  .kbd-group div { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; font-size: 13px; }
+  .kbd-group div span { color: var(--muted); }
+  kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-width: 2px;
+        border-radius: 5px; padding: 1px 6px; font: 600 11px ui-monospace, monospace; color: var(--ink); }
+  .kbd-foot { color: var(--muted); font-size: 12px; margin: 14px 0 0; line-height: 1.5; }
+  .kb { position: absolute; top: 3px; right: 5px; font: 600 9px ui-monospace, monospace;
+        color: var(--muted); opacity: .75; pointer-events: none; }
+  #gestures button, button[data-move] { position: relative; }
 </style>
 </head>
 <body>
@@ -141,10 +226,83 @@
   <h1>D1 Robot Console</h1>
   <span class="pill"><span class="dot" id="link-dot"></span><span id="link-text">connecting…</span></span>
   <button id="talk">🎙 Talk to robot</button>
+  <button id="kbd-toggle" title="Keyboard controls (press ?)">⌨ Keys</button>
   <button class="stop" id="stop">■ STOP</button>
 </div>
 
+<!-- Shown on ? or the Keys button. Space and Escape are listed first because
+     they are the two an operator may need before they have read anything. -->
+<div id="kbd-help" style="display:none">
+  <div class="kbd-panel">
+    <h3>Keyboard controls</h3>
+    <div class="kbd-grid">
+      <div class="kbd-group">
+        <h4>Stop</h4>
+        <div><kbd>Space</kbd><span>STOP</span></div>
+        <div><kbd>Esc</kbd><span>STOP — works even while typing</span></div>
+      </div>
+      <div class="kbd-group">
+        <h4>Move</h4>
+        <div><kbd>W</kbd><kbd>↑</kbd><span>forward</span></div>
+        <div><kbd>S</kbd><kbd>↓</kbd><span>backward</span></div>
+        <div><kbd>Q</kbd><kbd>←</kbd><span>turn left</span></div>
+        <div><kbd>E</kbd><kbd>→</kbd><span>turn right</span></div>
+        <div><kbd>A</kbd><span>strafe left</span></div>
+        <div><kbd>D</kbd><span>strafe right</span></div>
+        <div><kbd>Enter</kbd><span>walk the measured distance</span></div>
+      </div>
+      <div class="kbd-group">
+        <h4>Posture</h4>
+        <div><kbd>T</kbd><span>stand up</span></div>
+        <div><kbd>G</kbd><span>sit / lie down</span></div>
+        <div><kbd>H</kbd><span>shake hand</span></div>
+      </div>
+      <div class="kbd-group">
+        <h4>Gestures</h4>
+        <div><kbd>1</kbd>–<kbd>9</kbd><kbd>0</kbd><span>the ten gestures, in the order shown</span></div>
+      </div>
+      <div class="kbd-group">
+        <h4>Tuning</h4>
+        <div><kbd>[</kbd><kbd>]</kbd><span>duration down / up</span></div>
+        <div><kbd>-</kbd><kbd>=</kbd><span>speed down / up</span></div>
+      </div>
+    </div>
+    <p class="kbd-foot">Each key clicks the control on screen, so the same limits apply:
+      moves auto-stop when the duration elapses, and anything needing a standing
+      robot still refuses. Holding a key does <strong>not</strong> repeat the command.</p>
+    <p class="kbd-foot">Press <kbd>?</kbd> or click outside to close.</p>
+  </div>
+</div>
+
 <div class="banner" id="banner"></div>
+
+<div class="panel cmdbar" id="cmdbar">
+  <div class="cmd-k" id="cmd-k">Command to robot</div>
+  <div class="cmd-main" id="cmd-main">— idle —</div>
+  <div class="cmd-raw" id="cmd-raw"></div>
+  <div class="cmd-res" id="cmd-res"></div>
+</div>
+
+<div class="panel guardbar" id="guardbar" hidden>
+  <div class="cmd-k" id="g-k">Camera guard</div>
+  <div class="g-row">
+    <span class="g-state" id="g-state">—</span>
+    <span class="g-dist" id="g-dist"></span>
+    <span class="g-child" id="g-child" hidden>child</span>
+  </div>
+  <div class="cmd-res" id="g-reason"></div>
+  <div class="g-escort" id="g-escort" hidden>
+    <div class="g-escort-row">
+      <span class="g-escort-phase" id="e-phase">idle</span>
+      <span class="g-escort-note" id="e-note"></span>
+    </div>
+    <div class="g-escort-btns">
+      <button id="e-lead-3" class="mini">Lead 3 m</button>
+      <button id="e-lead-6" class="mini">Lead 6 m</button>
+      <button id="e-stop" class="mini bad">Stop escort</button>
+    </div>
+  </div>
+</div>
 
 <div class="panel" style="margin-bottom:14px">
   <h2>Status</h2>
@@ -183,12 +341,12 @@
   <div class="panel">
     <h2>Move</h2>
     <div class="dpad">
-      <button class="act needs-stand" data-move="strafe_left">⇦<br>strafe</button>
-      <button class="act needs-stand" data-move="forward">▲<br>fwd</button>
-      <button class="act needs-stand" data-move="strafe_right">⇨<br>strafe</button>
-      <button class="act needs-stand" data-move="turn_left">↺<br>turn</button>
-      <button class="act needs-stand" data-move="backward">▼<br>back</button>
-      <button class="act needs-stand" data-move="turn_right">↻<br>turn</button>
+      <button class="act needs-stand" data-move="strafe_left">⇦<br>strafe<b class="kb">A</b></button>
+      <button class="act needs-stand" data-move="forward">▲<br>fwd<b class="kb">W</b></button>
+      <button class="act needs-stand" data-move="strafe_right">⇨<br>strafe<b class="kb">D</b></button>
+      <button class="act needs-stand" data-move="turn_left">↺<br>turn<b class="kb">Q</b></button>
+      <button class="act needs-stand" data-move="backward">▼<br>back<b class="kb">S</b></button>
+      <button class="act needs-stand" data-move="turn_right">↻<br>turn<b class="kb">E</b></button>
     </div>
     <div style="margin-top:14px">
       <label class="field">Duration <b id="dur-v">1.5</b> s <span style="opacity:.6">(0.1–5)</span></label>
@@ -229,6 +387,57 @@
     Voice <span id="voice-state" style="text-transform:none;letter-spacing:0;color:var(--accent)"></span>
     <button id="analyse" style="float:right;padding:5px 11px;font-size:12px">⟲ Analyse last call</button>
   </h2>
+  <div class="row" style="margin-bottom:12px;align-items:center">
+    <div style="flex:2">
+      <label class="field">Speaker <span id="spk-note" style="color:var(--muted)"></span></label>
+      <select id="spkpick"><option>…</option></select>
+    </div>
+  </div>
+
+  <div id="ios-audio" class="note" style="display:none;border-left:3px solid #c8a33a">
+    <b>No phone can send this call to a Bluetooth speaker.</b> Confirmed on
+    iPhone and Android, Safari and Chrome. It is a Bluetooth limitation, not a
+    browser one — see below. Fastest fix: <b>plug the speaker in with a cable</b>
+    (AUX or USB-C). Otherwise run the voice from the Mac and keep the phone for
+    the robot controls.
+  </div>
+
+  <div class="note"><b>Pick both before you press Talk.</b> Names appear once
+  the microphone has been allowed, and a speaker paired later shows up on its
+  own. Phones list no output devices at all — iOS has no
+  <code>setSinkId</code>, and Chrome on Android does not expose output
+  selection either, because the OS owns the routing.
+  <br><br>
+  <b>Bluetooth speaker plays music but not the call?</b> The profile is the
+  problem, not the phone. <b>A2DP carries audio one way only</b> — it is a
+  playback profile and has no microphone channel, which is why music is
+  flawless. A call needs two directions at once, so the phone switches to
+  <b>HFP</b>, and most Bluetooth <i>speakers</i> implement no usable HFP. With
+  no two-way route available the phone falls back to its own speaker and mic.
+  Same on Android as on iOS, for the same reason.
+  <br><br>
+  <b>What actually works.</b> A cable — AUX or USB-C — sidesteps Bluetooth
+  entirely and is the quickest fix. A Bluetooth <i>headset</i> has HFP and will
+  route, at mono 8–16&nbsp;kHz. Or run voice from a desktop OS: macOS, Windows
+  and Linux route input and output independently, so an A2DP speaker plus any
+  mic works, and the dropdown above becomes usable. Releasing the mic between
+  turns would restore A2DP on a phone but costs barge-in, which is a worse
+  trade for a greeter.</div>
+
+  <div class="row" style="margin-bottom:12px;align-items:center">
+    <div style="flex:2">
+      <label class="field">Microphone</label>
+      <select id="micpick"><option>…</option></select>
+    </div>
+    <div style="flex:1.4">
+      <label class="field">Input level <span id="lvl-txt" style="color:var(--muted)">— silent</span></label>
+      <div id="meter"><div id="meter-fill"></div></div>
+    </div>
+  </div>
+
+  <div id="moments"></div>
+  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:600;margin:4px 0 8px">Droid mode — sound plays from this laptop</div>
+  <div id="fun"></div>
   <div id="transcript"></div>
   <div id="analysis" style="display:none"></div>
   <div class="note">Every tool the assistant invokes appears above <b>as it is chosen</b>, with the delay measured from the moment you stopped speaking — <span class="lat fast">green</span> is snappy, <span class="lat mid">amber</span> is noticeable, <span class="lat slow">red</span> feels broken. <b>Analyse last call</b> pulls Vapi's own server-side timings, which show where the time really went.</div>
@@ -301,6 +510,8 @@ async function poll() {
     $('s-batt').textContent = d.battery_pct != null ? d.battery_pct + '%' : '—'
     $('s-last').textContent = d.last_action ?? '—'
 
+    commandFromRobotState(d)
+
     if (d.battery_pct != null && d.battery_pct < 25) {
       banner('warn', `Battery ${d.battery_pct}%. The robot can cut power outright when low, which drops it — and the Jetson is powered from this same battery.`)
     }
@@ -344,6 +555,21 @@ function syncButtons() {
 
 async function send(name, args = {}, { retry = true } = {}) {
   state.busy = true; syncButtons()
+
+  // A WATCHDOG ON OUR OWN BUSY FLAG. If anything between here and the finally
+  // throws - or a request never settles - `busy` stays true and EVERY control
+  // is disabled for good with no visible reason. That looks exactly like "the
+  // robot stopped responding", which is the worst possible misdirection.
+  const unstick = setTimeout(() => {
+    if (state.busy) {
+      state.busy = false; syncButtons()
+      log('   (controls unstuck - a request never settled)', 'log-err')
+    }
+  }, 45000)
+
+  // Rendering must never be able to prevent sending. showCommand() used to sit
+  // outside the try, so one display error killed the whole console silently.
+  try { showCommand(name, args, 'button') } catch (e) { log(`   (display error: ${e.message})`, 'log-err') }
   log(`→ ${name} ${Object.keys(args).length ? JSON.stringify(args) : ''}`, 'log-send')
   try {
     const r = await fetch('/api/tool', {
@@ -353,6 +579,7 @@ async function send(name, args = {}, { retry = true } = {}) {
     const d = await r.json()
     const result = d.result ?? d.error ?? 'no response'
     const refused = /not standing/i.test(result)
+    showCommandResult(result)
     log(`   ${result}`, d.failed || refused ? 'log-err' : 'log-ok')
 
     // The exact recovery the robot's own error message asks for.
@@ -367,13 +594,17 @@ async function send(name, args = {}, { retry = true } = {}) {
   } catch (e) {
     log(`   request failed: ${e.message} — the robot may still be moving, press STOP`, 'log-err')
   } finally {
+    clearTimeout(unstick)
     state.busy = false; syncButtons(); poll()
   }
 }
 
 // Gestures
+// The digit that fires each gesture is printed on it. A shortcut nobody can
+// see is a shortcut nobody uses, and the overlay is the wrong place to look
+// when a guest is standing in front of the robot.
 $('gestures').innerHTML = GESTURES
-  .map(g => `<button class="act needs-stand" data-tool="do_gesture" data-args='{"gesture":"${g}"}'>${g.replace('_',' ')}</button>`)
+  .map((g, i) => `<button class="act needs-stand" data-tool="do_gesture" data-args='{"gesture":"${g}"}'>${g.replace('_',' ')}<b class="kb">${(i + 1) % 10}</b></button>`)
   .join('')
 
 // Generic tool buttons
@@ -407,10 +638,114 @@ $('dur').addEventListener('input', e => $('dur-v').textContent = Number(e.target
 $('spd').addEventListener('input', e => $('spd-v').textContent = Number(e.target.value).toFixed(2))
 $('autostand').addEventListener('change', syncButtons)
 
-// Spacebar = stop. A physical robot needs a reflex that is not "find the mouse".
+/* --------------------------- KEYBOARD TELEOP ---------------------------- *
+ * Every binding resolves to a real button and then clicks it. Nothing here
+ * calls send() directly, and that is the whole safety argument: the keyboard
+ * inherits the disabled state, the needs-stand gating, the busy lock and the
+ * auto-stand-up retry exactly as the mouse has them. A second command path
+ * with its own rules is how a console ends up moving a robot its own UI
+ * believes is stopped.
+ */
+const KEYS = {
+  // movement - the d-pad, in two layouts so neither hand has to learn the other
+  KeyW: '[data-move="forward"]',      ArrowUp:    '[data-move="forward"]',
+  KeyS: '[data-move="backward"]',     ArrowDown:  '[data-move="backward"]',
+  KeyQ: '[data-move="turn_left"]',    ArrowLeft:  '[data-move="turn_left"]',
+  KeyE: '[data-move="turn_right"]',   ArrowRight: '[data-move="turn_right"]',
+  KeyA: '[data-move="strafe_left"]',
+  KeyD: '[data-move="strafe_right"]',
+  // posture
+  KeyT: '[data-args*="stand_up"]',
+  KeyG: '[data-args*="lie_down"]',
+  KeyH: '[data-args*="shake_hand"]',
+  // the measured walk
+  Enter: '#walk',
+}
+// Digits pick a gesture by position: 1..9 then 0 for the tenth.
+const GESTURE_KEYS = ['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0']
+
+// Sliders, nudged from the keyboard so speed can be trimmed without the mouse.
+const nudge = (id, delta) => {
+  const el = $(id)
+  const step = Number(el.step), min = Number(el.min), max = Number(el.max)
+  el.value = Math.min(max, Math.max(min, Number(el.value) + delta * step)).toFixed(2)
+  el.dispatchEvent(new Event('input'))
+  flash(el)
+}
+
+// Which control just fired. Without this the keyboard is invisible: you press
+// a key, the robot moves, and nothing on screen says which control you hit.
+function flash(el) {
+  if (!el) return
+  el.style.transition = 'box-shadow .12s'
+  el.style.boxShadow = '0 0 0 2px var(--accent)'
+  setTimeout(() => { el.style.boxShadow = '' }, 180)
+}
+
+// A text field must keep its keystrokes. A range or checkbox must not: those
+// are the ones sitting under the operator's fingers mid-demo.
+const isTyping = el => {
+  if (!el) return false
+  if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true
+  return el.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button'].includes(el.type)
+}
+
 document.addEventListener('keydown', e => {
-  if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); $('stop').click() }
+  // Escape is the one key that outranks everything, including a focused text
+  // field. If someone is typing when the robot starts walking at a guest, the
+  // reflex must not be "click out of the box first".
+  if (e.key === 'Escape') { e.preventDefault(); flash($('stop')); $('stop').click(); return }
+
+  // Leave the browser's own shortcuts alone - Cmd+R, Ctrl+L, Alt+Tab.
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  if (isTyping(e.target)) return
+
+  // STOP. Allowed to repeat: holding it is a reasonable panic response.
+  if (e.code === 'Space') { e.preventDefault(); flash($('stop')); $('stop').click(); return }
+
+  // Autorepeat must never queue commands. Holding W for a second would
+  // otherwise fire ~30 moves that drain out of the busy lock one by one,
+  // long after the key came up.
+  if (e.repeat) return
+
+  if (e.key === '?') { e.preventDefault(); toggleKbdHelp(); return }
+
+  // Enter belongs to whatever the operator has tabbed to. Without this,
+  // focusing "Stand up" and pressing Enter would run Walk instead, because
+  // preventDefault below suppresses the button's own activation.
+  if (e.key === 'Enter' && e.target?.tagName === 'BUTTON') return
+
+  // Arrow keys belong to a focused slider first, so it stays adjustable.
+  if (e.target?.type === 'range' && e.key.startsWith('Arrow')) return
+
+  if (e.code === 'BracketLeft')  { e.preventDefault(); return nudge('dur', -1) }
+  if (e.code === 'BracketRight') { e.preventDefault(); return nudge('dur', +1) }
+  if (e.code === 'Minus')        { e.preventDefault(); return nudge('spd', -1) }
+  if (e.code === 'Equal')        { e.preventDefault(); return nudge('spd', +1) }
+
+  const gi = GESTURE_KEYS.indexOf(e.code)
+  const sel = gi >= 0
+    ? `#gestures button:nth-of-type(${gi + 1})`
+    : KEYS[e.code]
+  if (!sel) return
+
+  const btn = document.querySelector(sel)
+  if (!btn) return
+  e.preventDefault()
+  flash(btn)
+  // A disabled button is clicked anyway on purpose: the click handler ignores
+  // it, but the operator gets the flash and sees WHICH control refused,
+  // instead of pressing a key and getting silence.
+  if (btn.disabled) { log(`   ${e.code}: that control is unavailable right now`, 'log-err'); return }
+  btn.click()
 })
+
+function toggleKbdHelp() {
+  const el = $('kbd-help')
+  el.style.display = el.style.display === 'none' ? '' : 'none'
+}
+$('kbd-toggle').addEventListener('click', toggleKbdHelp)
+$('kbd-help').addEventListener('click', e => { if (e.target.id === 'kbd-help') toggleKbdHelp() })
 
 /* ------------------------------ VOICE ------------------------------ *
  * The assistant already holds all 7 robot tools, each with the Jetson URL and
@@ -432,14 +767,372 @@ const MIC_HINT_MS = 7000
 
 let vapi = null, voiceLive = false, connectTimer, hintTimer
 
+/**
+ * PRELOAD, STARTED AT PAGE LOAD, NOT AT CLICK.
+ *
+ * Fetching and parsing the SDK bundle off a CDN is seconds of work, and doing
+ * it inside the click handler put all of it between the button and the first
+ * word. The same goes for the config fetch. Both are started here, the moment
+ * the page loads, so by the time anyone presses the button they are long done
+ * and the click only pays for the parts that genuinely cannot start earlier.
+ */
+const sdkPromise = import(VOICE_SDK).catch(e => ({ __error: e }))
+const configPromise = fetch('/api/voice-config').then(r => r.json()).catch(e => ({ __error: e }))
+
+/** Phase timings, so "it is slow" becomes a number we can act on. */
+let t0 = 0
+const mark = label => {
+  const ms = Math.round(performance.now() - t0)
+  log(`   ⏱ ${label}: ${ms}ms`, ms > 1500 ? 'log-err' : 'log-ok')
+  return ms
+}
+
 function voiceState(text, cls = '') {
   $('voice-state').textContent = text ? '— ' + text : ''
   $('voice-state').style.color = cls === 'err' ? 'var(--bad)' : cls === 'ok' ? 'var(--ok)' : 'var(--accent)'
 }
 
-/** When the user last stopped speaking. Every latency below is measured from here. */
+/**
+ * When the user last stopped speaking. Latency is measured from here, but ONLY
+ * for the FIRST thing the robot does in a turn.
+ *
+ * The earlier version timed every sentence from the same mark, so a four
+ * sentence answer read "2810ms, 4332ms, 6566ms, 11266ms" and looked like the
+ * robot was getting slower and slower. It was not - those were just later
+ * sentences in one reply, and the only number that matters to a person
+ * standing there is how long the SILENCE lasted before the robot started.
+ */
 let userDoneAt = null
+let turnMeasured = false
 const since = () => userDoneAt === null ? null : Math.round(performance.now() - userDoneAt)
+/** Consume the timer: the first caller in a turn gets the number, the rest get null. */
+function sinceOnce() {
+  if (turnMeasured) return null
+  turnMeasured = true
+  return since()
+}
+
+/* ---------------- microphone: pick it, and PROVE it works ----------------
+ *
+ * Chrome keeps its OWN per-site microphone choice, independent of the macOS
+ * default - and a tunnel URL is a brand new origin with no choice recorded.
+ * So a machine whose system default is the right mic can still hand the page
+ * a different one, silently. That is indistinguishable from "the robot is
+ * ignoring me" unless you can SEE the input level, which is what the meter
+ * below is for: if it moves, audio is reaching the browser and the problem is
+ * downstream; if it does not, it is the device.
+ */
+const MIC_KEY = 'd1-console-mic'
+let meterStream = null, meterCtx = null, meterRAF = null
+
+async function listMics() {
+  try {
+    // Labels are empty until permission has been granted once.
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const mics = devices.filter(d => d.kind === 'audioinput')
+    const saved = localStorage.getItem(MIC_KEY)
+    $('micpick').innerHTML = mics.map(m =>
+      `<option value="${m.deviceId}"${m.deviceId === saved ? ' selected' : ''}>${esc(m.label || 'microphone ' + m.deviceId.slice(0, 6))}</option>`
+    ).join('') || '<option value="">no microphone found</option>'
+    return mics
+  } catch (e) {
+    log(`   could not list microphones: ${e.message}`, 'log-err')
+    return []
+  }
+}
+
+async function startMeter() {
+  stopMeter()
+  const deviceId = $('micpick').value
+  try {
+    // Echo cancellation requested explicitly: the robot's voice comes out of
+    // the speakers and straight back into a lapel mic inches away, which the
+    // barge-in detector hears as the guest talking and uses to cut the robot
+    // off mid-sentence. Browsers do not always enable EC for an external USB
+    // device the way they do for the built-in mic.
+    const tuning = { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    meterStream = await navigator.mediaDevices.getUserMedia({
+      audio: deviceId ? { deviceId: { exact: deviceId }, ...tuning } : tuning,
+    })
+    meterCtx = new AudioContext()
+    // Chrome starts an AudioContext SUSPENDED when it is created without a
+    // user gesture, and a suspended context feeds the analyser nothing - so
+    // the meter read "silent" while speech was demonstrably being
+    // transcribed. Resume it, and resume again on the first click in case
+    // this construction happened before any interaction.
+    if (meterCtx.state === 'suspended') {
+      meterCtx.resume().catch(() => {})
+      document.addEventListener('click', () => meterCtx?.resume().catch(() => {}), { once: true })
+    }
+    const src = meterCtx.createMediaStreamSource(meterStream)
+    const an = meterCtx.createAnalyser()
+    an.fftSize = 512
+    src.connect(an)
+    const buf = new Uint8Array(an.fftSize)
+    let peak = 0
+    const tick = () => {
+      an.getByteTimeDomainData(buf)
+      let max = 0
+      for (const v of buf) max = Math.max(max, Math.abs(v - 128) / 128)
+      peak = Math.max(peak * 0.9, max)
+      const pct = Math.min(100, Math.round(peak * 220))
+      $('meter-fill').style.width = pct + '%'
+      $('meter-fill').className = pct > 85 ? 'loud' : ''
+      $('lvl-txt').textContent = pct < 3 ? '— silent' : pct > 85 ? 'loud (clipping?)' : 'hearing you'
+      $('lvl-txt').style.color = pct < 3 ? 'var(--muted)' : 'var(--ok)'
+      meterRAF = requestAnimationFrame(tick)
+    }
+    tick()
+    // Labels (and, in Chrome, the audiooutput entries at all) only appear
+    // once permission has been granted, so re-list BOTH here.
+    await listMics()
+    await listSpeakers()
+  } catch (e) {
+    $('lvl-txt').textContent = 'cannot open this mic'
+    $('lvl-txt').style.color = 'var(--bad)'
+    log(`   microphone "${$('micpick').selectedOptions[0]?.textContent}" would not open: ${e.message}`, 'log-err')
+  }
+}
+
+function stopMeter() {
+  if (meterRAF) cancelAnimationFrame(meterRAF)
+  try { meterStream?.getTracks().forEach(t => t.stop()) } catch {}
+  try { meterCtx?.close() } catch {}
+  meterStream = meterCtx = meterRAF = null
+}
+
+/*
+ * SPEAKER CHOICE, and why a Bluetooth speaker gets dropped the moment the call
+ * starts.
+ *
+ * The symptom: music plays over the Bluetooth speaker perfectly, then you open
+ * this page and start a call and the voice comes out of the phone instead.
+ *
+ * It is not a bug in the page. Playing music needs output only, so iOS uses
+ * A2DP - stereo, high quality. The moment anything calls getUserMedia, iOS
+ * switches the audio session to two-way communication, and a two-way route
+ * over Bluetooth needs HFP. Most Bluetooth SPEAKERS implement A2DP and no
+ * usable HFP, so there is no bidirectional route to be had and iOS falls back
+ * to the built-in speaker and mic. Nothing in a web page can override that -
+ * iOS Safari does not even enumerate audio output devices, so there is no
+ * handle to grab.
+ *
+ * What does work:
+ *   - this picker, on desktop Chrome/Edge and Android Chrome, where output
+ *     devices are selectable;
+ *   - a Bluetooth HEADSET rather than a speaker, which has HFP - routed, but
+ *     mono and 8-16 kHz;
+ *   - running the call on a Mac: macOS routes input and output independently,
+ *     so an A2DP speaker plus a separate mic is fine. That is the setup to use
+ *     for a demo that has to sound good.
+ */
+const SPK_KEY = 'd1-console-speaker'
+
+function outputSelectable() {
+  // Chrome/Edge expose setSinkId on media elements; Safari and iOS do not.
+  return typeof HTMLMediaElement !== 'undefined'
+    && 'setSinkId' in HTMLMediaElement.prototype
+}
+
+async function listSpeakers() {
+  const sel = $('spkpick')
+  if (!outputSelectable()) {
+    sel.innerHTML = '<option value="">not selectable on this device</option>'
+    sel.disabled = true
+    $('spk-note').textContent = '— iOS chooses this itself'
+    // Say it where it will be read, rather than leaving it to a paragraph.
+    $('ios-audio').style.display = ''
+    return []
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const outs = devices.filter(d => d.kind === 'audiooutput')
+    const saved = localStorage.getItem(SPK_KEY)
+    sel.innerHTML = outs.map(d =>
+      `<option value="${d.deviceId}"${d.deviceId === saved ? ' selected' : ''}>${esc(d.label || 'output ' + d.deviceId.slice(0, 6))}</option>`
+    ).join('') || '<option value="">no output device offered by this OS</option>'
+    $('spk-note').textContent = outs.length ? '' : '— the OS is choosing'
+    // Chrome on Android HAS setSinkId but enumerates no audiooutput devices,
+    // so "selectable" is not the same as "any device to select". The callout
+    // belongs on the outcome, not on the feature test.
+    if (!outs.length) $('ios-audio').style.display = ''
+    return outs
+  } catch (e) {
+    log(`   could not list speakers: ${e.message}`, 'log-err')
+    return []
+  }
+}
+
+/** Route an in-progress call to the chosen output. */
+async function applySpeakerToCall() {
+  const deviceId = $('spkpick').value
+  if (!deviceId || !outputSelectable()) return
+  const label = $('spkpick').selectedOptions[0]?.textContent ?? deviceId
+  let routed = false
+
+  // The SDK's own call, which hands straight to Daily underneath.
+  if (vapi?.setOutputDeviceAsync) {
+    try {
+      await vapi.setOutputDeviceAsync({ outputDeviceId: deviceId })
+      routed = true
+    } catch (e) {
+      log(`   SDK would not switch output: ${e.message}`, 'log-err')
+    }
+  }
+
+  // Belt and braces: the SDK creates its own <audio> elements and a version
+  // bump could stop forwarding this, so set the sink directly too. Harmless
+  // when the call above already worked.
+  for (const el of document.querySelectorAll('audio, video')) {
+    try { await el.setSinkId(deviceId); routed = true } catch {}
+  }
+
+  log(routed ? `   audio out: ${label}` : `   could not route audio to ${label}`,
+      routed ? 'log-ok' : 'log-err')
+}
+
+$('spkpick').addEventListener('change', async () => {
+  localStorage.setItem(SPK_KEY, $('spkpick').value)
+  await applySpeakerToCall()
+})
+
+/** Point an in-progress call at the chosen device. */
+async function applyMicToCall() {
+  const deviceId = $('micpick').value
+  if (!vapi || !deviceId) return
+  try {
+    await vapi.setInputDevicesAsync({ audioDeviceId: deviceId })
+    log(`   call switched to: ${$('micpick').selectedOptions[0]?.textContent}`, 'log-ok')
+  } catch (e) {
+    log(`   could not switch the call's mic: ${e.message}`, 'log-err')
+  }
+}
+
+listSpeakers()
+
+/*
+ * Re-list when the hardware changes. Connecting the Bluetooth speaker AFTER
+ * the page is open is the normal case here, and without this the dropdown
+ * keeps showing the devices that existed at load and the speaker you just
+ * paired is simply absent.
+ */
+navigator.mediaDevices?.addEventListener?.('devicechange', async () => {
+  const before = $('spkpick').value
+  await listMics()
+  await listSpeakers()
+  if ($('spkpick').value !== before) {
+    log('   audio devices changed - lists refreshed', 'log-ok')
+  }
+})
+
+$('micpick').addEventListener('change', async () => {
+  localStorage.setItem(MIC_KEY, $('micpick').value)
+  await startMeter()
+  await applyMicToCall()
+})
+
+listMics().then(startMeter)
+
+/* ------------------- the command bus at the top ------------------- */
+
+const DEST_WORDS = {
+  reception: 'the reception desk', shop: 'the shop', restaurant: 'the restaurant',
+  pizzeria: 'the pizzeria terrace', changing: 'the changing rooms',
+  pools: 'the thermal pools', sauna: 'the sauna world', elevator: 'the lift',
+}
+
+/** Tool call -> what the robot is actually about to do, in plain words. */
+function commandLabel(name, a = {}) {
+  switch (name) {
+    case 'robot_command':
+      return { stand_up: 'STAND UP', lie_down: 'SIT DOWN', shake_hand: 'SHAKE HAND', damp: 'DAMP' }[a.command] ?? `POSTURE: ${a.command}`
+    case 'do_gesture':
+      return (a.gesture === 'greet' || a.gesture === 'welcome') ? 'GREET — bow + shake hand'
+           : a.gesture === 'shake' ? 'WAVE / SHAKE'
+           : `GESTURE — ${String(a.gesture ?? '').replace('_', ' ')}`
+    case 'guide_to':
+      return `WALK TO ${DEST_WORDS[a.destination] ?? a.destination}${a.step_free ? ' (via the lift)' : ''}`.toUpperCase()
+    case 'walk_distance':
+      return `WALK ${a.distance_cm}cm ${a.direction ?? 'forward'}`.toUpperCase()
+    case 'move_robot':
+      return `MOVE ${String(a.direction ?? '').replace('_', ' ')} for ${a.duration ?? 1.5}s`.toUpperCase()
+    case 'set_gait':      return `GAIT → ${a.gait}`.toUpperCase()
+    case 'stop_robot':    return 'STOP'
+    case 'robot_status':  return 'CHECK STATUS'
+    case 'list_offerings': return 'LOOK UP WHAT WE SELL'
+    case 'list_destinations': return 'LOOK UP WHERE IT CAN WALK'
+    case 'book_treatment': return `HOLD A BOOKING — ${a.offering_id ?? ''}`.toUpperCase()
+    case 'show_payment_qr': return 'SHOW PAYMENT CODE ON SCREEN'
+    case 'call_staff':    return `CALL STAFF (${a.urgency ?? 'routine'})`.toUpperCase()
+    default:              return name.toUpperCase()
+  }
+}
+
+/** Does this command physically move the robot? Those get the loud treatment. */
+const MOVES = new Set(['robot_command', 'do_gesture', 'guide_to', 'walk_distance', 'move_robot', 'stop_robot'])
+
+let lastShownAt = 0
+function showCommand(name, args, source) {
+  lastShownAt = performance.now()
+  const bar = $('cmdbar')
+  bar.className = 'panel cmdbar live'
+  $('cmd-k').textContent = `Command to robot · ${source} · ${new Date().toLocaleTimeString()}`
+  $('cmd-main').textContent = commandLabel(name, args)
+  $('cmd-raw').textContent = `${name}(${JSON.stringify(args ?? {})})`
+  $('cmd-res').textContent = MOVES.has(name) ? 'sent — waiting for the robot…' : 'sent…'
+}
+
+function showCommandResult(text) {
+  const bad = /fail|sorry|refused|not standing|no live link/i.test(text)
+  $('cmdbar').className = 'panel cmdbar ' + (bad ? 'bad' : 'ok')
+  $('cmd-res').textContent = text
+}
+
+/**
+ * FALLBACK, and in practice the reliable path.
+ *
+ * Tool calls made by the ASSISTANT run on Vapi's servers and go straight to
+ * the robot - they never pass through this page. We were relying on Vapi
+ * echoing them to the browser as a `message`, and the shape it emits changed
+ * when we moved off realtime to a pipeline, so the command bar sat on "idle"
+ * while the simulator log showed stand_up, guide_to and robot_status all
+ * arriving perfectly.
+ *
+ * So instead of guessing that shape again, read the ROBOT's own last_action
+ * out of the status poll. The robot cannot be wrong about what it was just
+ * told to do, whoever told it.
+ */
+let lastSeenAction = null
+function commandFromRobotState(d) {
+  const a = d.last_action
+  if (!a || a === 'none' || a === lastSeenAction) return
+  lastSeenAction = a
+  // Do not stomp on a command this page sent a moment ago - that one already
+  // has richer detail (exact arguments) than last_action carries.
+  if (performance.now() - lastShownAt < 2500) return
+
+  const m = {
+    stand_up: 'STAND UP', lie_down: 'SIT DOWN', shake_hand: 'SHAKE HAND',
+    stop: 'STOP', settled: 'SETTLED DOWN BY ITSELF',
+  }
+  let label = m[a]
+  if (!label && a.startsWith('gesture ')) {
+    const g = a.slice(8)
+    label = (g === 'greet' || g === 'welcome') ? 'GREET — bow + shake hand' : `GESTURE — ${g.replace('_', ' ')}`
+  }
+  if (!label && a.startsWith('guiding to ')) label = `WALK TO ${a.slice(11).replace(/_/g, ' ')}`.toUpperCase()
+  if (!label && a.startsWith('ARRIVED at ')) label = `ARRIVED — ${a.slice(11).replace(/_/g, ' ')}`.toUpperCase()
+  if (!label && a.startsWith('walk ')) label = a.toUpperCase()
+  if (!label && a.startsWith('gait ')) label = a.toUpperCase()
+  if (!label) label = a.toUpperCase()
+
+  $('cmdbar').className = 'panel cmdbar ok'
+  $('cmd-k').textContent = `Command to robot · voice · ${new Date().toLocaleTimeString()}`
+  $('cmd-main').textContent = label
+  $('cmd-raw').textContent = `robot reports: last_action = ${a}`
+  $('cmd-res').textContent = d.standing ? 'standing' : d.ctrl_mode === 51 ? 'lying down' : 'not standing'
+  log(`→ [voice] ${a}`, 'log-send')
+}
 
 const esc = s => String(s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))
 
@@ -449,9 +1142,14 @@ function scroll() { const f = $('transcript'); f.scrollTop = f.scrollHeight }
 function say(role, text) {
   const who = role === 'assistant' ? 'robot' : 'you'
   const colour = role === 'assistant' ? 'var(--accent)' : 'var(--ink)'
-  // Time the robot's FIRST words after you stop - the "is it dead?" moment.
-  const ms = role === 'assistant' ? since() : null
-  const tag = ms === null ? '' : ` <span class="lat ${ms > 2000 ? 'slow' : ms > 1000 ? 'mid' : 'fast'}">${ms}ms to speak</span>`
+  // Only the FIRST words after you stop get a latency badge - that is the
+  // "is it dead?" silence. Later sentences in the same reply are marked as
+  // continuations, because timing them from the same mark made one normal
+  // answer look like it was degrading sentence by sentence.
+  const first = role === 'assistant' ? sinceOnce() : null
+  const tag = role !== 'assistant' ? ''
+    : first === null ? ' <span class="lat cont">…same reply</span>'
+    : ` <span class="lat ${first > 2000 ? 'slow' : first > 1000 ? 'mid' : 'fast'}">${first}ms to first word</span>`
   feed().innerHTML += `<div class="ev"><b style="color:${colour}">${who}:</b> ${esc(text)}${tag}</div>`
   scroll()
 }
@@ -473,7 +1171,8 @@ const clearPartial = () => document.getElementById('partial')?.remove()
 
 /** A tool call, rendered as a chip the moment it is chosen. */
 function toolEvent(name, args) {
-  const ms = since()
+  showCommand(name, args, 'voice')
+  const ms = sinceOnce()
   const tag = ms === null ? '' : `<span class="lat ${ms > 2500 ? 'slow' : ms > 1500 ? 'mid' : 'fast'}">${ms}ms to act</span>`
   const a = Object.keys(args ?? {}).length ? `<code>${esc(JSON.stringify(args))}</code>` : ''
   feed().innerHTML += `<div class="ev tool" id="tool-live">🔧 <b>${esc(name)}</b> ${a} ${tag}<div class="tool-res">…waiting for the robot</div></div>`
@@ -482,6 +1181,7 @@ function toolEvent(name, args) {
 }
 
 function toolResult(text) {
+  showCommandResult(text)
   const live = document.getElementById('tool-live')
   const failed = /fail|sorry|not standing|no live link/i.test(text)
   if (live) {
@@ -535,6 +1235,7 @@ function endVoice(label, cls) {
 }
 
 async function startVoice() {
+  t0 = performance.now()          // the clock the person actually experiences
   $('voice-panel').style.display = 'block'
   voiceState('connecting…')
   log('→ starting voice call', 'log-send')
@@ -548,17 +1249,29 @@ async function startVoice() {
   }, CONNECT_TIMEOUT_MS)
   hintTimer = setTimeout(() => voiceState('waiting for microphone permission — choose Allow'), MIC_HINT_MS)
 
-  try {
-    const probe = await navigator.mediaDevices.getUserMedia({ audio: true })
-    probe.getTracks().forEach(t => t.stop())   // release at once, or the SDK publishes a dead track
-    clearTimeout(hintTimer)
-  } catch {
-    endVoice('microphone blocked', 'err')
-    return log('   microphone access denied — the buttons still work', 'log-err')
-  }
+  // The mic probe runs IN PARALLEL with the already-preloaded SDK and config.
+  // These used to be serial, so the wait was the SUM of all three rather than
+  // the longest one.
+  const chosenMic = $('micpick').value
+  const micPromise = navigator.mediaDevices
+    .getUserMedia({ audio: chosenMic
+      ? { deviceId: { exact: chosenMic }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      : { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+    .then(s => { s.getTracks().forEach(t => t.stop()); return true })   // release at once, or the SDK publishes a dead track
+    .catch(() => false)
 
   try {
-    const { publicKey, assistantId } = await (await fetch('/api/voice-config')).json()
+    const [micOk, mod, cfg] = await Promise.all([micPromise, sdkPromise, configPromise])
+    clearTimeout(hintTimer)
+    mark('mic + sdk + config ready')
+
+    if (!micOk) {
+      endVoice('microphone blocked', 'err')
+      return log('   microphone access denied — the buttons still work', 'log-err')
+    }
+    if (mod?.__error) throw new Error('SDK failed to load: ' + mod.__error)
+    if (cfg?.__error) throw new Error('config failed to load: ' + cfg.__error)
+    const { publicKey, assistantId } = cfg
 
     /**
      * The CDN build is CommonJS wrapped as ESM, so `default` is the CJS
@@ -568,7 +1281,6 @@ async function startVoice() {
      * package resolves one level shallower, so handle both rather than pin to
      * whichever the CDN happens to emit today.
      */
-    const mod = await import(VOICE_SDK)
     const Vapi = [mod.default?.default, mod.default, mod.Vapi, mod].find(c => typeof c === 'function')
     if (!Vapi) throw new Error('could not find the Vapi constructor in the SDK module')
     vapi = new Vapi(publicKey)
@@ -579,8 +1291,12 @@ async function startVoice() {
       $('talk').textContent = '⏹ End call'
       $('talk').classList.add('primary')
       voiceState('live — speak', 'ok')
-      log('   voice call live', 'log-ok')
+      mark('CALL LIVE (click → ready to speak)')
       banner(null)
+      // Chrome's per-site default may not be the devices you chose, so tell
+      // the call explicitly once it is up - both directions.
+      applyMicToCall()
+      applySpeakerToCall()
     })
     vapi.on('call-end', () => { endVoice('call ended'); log('   voice call ended', 'log-ok') })
     vapi.on('call-start-failed', () => { endVoice('connect failed', 'err'); log('   voice connect failed', 'log-err') })
@@ -607,7 +1323,7 @@ async function startVoice() {
         if (m.transcriptType === 'partial') return showPartial(role, m.transcript.trim())
         if (m.transcriptType === 'final') {
           clearPartial()
-          if (role === 'user') userDoneAt = performance.now()   // start the clock
+          if (role === 'user') { userDoneAt = performance.now(); turnMeasured = false }   // start a fresh clock for this turn
           say(role, m.transcript.trim())
           return
         }
@@ -640,6 +1356,244 @@ async function startVoice() {
   }
 }
 
+/**
+ * One-press greet and sales moments.
+ *
+ * Each is a gesture plus a line, because out front the MOVEMENT is what stops
+ * someone and the words only land afterwards. The gesture always fires (it
+ * goes through the proxy and does not need a call); the line needs a live
+ * call.
+ *
+ * CAVEAT, surfaced rather than hidden: Vapi's say() is documented as
+ * unsupported on realtime / GPT-Live style assistants, and this assistant is
+ * OpenAI Realtime. So we try say(), then fall back to injecting a user turn
+ * with send(), and if BOTH are rejected the log says so plainly instead of
+ * leaving a button that looks like it worked.
+ */
+const MOMENTS = [
+  { label: '👋 Hook a passer-by', gesture: 'greet',
+    say: 'Oh, hello! Fancy a hot soak? Ten thermal pools in there, right under the mountains.' },
+  { label: '🏔 The view pitch', gesture: 'look_around',
+    say: 'Outdoor pool, snow on the peaks, forty-three degrees. That is the one people remember.' },
+  { label: '🎟 Day vs three hours', gesture: 'nod',
+    say: 'Three hours is thirty-three francs, the whole day is thirty-nine. If you are staying past lunch, take the day.' },
+  { label: '👨‍👩‍👧 Family / the slide', gesture: 'wiggle',
+    say: 'Bring the kids. The Badnerblitz is a hundred and twenty-six metres with two full loops, and under-sixes come in free.' },
+  { label: '🥐 Sunday brunch', gesture: 'tilt',
+    say: 'Sundays we do brunch and spa together, half eight to half ten, fifty-one francs. It is the best deal we have.' },
+  { label: '🧖 Sauna & hammam', gesture: 'bow',
+    say: 'There is a sauna world and a hammam too, with a garden looking straight at the mountains. Ten until seven, sixteen and over.' },
+  { label: '🚶 Walk them in', gesture: 'shake',
+    say: 'The desk is just inside. Come on, I will walk you over - stay close behind me.' },
+  { label: '🙇 Thanks, goodbye', gesture: 'bow',
+    say: 'Enjoy the water! I will be out here if you need me.' },
+]
+
+$('moments').innerHTML =
+  '<div class="btn-grid" style="margin-bottom:12px">' +
+  MOMENTS.map((m, i) => `<button class="moment" data-i="${i}" style="font-size:12.5px;padding:9px 10px;text-align:left">${m.label}</button>`).join('') +
+  '</div>'
+
+async function playMoment(i) {
+  const m = MOMENTS[i]
+  log(`→ moment: ${m.label}`, 'log-send')
+
+  // The gesture goes via the proxy, so it works with or without a live call.
+  send('do_gesture', { gesture: m.gesture })
+
+  if (!voiceLive || !vapi) {
+    log('   (no live call — gesture only. Press Talk to robot to hear the line.)', 'log-err')
+    return
+  }
+  try {
+    await vapi.say(m.say)
+    say('assistant', m.say)
+  } catch (e1) {
+    try {
+      vapi.send({ type: 'add-message', message: { role: 'user', content: `Say this to the guest, in your own voice: ${m.say}` } })
+      log('   say() unsupported here — injected it as a prompt instead', 'log-err')
+    } catch (e2) {
+      log(`   this assistant accepts neither say() nor add-message (${e1.message}). Scripted lines need the pipeline stack, not realtime.`, 'log-err')
+    }
+  }
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button.moment')
+  if (b) playMoment(Number(b.dataset.i))
+})
+
+/* ------------------------- DROID MODE -------------------------
+ *
+ * Beeps and tunes synthesised here with oscillators rather than shipped as
+ * audio files: nothing to download, nothing to license, and it works offline
+ * on a laptop outside a spa. The melody is "We Wish You a Merry Christmas",
+ * which is traditional and public domain - deliberately not a modern
+ * recorded song.
+ *
+ * This is a layer ON TOP of the voice agent, not a replacement for it. A
+ * text-to-speech voice cannot actually beep like R2-D2, so the droid noises
+ * come from here while the assistant keeps its spoken voice.
+ */
+let droidCtx = null
+const audio = () => (droidCtx ??= new AudioContext())
+
+/** One warbling droid note: a pitch that slides, which is what sells it. */
+function chirp(f0, f1, dur, type = 'square', vol = 0.18, delay = 0) {
+  const ctx = audio()
+  const t = ctx.currentTime + delay
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+  osc.type = type
+  osc.frequency.setValueAtTime(f0, t)
+  osc.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur)
+  // A short fade at each end: a square wave switched on hard clicks.
+  gain.gain.setValueAtTime(0.0001, t)
+  gain.gain.exponentialRampToValueAtTime(vol, t + 0.012)
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  osc.connect(gain); gain.connect(ctx.destination)
+  osc.start(t); osc.stop(t + dur + 0.02)
+}
+
+/** A burst of excited droid chatter. Randomised so it never repeats exactly. */
+function r2d2(n = 7) {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  let at = 0
+  for (let i = 0; i < n; i++) {
+    const f0 = 420 + Math.random() * 1500
+    const f1 = f0 * (Math.random() < 0.5 ? 0.35 + Math.random() * 0.4 : 1.6 + Math.random())
+    const dur = 0.07 + Math.random() * 0.14
+    chirp(f0, f1, dur, Math.random() < 0.25 ? 'sawtooth' : 'square', 0.16, at)
+    at += dur + 0.03 + Math.random() * 0.06
+  }
+  return at
+}
+
+const NOTE = { G3: 196, C4: 261.6, D4: 293.7, E4: 329.6, F4: 349.2, G4: 392, A4: 440, B4: 493.9, C5: 523.3, D5: 587.3, E5: 659.3 }
+
+/** "We Wish You a Merry Christmas" - traditional, public domain. */
+const CAROL = [
+  ['C4',.5],['F4',.5],['F4',.25],['G4',.25],['F4',.25],['E4',.25],['D4',.5],['D4',.5],
+  ['D4',.5],['G4',.5],['G4',.25],['A4',.25],['G4',.25],['F4',.25],['E4',.5],['C4',.5],
+  ['C4',.5],['A4',.5],['A4',.25],['B4',.25],['A4',.25],['G4',.25],['F4',.5],['D4',.5],
+  ['C4',.25],['C4',.25],['D4',.5],['G4',.5],['E4',.5],['F4',1.0],
+]
+
+/** Plays it in droid voice - square waves, so it sounds like a beeping robot. */
+function playCarol(bpm = 150) {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  const beat = 60 / bpm
+  let at = 0
+  for (const [note, beats] of CAROL) {
+    const d = beats * beat
+    chirp(NOTE[note], NOTE[note], d * 0.85, 'square', 0.13, at)
+    at += d
+  }
+  return at
+}
+
+/** Run gestures one after another, so the robot dances in time. */
+async function choreograph(steps) {
+  for (const [gesture, waitMs] of steps) {
+    send('do_gesture', { gesture }, { retry: false })
+    await new Promise(r => setTimeout(r, waitMs))
+  }
+}
+
+/* ----------------------- DOG NOISES -----------------------
+ * Synthesised, not sampled. A bark is a very short noise burst through a
+ * band-pass filter; a whine is a slow pitch bend on a triangle wave; a pant
+ * is repeated tiny noise puffs. None of it is a recording, so there is
+ * nothing to download and nothing to license.
+ */
+function noiseBurst(dur, freq, q, vol = 0.25, delay = 0, sweepTo = null) {
+  const ctx = audio()
+  const t = ctx.currentTime + delay
+  const n = Math.max(1, Math.floor(ctx.sampleRate * dur))
+  const buf = ctx.createBuffer(1, n, ctx.sampleRate)
+  const data = buf.getChannelData(0)
+  for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n)   // decaying noise
+  const src = ctx.createBufferSource(); src.buffer = buf
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(freq, t); bp.Q.value = q
+  if (sweepTo) bp.frequency.exponentialRampToValueAtTime(sweepTo, t + dur)
+  const g = ctx.createGain()
+  g.gain.setValueAtTime(vol, t)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  src.connect(bp); bp.connect(g); g.connect(ctx.destination)
+  src.start(t); src.stop(t + dur + 0.02)
+}
+
+/** "WOOF" - a low burst with a quick downward sweep, twice. */
+function bark(times = 2) {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  for (let i = 0; i < times; i++) {
+    const at = i * 0.26
+    noiseBurst(0.13, 480, 7, 0.3, at, 180)          // the bite of the bark
+    chirp(260, 90, 0.16, 'sawtooth', 0.22, at)      // the growl under it
+  }
+}
+
+/** A rising-then-falling whine, the "please?" noise. */
+function whine() {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  chirp(520, 1150, 0.42, 'triangle', 0.17, 0)
+  chirp(1150, 620, 0.5, 'triangle', 0.15, 0.42)
+}
+
+/** Happy panting: small puffs of breath. */
+function pant(n = 7) {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  for (let i = 0; i < n; i++) noiseBurst(0.09, 1300, 1.2, 0.12, i * 0.17)
+}
+
+/** A howl: long, wobbling, slowly falling. */
+function howl() {
+  const ctx = audio(); if (ctx.state === 'suspended') ctx.resume()
+  chirp(330, 620, 0.5, 'triangle', 0.2, 0)
+  chirp(620, 560, 0.8, 'triangle', 0.2, 0.5)
+  chirp(560, 240, 0.9, 'triangle', 0.18, 1.3)
+}
+
+const FUN = [
+  { label: '🐶 Woof!', run: async () => { bark(2); await choreograph([['nod', 1400]]) } },
+  { label: '🥺 Whine', run: async () => { whine(); await choreograph([['tilt', 1600]]) } },
+  { label: '😛 Happy pant', run: async () => { pant(8); await choreograph([['wiggle', 2600]]) } },
+  { label: '🐺 Howl', run: async () => { howl(); await choreograph([['look_around', 2600]]) } },
+  { label: '🎄 Christmas song', run: async () => {
+      const secs = playCarol()
+      log(`   ♪ We Wish You a Merry Christmas (${secs.toFixed(1)}s), dancing along`, 'log-ok')
+      await choreograph([['sway_circle', 4000], ['wiggle', 3500], ['nod', 3000], ['bow', 2000]])
+    } },
+  { label: '🤖 R2-D2 chatter', run: async () => {
+      r2d2(9); log('   ♪ beep boop', 'log-ok')
+      await choreograph([['tilt', 1200], ['wiggle', 1200]])
+    } },
+  { label: '🕺 Little dance', run: () => choreograph([['sway_circle', 3800], ['wiggle', 3000], ['squat', 2500], ['wiggle', 2500]]) },
+  { label: '😵 Confused droid', run: async () => {
+      chirp(900, 260, .45, 'square', .18); chirp(500, 180, .5, 'sawtooth', .14, .5)
+      await choreograph([['tilt', 1500], ['look_around', 2500]])
+    } },
+  { label: '🎉 Excited yes!', run: async () => {
+      chirp(520, 1200, .12); chirp(760, 1500, .12, 'square', .18, .14); chirp(1000, 1900, .18, 'square', .18, .28)
+      await choreograph([['wiggle', 2600], ['nod', 2000]])
+    } },
+  { label: '😴 Play dead', run: async () => {
+      chirp(700, 120, .9, 'sawtooth', .16)
+      send('robot_command', { command: 'lie_down' }, { retry: false })
+    } },
+]
+
+$('fun').innerHTML = '<div class="btn-grid">' + FUN.map((f, i) =>
+  `<button class="fun" data-i="${i}" style="font-size:12.5px;padding:9px 10px;text-align:left">${f.label}</button>`).join('') + '</div>'
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button.fun')
+  if (!b) return
+  const f = FUN[Number(b.dataset.i)]
+  log(`→ ${f.label}`, 'log-send')
+  Promise.resolve(f.run()).catch(err => log(`   ${err.message}`, 'log-err'))
+})
+
 $('analyse').addEventListener('click', analyseLastCall)
 
 $('talk').addEventListener('click', () => {
@@ -649,6 +1603,96 @@ $('talk').addEventListener('click', () => {
 
 log('console ready — spacebar is STOP', 'log-ok')
 poll()
+// The camera guard, polled faster than the status block: it is the thing that
+// changes when a person steps in front of the robot, and an operator watching
+// the dog needs it to already be on screen when they look down.
+async function pollGuard() {
+  const bar = $('guardbar')
+  try {
+    const g = await (await fetch('/api/guard')).json()
+    if (!g.configured) { bar.hidden = true; return }     // no guard, no strip
+    bar.hidden = false
+
+    const state = g.state ?? 'UNKNOWN'
+    bar.className = 'panel guardbar ' + ({
+      GO: 'go', SLOW: 'slow', HOLD: 'hold', FREEZE: 'freeze',
+    }[state] ?? 'freeze')
+
+    $('g-state').textContent = {
+      GO: 'Clear to move',
+      SLOW: 'Moving slowly',
+      HOLD: 'Holding position',
+      FREEZE: 'Stopped',
+      UNREACHABLE: 'Guard offline',
+    }[state] ?? state
+
+    $('g-dist').textContent = g.nearest_m != null
+      ? `nearest person ${g.nearest_m} m${g.latched ? ' · presumed, out of frame' : ''}`
+      : (g.people ? `${g.people} in view` : '')
+    $('g-child').hidden = !g.child_near
+    $('g-reason').textContent = g.reason ?? ''
+
+    const label = g.stale ? 'Camera guard · no feed'
+      : g.calibrated === false ? 'Camera guard · UNCALIBRATED'
+      : 'Camera guard'
+    $('g-k').textContent = label
+  } catch {
+    // Never leave a stale green strip on screen. If we cannot read the guard,
+    // say so where the operator is already looking.
+    bar.hidden = false
+    bar.className = 'panel guardbar freeze'
+    $('g-state').textContent = 'Guard unreadable'
+    $('g-dist').textContent = ''
+    $('g-child').hidden = true
+    $('g-reason').textContent = 'The console could not reach its own guard endpoint.'
+  }
+}
+
+// The escort runs its own loop on the Jetson; the console only starts, stops
+// and reports it. Deliberately NOT driven from the browser - a phone that
+// loses signal mid-escort must not leave the robot half way to the restaurant
+// with nothing watching the guest.
+async function pollEscort() {
+  const box = $('g-escort')
+  try {
+    const e = await (await fetch('/api/escort')).json()
+    if (!e.configured) { box.hidden = true; return }
+    box.hidden = false
+    $('e-phase').textContent = e.phase ?? '—'
+    const f = e.follower
+    const bits = []
+    if (e.target_cm) bits.push(`${e.walked_cm ?? 0}/${e.target_cm} cm`)
+    if (f) bits.push(`guest ${f.range_m} m, ${String(f.trend).replace('_', ' ')}`)
+    if (e.note) bits.push(e.note)
+    $('e-note').textContent = bits.join(' · ')
+  } catch {
+    box.hidden = false
+    $('e-phase').textContent = 'unreachable'
+    $('e-note').textContent = 'the console could not reach the escort service'
+  }
+}
+
+async function escort(action, distance_cm, destination) {
+  try {
+    await fetch('/api/escort', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, distance_cm, destination }),
+    })
+  } catch (error) {
+    banner('warn', `Could not reach the escort service: ${error.message ?? error}`)
+  }
+  pollEscort()
+}
+
+$('e-lead-3').onclick = () => escort('start', 300, 'the entrance')
+$('e-lead-6').onclick = () => escort('start', 600, 'the reception')
+$('e-stop').onclick = () => escort('stop')
+
+pollGuard()
+pollEscort()
+setInterval(pollGuard, 1000)
+setInterval(pollEscort, 1200)
 setInterval(poll, 2000)
 </script>
 </body>

@@ -20,6 +20,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | `ros2_ws/src/agibot_d1_bridge` | ROS 2 <-> D1 SDK: `/cmd_vel`, posture services, `/odom` (own integrated odometry), `/imu`, `/battery`, TF `odom->base_link`, `d1w_gestures` | working on robot |
 | `ros2_ws/src/d1_camera` | `rtsp_camera`: robot RTSP H.264 -> `/camera/image_raw` + `camera_info` (OpenCV/FFmpeg, CPU decode) | working; being reworked, see [docs/feature_ros2_camera.md](docs/feature_ros2_camera.md) |
 | `ros2_ws/src/human_perception` | YOLO26 person detection -> `/perception/humans/*`, diagnostics | working (PC, Docker) |
+| `ros2_ws/src/d1_follow` | Lock onto one guest (IoU tracker + OSNet re-ID), others `unknown`, dry-run `/follow/cmd_vel` | dry-run; laptop webcam test pending |
 | `ros2_ws/src/d1_depth` | Depth Anything V2 monocular metric depth -> `/camera/depth`, `/camera/points` | experimental |
 | `ros2_ws/src/d1_slam` | RTAB-Map RGB-only / RGB-D launch files | experimental, **off by default** |
 | `ros2_ws/src/d1_localization` | `map_server` + `initial_pose_localizer` on MetaCam LiDAR maps (no drift correction) | working |
@@ -29,6 +30,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | `ros2_ws/src/d1_dashboard` | Developer web UI (`:8080`): start/stop pipeline, maps, click-to-navigate, E-STOP | working |
 | `frontend/` | Visitor web app (React 19 + Vite + TS), QR join, voice via Vapi | demo mode by default; **robot mode** (`npm run dev:robot`) talks to `d1_companion`: QR join, layout of destinations, escort, Stop |
 | `tools/robot-console/` | Operator console (Node, zero deps) behind Tailscale Serve | working |
+| `clawmetry/` | Physical-AI control plane: tap + collectors + hash-chained ledger + breach correlator + Cosmos world-model gate + Vapi voice sink + operator-editable venue guardrails + dashboard (pure stdlib) | runs on the robot in front of `d1-vapi-server`, but only governs the live path while `tailscale funnel` points 443 at 8901 instead of 8090; see [clawmetry/README.md](clawmetry/README.md#live-wiring-end-to-end) |
 | `tools/` | MetaCam relay and map tools, offline evaluation scripts | dev tools |
 | `maps/` | 2D occupancy maps built from MetaCam Lite scans | see `maps/README.md` |
 | `deploy/jetson/` | systemd units (bridge, watchdog, console) for the Jetson | in use |
@@ -45,6 +47,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | Feature: ROS 2 monocular camera on the Orin | [docs/feature_ros2_camera.md](docs/feature_ros2_camera.md) |
 | Feature: SLAM and localization (visual + MetaCam LiDAR) | [docs/feature_slam_localization.md](docs/feature_slam_localization.md) |
 | Feature: privacy / GDPR face anonymization | [docs/feature_privacy_anonymization.md](docs/feature_privacy_anonymization.md) |
+| Feature: human follow (lock-on + follow) | [docs/human_follow.md](docs/human_follow.md) |
 | Robot SDK, bridge topics/services | [docs/controls.md](docs/controls.md) |
 | Jetson Orin Docker stack | [docs/jetson_stack.md](docs/jetson_stack.md) |
 | Person detection | [docs/perception.md](docs/perception.md), [docs/perception_architecture.md](docs/perception_architecture.md) |
@@ -56,6 +59,7 @@ Product and system requirements: [docs/product_requirements.md](docs/product_req
 | Companion backend API for the visitor frontend (contract + needed frontend changes) | [docs/companion_api.md](docs/companion_api.md) |
 | Frontend/voice vs robot stack | [docs/frontend_robot_integration.md](docs/frontend_robot_integration.md) |
 | Dashboard | [docs/dashboard.md](docs/dashboard.md) |
+| Observability + governance (ClawMetry control plane) | [clawmetry/README.md](clawmetry/README.md) |
 | Jetson services / watchdog | [deploy/jetson/README.md](deploy/jetson/README.md) |
 | Frontend | [frontend/README.md](frontend/README.md) |
 
