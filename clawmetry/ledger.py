@@ -46,7 +46,11 @@ KINDS = {
     "integrity",     # the ledger's own health: gaps, silence, restarts
 }
 
-ACTORS = {"guest", "staff", "agent", "gate", "robot", "system"}
+# WHO. "assistant" is the voice agent speaking, as distinct from "agent"
+# deciding to call a tool, and "vapi" is the platform reporting on itself -
+# three different authorities that a single "agent" would have blurred.
+ACTORS = {"guest", "staff", "agent", "assistant", "gate", "robot",
+          "system", "vapi"}
 
 
 def _canon(obj: dict) -> bytes:

@@ -352,6 +352,20 @@ breaches:
     obligations: []
     reportable: false
 
+  command_unattributed_to_speech:
+    severity_floor: low
+    labels: [governance, traceability]
+    obligations: [ai_act_art12_logging]
+    reportable: false
+    note: >
+      The robot acted with nothing a guest said behind it. Agent-initiated
+      motion is not forbidden - an escort carries on long after the sentence
+      that started it - so this is not an incident and no clock runs. It is
+      the attribution gap an auditor finds when they ask "who asked for
+      this?", and it belongs in the record rather than in nobody's head.
+      Only ever raised once the voice sink has delivered a real transcript:
+      without it, attribution is unknown rather than missing.
+
   silence:
     severity_floor: high
     labels: [assurance_gap, logging]

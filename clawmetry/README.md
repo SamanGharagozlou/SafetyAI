@@ -296,9 +296,10 @@ kept reappearing inside the layer itself.
 
 ## Not done
 
-- **Transcripts.** `utterance` events are defined and nothing emits them. The
-  audio never touches our hardware, so this needs Vapi server messages — and
-  arrives as the monitored party's self-report, which the dashboard labels.
+- **A restart forgets that speech is live.** `_replay()` rebuilds the breach
+  feed and the robot view from the ledger but does not re-feed the correlator,
+  so `command_unattributed_to_speech` stays silent until the first transcript
+  of the new run. Conservative in the right direction, still wrong.
 - **OTLP export to the ClawMetry dashboard.** The ledger is local.
   `CLAWMETRY_DASHBOARD_URL` in the env file is still an unfilled placeholder and
   `CLAWMETRY_OTLP` points at `127.0.0.1:4318`, where nothing listens on the

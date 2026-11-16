@@ -631,5 +631,313 @@ class TestFrameGrabber(unittest.TestCase):
         self.assertEqual((frame.MAX_W, frame.MAX_H), (640, 360))
 
 
+# ----------------------------------------------------------------------
+# The voice layer. Everything Vapi tells us about a conversation we cannot
+# otherwise see - and the rules about what we refuse to keep.
+# ----------------------------------------------------------------------
+
+def _hub(**over):
+    """A Hub with a temp ledger and nothing external configured."""
+    import argparse, server
+    d = tempfile.TemporaryDirectory()
+    a = argparse.Namespace(
+        ledger=str(Path(d.name) / "l.jsonl"), robot_id="t", speed_cap=0.4,
+        brain_url="", brain_key="", judge=False, rtsp="", venue="", compliance="",
+        zones="", body="agibot_d1w", guard="", upstream="http://127.0.0.1:1",
+        state_url="http://127.0.0.1:1", state_token="", token="", timeout=1.0,
+        state_hz=2.0, inbound_token="", redact_transcripts=False,
+        host="127.0.0.1", port=0)
+    for k, v in over.items():
+        setattr(a, k, v)
+    h = server.Hub(a)
+    h._tmp = d                      # keep the directory alive with the hub
+    return h
+
+
+def _vmsg(**kw):
+    return {"message": kw}
+
+
+class TestVoiceSink(unittest.TestCase):
+    def test_final_transcript_is_stored_and_becomes_who_asked(self):
+        h = _hub()
+        r = h.handle_vapi_event(_vmsg(type="transcript", role="user",
+                                      transcriptType="final",
+                                      transcript="take me to the sauna",
+                                      call=  {"id": "call_1"}))
+        self.assertTrue(r["stored"])
+        self.assertEqual(h.last_said["text"], "take me to the sauna")
+        self.assertEqual(h.last_said["call_id"], "call_1")
+
+    def test_partial_transcript_is_counted_not_stored(self):
+        h = _hub()
+        r = h.handle_vapi_event(_vmsg(type="transcript", role="user",
+                                      transcriptType="partial", transcript="take me"))
+        self.assertFalse(r["stored"])
+        self.assertIsNone(h.last_said)
+        self.assertEqual(h._voice_dropped, 1)
+
+    def test_final_only_subscription_shape_is_recognised(self):
+        """Subscribing to finals gives type transcript[transcriptType="final"]
+        with the field itself absent. Reading only the field drops the lot."""
+        h = _hub()
+        r = h.handle_vapi_event(_vmsg(type='transcript[transcriptType="final"]',
+                                      role="user", transcript="where is the grotto"))
+        self.assertTrue(r["stored"])
+        self.assertEqual(h.last_said["text"], "where is the grotto")
+
+    def test_the_assistant_speaking_is_not_a_guest_request(self):
+        h = _hub()
+        h.handle_vapi_event(_vmsg(type="transcript", role="assistant",
+                                  transcriptType="final", transcript="this way please"))
+        self.assertIsNone(h.last_said)
+
+    def test_end_of_call_report_keeps_no_audio(self):
+        h = _hub()
+        h.handle_vapi_event(_vmsg(
+            type="end-of-call-report", endedReason="hangup", durationSeconds=42,
+            recordingUrl="https://example.invalid/a.wav",
+            artifact={"transcript": "User: hello", "recordingUrl": "https://x/b.wav",
+                      "stereoRecordingUrl": "https://x/c.wav"}))
+        raw = Path(h.args.ledger).read_text()
+        self.assertNotIn("a.wav", raw)
+        self.assertNotIn("b.wav", raw)
+        self.assertNotIn("c.wav", raw)
+        d = [e for e in h.led.read() if e["kind"] == "utterance"][-1]["data"]
+        self.assertTrue(d["audio_dropped"])
+        self.assertEqual(d["duration_s"], 42)
+
+    def test_end_of_call_report_keeps_the_stage_latencies(self):
+        h = _hub()
+        h.handle_vapi_event(_vmsg(type="end-of-call-report", endedReason="hangup",
+            artifact={"performanceMetrics": {
+                "transcriberLatencyAverage": 310, "endpointingLatencyAverage": 120,
+                "modelLatencyAverage": 640, "voiceLatencyAverage": 250,
+                "turnLatencyAverage": 1320, "numUserInterrupted": 2,
+                "turnLatencies": [{}, {}, {}]}}))
+        d = [e for e in h.led.read() if e["kind"] == "utterance"][-1]["data"]
+        self.assertEqual(d["stage_latency_ms"]["stt_ms"], 310)
+        self.assertEqual(d["stage_latency_ms"]["llm_ms"], 640)
+        self.assertEqual(d["stage_latency_ms"]["turns_measured"], 3)
+
+    def test_an_unrecognised_voice_event_is_reported_not_swallowed(self):
+        h = _hub()
+        r = h.handle_vapi_event(_vmsg(type="something-vapi-added-last-week", x=1))
+        self.assertFalse(r["recognised"])
+        d = h.led.read()[-1]
+        self.assertEqual(d["kind"], "integrity")
+        self.assertEqual(d["data"]["event"], "voice_event_unrecognised")
+
+    def test_chatter_is_dropped_without_an_integrity_event(self):
+        h = _hub()
+        before = len(h.led.read())
+        h.handle_vapi_event(_vmsg(type="speech-update", status="started"))
+        self.assertEqual(len(h.led.read()), before)
+
+    def test_redaction_keeps_the_shape_not_the_words(self):
+        h = _hub(redact_transcripts=True)
+        h.handle_vapi_event(_vmsg(type="transcript", role="user", transcriptType="final",
+                                  transcript="my name is Anna and I am in room 204"))
+        raw = Path(h.args.ledger).read_text()
+        self.assertNotIn("Anna", raw)
+        self.assertNotIn("204", raw)
+        self.assertIn("redacted", h.last_said["text"])
+
+    def test_vapis_clock_is_recorded_as_theirs_not_merged_into_ours(self):
+        h = _hub()
+        h.handle_vapi_event(_vmsg(type="transcript", role="user", transcriptType="final",
+                                  transcript="hello", timestamp=1700000000000))
+        e = [x for x in h.led.read() if x["kind"] == "utterance"][-1]
+        self.assertAlmostEqual(e["src_ts"], 1700000000.0, places=0)
+        self.assertNotEqual(round(e["skew_s"]), 0)
+
+    def test_the_sentence_that_caused_an_action_is_bound_to_it(self):
+        h = _hub()
+        h._forward = lambda raw: ({"results": []}, None)
+        h._poll_bridge_once = lambda: {}
+        h.handle_vapi_event(_vmsg(type="transcript", role="user", transcriptType="final",
+                                  transcript="walk two metres"))
+        h.handle_tool("walk_distance", {"distance_m": 2}, {}, "tc1")
+        evs = h.led.read()
+        intent = [e for e in evs if e["kind"] == "intent"][-1]
+        self.assertEqual(intent["data"]["asked"], "walk two metres")
+        self.assertTrue(intent["data"]["speech_seen"])
+        linked = [e for e in evs if e["kind"] == "utterance"
+                  and e["data"].get("replayed")][-1]
+        self.assertEqual(linked["corr"], intent["corr"])
+
+    def test_an_old_sentence_is_not_credited_with_a_later_action(self):
+        import server
+        h = _hub()
+        h._forward = lambda raw: ({"results": []}, None)
+        h._poll_bridge_once = lambda: {}
+        h.handle_vapi_event(_vmsg(type="transcript", role="user", transcriptType="final",
+                                  transcript="hello there"))
+        h.last_said["ts"] -= server.SPEECH_WINDOW_S + 5
+        h.handle_tool("walk_distance", {"distance_m": 1}, {}, "tc2")
+        intent = [e for e in h.led.read() if e["kind"] == "intent"][-1]
+        self.assertNotIn("asked", intent["data"])
+        self.assertTrue(intent["data"]["speech_seen"])   # the sink IS live
+
+    def test_judge_mode_starts_without_touching_frames_too_early(self):
+        """--judge once called frames.start() before self.frames existed, so the
+        judged collector died at boot on an AttributeError."""
+        h = _hub(judge=True)
+        self.assertIsNotNone(h.frames)
+
+
+class TestGovernedRestSurface(unittest.TestCase):
+    """The robot's own REST routes are what the operator console drives. They
+    go through the same gate as a voice tool call, or the ledger is blind to
+    half the commands the robot receives."""
+
+    def _hub_with_zone(self):
+        import server
+        h = _hub()
+        zp = Path(h._tmp.name) / "zones.json"
+        zp.write_text(json.dumps([{"zone": "pool_deck", "forbidden": True,
+                                   "x0": 1.5, "x1": 4.0, "y0": -2.0, "y1": 2.0}]))
+        h.zones = server.Hub._load_zones(str(zp))
+        h.last_state = {"x": 0.0, "y": 0.0, "yaw": 0.0, "has_pose": True}
+        h._poll_bridge_once = lambda: h.last_state
+        return h
+
+    def test_a_direct_move_is_recorded_as_rest_not_as_voice(self):
+        h = self._hub_with_zone()
+        h._forward_path = lambda path, body: ({"ok": True}, None, 200)
+        code, out = h.handle_rest("/move", {"direction": "forward", "speed": 0.2,
+                                            "duration": 1})
+        self.assertEqual(code, 200)
+        intent = [e for e in h.led.read() if e["kind"] == "intent"][-1]
+        self.assertEqual(intent["data"]["source"], "rest_direct")
+        self.assertEqual(intent["data"]["tool"], "move_robot")
+
+    def test_a_direct_move_into_a_forbidden_zone_is_refused_with_403(self):
+        h = self._hub_with_zone()
+        reached = []
+        h._forward_path = lambda path, body: (reached.append(path), ({}, None, 200))[1]
+        code, out = h.handle_rest("/move", {"direction": "forward", "speed": 1.0,
+                                            "duration": 10})
+        self.assertEqual(code, 403)
+        self.assertEqual(out["refused_by"], "clawmetry")
+        self.assertEqual(reached, [])          # the robot never heard it
+        d = [e for e in h.led.read() if e["kind"] == "decision"][-1]["data"]
+        self.assertEqual(d["decision"], "deny")
+
+    def test_stop_is_never_held_up_by_the_gate(self):
+        h = self._hub_with_zone()
+        sent = []
+        h._forward_path = lambda path, body: (sent.append(path), ({"ok": True}, None, 200))[1]
+        code, _ = h.handle_rest("/stop", {})
+        self.assertEqual(code, 200)
+        self.assertEqual(sent, ["/stop"])
+        self.assertEqual([e for e in h.led.read() if e["kind"] == "prediction"], [])
+
+    def test_a_robot_refusal_is_reported_as_a_refusal_not_as_unreachable(self):
+        """The live robot answers 400 to a gesture while it is not standing.
+        Reporting that as "unreachable" sends the guest the wrong reason and
+        hides a working robot behind a network-looking error."""
+        import io, urllib.error
+        from unittest import mock
+        h = _hub()
+        err = urllib.error.HTTPError(
+            "http://up/vapi", 400, "Bad Request", {},
+            io.BytesIO(b'{"ok":false,"error":"cannot nod while not standing"}'))
+        with mock.patch("urllib.request.urlopen", side_effect=err):
+            reply, e = h._forward({"message": {}})
+        self.assertIn("cannot nod while not standing", reply["results"][0]["result"])
+        self.assertNotIn("unreachable", reply["results"][0]["result"])
+        self.assertIn("400", e)
+
+    def test_the_robots_own_status_code_reaches_the_caller(self):
+        import io, urllib.error
+        from unittest import mock
+        h = self._hub_with_zone()
+        err = urllib.error.HTTPError("http://up/gesture", 400, "Bad Request", {},
+                                     io.BytesIO(b'{"ok":false,"error":"not standing"}'))
+        with mock.patch("urllib.request.urlopen", side_effect=err):
+            code, out = h.handle_rest("/gesture", {"gesture": "nod"})
+        self.assertEqual(code, 400)
+        self.assertEqual(out["error"], "not standing")
+
+    def test_the_mapping_covers_exactly_the_robots_direct_routes(self):
+        """d1-vapi-server's own `direct` map, as of the live server."""
+        import server
+        self.assertEqual(set(server.REST_AS_TOOL),
+                         {"/move", "/command", "/gait", "/gesture", "/stop"})
+        self.assertNotIn("/walk", server.REST_AS_TOOL)   # not a direct route there
+
+    def test_read_only_paths_are_passed_through_not_gated(self):
+        import server
+        self.assertEqual(server.PASSTHROUGH_GET, {"/health", "/status", "/call"})
+
+
+class TestInboundAuth(unittest.TestCase):
+    def _h(self, hub, path="/", **headers):
+        import server
+        o = object.__new__(server.Handler)
+        o.hub = hub
+        o.path = path
+        o.headers = {k.replace("_", "-"): v for k, v in headers.items()}
+        return o
+
+    def test_no_token_configured_lets_everything_through(self):
+        hub = _hub()
+        self.assertTrue(self._h(hub)._authed())
+
+    def test_bearer_header_is_accepted(self):
+        hub = _hub(inbound_token="s3cret")
+        self.assertTrue(self._h(hub, authorization="Bearer s3cret")._authed())
+
+    def test_bare_header_value_is_accepted(self):
+        hub = _hub(inbound_token="s3cret")
+        self.assertTrue(self._h(hub, authorization="s3cret")._authed())
+
+    def test_vapi_secret_header_is_accepted(self):
+        hub = _hub(inbound_token="s3cret")
+        self.assertTrue(self._h(hub, x_vapi_secret="s3cret")._authed())
+
+    def test_query_key_is_accepted_for_a_browser(self):
+        hub = _hub(inbound_token="s3cret")
+        self.assertTrue(self._h(hub, path="/?k=s3cret")._authed())
+
+    def test_cookie_is_accepted_so_the_key_leaves_the_url(self):
+        hub = _hub(inbound_token="s3cret")
+        self.assertTrue(self._h(hub, cookie="a=b; cm_k=s3cret")._authed())
+
+    def test_a_wrong_token_is_refused(self):
+        hub = _hub(inbound_token="s3cret")
+        self.assertFalse(self._h(hub, authorization="Bearer nope")._authed())
+        self.assertFalse(self._h(hub)._authed())
+
+
+class TestAttribution(unittest.TestCase):
+    """The attribution detector stays silent until there is speech to attribute
+    to - otherwise a deployment without the voice sink flags every command."""
+
+    def test_silent_before_any_transcript_has_arrived(self):
+        c = Correlator()
+        out = c.feed(ev("intent", {"tool": "walk_distance"}, corr="a"))
+        self.assertEqual(out, [])
+
+    def test_fires_once_speech_is_live_and_a_command_has_none(self):
+        c = Correlator()
+        c.feed(ev("utterance", {"text": "hello", "role": "user"}, actor="guest"))
+        out = c.feed(ev("intent", {"tool": "walk_distance"}, corr="a"))
+        self.assertEqual([b["rule"] for b in out], ["command_unattributed_to_speech"])
+        self.assertEqual(out[0]["severity"], "low")
+
+    def test_quiet_when_the_command_carries_the_sentence(self):
+        c = Correlator()
+        c.feed(ev("utterance", {"text": "hello", "role": "user"}, actor="guest"))
+        out = c.feed(ev("intent", {"tool": "walk_distance", "asked": "walk"}, corr="a"))
+        self.assertEqual(out, [])
+
+    def test_a_status_query_is_not_an_unrequested_action(self):
+        c = Correlator()
+        c.feed(ev("utterance", {"text": "hello", "role": "user"}, actor="guest"))
+        self.assertEqual(c.feed(ev("intent", {"tool": "robot_status"}, corr="a")), [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

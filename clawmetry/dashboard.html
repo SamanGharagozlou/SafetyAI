@@ -68,6 +68,13 @@ h2{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)
       <div class="feed" id="breaches"><div class="empty">none recorded</div></div>
     </section>
     <section style="margin-top:14px">
+      <h2>Voice · what was said <span class="t">(Vapi's self-report)</span></h2>
+      <div class="feed" id="voice" style="max-height:26vh">
+        <div class="empty">voice sink not wired — nothing has posted to /vapi/events</div>
+      </div>
+      <div class="src" id="stackwrap" hidden><span class="t" id="stack"></span></div>
+    </section>
+    <section style="margin-top:14px">
       <h2>Sources · silence is a finding</h2>
       <div id="sources"><div class="empty">no sources yet</div></div>
     </section>
@@ -88,8 +95,9 @@ function fold(ev) {
   const c = ev.corr; if (!c) return;
   const a = acts.get(c) || { corr: c, t: ev.ts };
   const d = ev.data || {};
-  if (ev.kind === 'utterance')    { a.asked = d.text; a.lang = d.lang; }
-  if (ev.kind === 'intent')       { a.tool = d.tool; a.args = d.args; a.t = ev.ts; }
+  if (ev.kind === 'utterance')    { a.asked = d.text; a.lang = d.lang; a.askedAge = d.age_s; }
+  if (ev.kind === 'intent')       { a.tool = d.tool; a.args = d.args; a.t = ev.ts;
+                                    a.speechSeen = d.speech_seen; }
   if (ev.kind === 'prediction')   { (a.preds = a.preds || []).push(d); }
   if (ev.kind === 'decision')     { a.decision = d.decision; a.reason = d.reason; }
   if (ev.kind === 'intervention') { a.by = d.by; a.human = d.decision; a.hts = ev.ts; }
@@ -107,7 +115,14 @@ function renderLedger() {
     const kin = (a.preds || []).find(p => p.basis === 'kinematic');
     const cos = (a.preds || []).find(p => p.basis === 'cosmos');
     const rows = [];
-    rows.push(['who asked', a.asked ? esc(a.asked) : '<span class=t>no transcript — Vapi self-report not wired</span>']);
+    // Three different things, and collapsing them into one grey dash is how
+    // a missing feed gets read as a quiet room: the guest's words, or the
+    // sink being live with nobody having spoken, or no sink at all.
+    rows.push(['who asked', a.asked
+      ? `“${esc(a.asked)}”<span class=t>${a.askedAge != null ? ` · said ${a.askedAge}s before the command` : ''} · Vapi transcript</span>`
+      : (a.speechSeen
+          ? '<span style="color:var(--amber)">nothing said — no guest utterance within 120s of this command</span>'
+          : '<span class=t>no transcript — Vapi voice sink not wired (POST /vapi/events)</span>')]);
     rows.push(['intended', a.tool
       ? `<span class="tool">${esc(a.tool)}</span> ${a.args && Object.keys(a.args).length ? esc(JSON.stringify(a.args)) : ''}`
       : '<span style="color:var(--amber)">unknown — no intent was ever recorded for this action</span>']);
@@ -138,6 +153,30 @@ function renderLedger() {
     return `<div class="act ${cls}"><div class="t">${clock(a.t)} · ${esc(a.corr)}</div>` +
       rows.map(([k, v]) => `<div class="row"><div class="k">${k}</div><div>${v}</div></div>`).join('') + '</div>';
   }).join('');
+}
+
+const voice = [];
+function foldVoice(ev) {
+  if (ev.kind !== 'utterance') return;
+  const d = ev.data || {};
+  if (d.replayed) return;            // the same sentence, re-entered against an action
+  if (d.type === 'end-of-call-report') {
+    const m = d.stage_latency_ms;
+    $('stackwrap').hidden = false;
+    $('stack').textContent = m
+      ? 'voice stack over ' + (m.turns_measured ?? '?') + ' turns · ' +
+        ['stt_ms','endpointing_ms','llm_ms','tts_ms','turn_ms'].filter(k => m[k] != null)
+          .map(k => k.replace('_ms','') + ' ' + Math.round(m[k]) + 'ms').join(' · ')
+      : 'the report carried no stage latencies';
+  }
+  if (d.text) voice.unshift({ ts: ev.ts, who: ev.actor, text: d.text });
+  else if (d.type === 'status-update')
+    voice.unshift({ ts: ev.ts, who: 'vapi',
+                    text: 'call ' + (d.status || '?') + (d.ended_reason ? ' (' + d.ended_reason + ')' : '') });
+  voice.length = Math.min(voice.length, 14);
+  if (voice.length) $('voice').innerHTML = voice.map(v =>
+    `<div class="b"><div class="r">${esc(v.who)} <span class=t>${clock(v.ts)}</span></div>` +
+    `<div class="d">${esc(v.text)}</div></div>`).join('');
 }
 
 function renderState(s) {
@@ -189,7 +228,10 @@ function renderState(s) {
      <div class="d">${esc(b.detail)}</div><div class="t">${clock(b.ts)}</div></div>`).join('');
 }
 
-new EventSource('/api/events').onmessage = e => { fold(JSON.parse(e.data)); renderLedger(); };
+new EventSource('/api/events').onmessage = e => {
+  const ev = JSON.parse(e.data);
+  fold(ev); foldVoice(ev); renderLedger();
+};
 const poll = () => fetch('/api/state').then(r => r.json()).then(renderState).catch(() => {});
 poll(); setInterval(poll, 1000);
 </script>

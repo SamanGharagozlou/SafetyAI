@@ -10,8 +10,15 @@ It is four things at once, because at a venue four processes is three too many:
                  robot: every call is recorded, predicted, gated and then
                  forwarded upstream unchanged. This is the only place in the
                  whole system that sees WHO ASKED and WHAT WAS INTENDED, and
-                 it is on hardware you own - unlike the transcript, which is
-                 Vapi's self-report.
+                 it is on hardware you own.
+  THE VOICE SINK POST /vapi/events takes Vapi's own server messages - final
+                 transcripts, call status, the end-of-call report - so WHO
+                 ASKED is the guest's recorded words and not an inference drawn
+                 from a tool call. This half is the voice vendor's self-report
+                 about a conversation we cannot otherwise see, so it is stamped
+                 basis=vapi_self_report and carries their clock in src_ts. The
+                 robot's side of the story stays on hardware you own; the two
+                 are bound together in the chain, not merged into one voice.
   THE COLLECTORS background pollers for the bridge (confirmed physical state)
                  and the camera guard (people, breaches), plus POST /ingest
                  for anything else - ROS, approvals, a second robot.
@@ -31,11 +38,15 @@ make the robot do anything a caller did not already ask for. That is deliberate
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
+import os
 import queue
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -50,6 +61,34 @@ from predict import BrainJudge, CosmosJudge, kinematic_predict, verify
 HERE = Path(__file__).resolve().parent
 UNGATED = {"stop_robot", "robot_status", "get_state", "pause"}
 
+# How long a guest's sentence can still be said to have caused an action.
+# Long, because an escort takes minutes; a command older than this is simply
+# recorded as unattributed rather than pinned on whatever was said last.
+SPEECH_WINDOW_S = 120.0
+
+# The robot's own HTTP surface is wider than /vapi. d1-vapi-server also serves
+# GET /health, /status, /call and POST /move, /gait, /gesture, /command, /stop
+# - publicly, behind the same token - and the OPERATOR CONSOLE drives the robot
+# through those, not through the voice tools. A tap that only watches /vapi
+# therefore watches half the system: before this, keyboard teleop reached the
+# ledger only afterwards, as unattributed_motion. So the tap stands in front of
+# the whole surface: read-only paths are forwarded verbatim, the ones that move
+# the robot go through the same predict -> judge -> gate -> record pipeline as a
+# tool call, under the name of the tool that does the same thing, and anything
+# unknown is refused rather than quietly tunnelled.
+PASSTHROUGH_GET = {"/health", "/status", "/call"}
+REST_AS_TOOL = {"/move": "move_robot", "/command": "robot_command",
+                "/gait": "set_gait", "/gesture": "do_gesture",
+                "/stop": "stop_robot"}
+
+# Voice events that are real but not evidence: interim words, speech-start
+# flags, per-token model output. Counted so a quiet ledger is not mistaken for
+# a quiet room, stored nowhere - a ledger holding every interim word is a
+# transcript, and a transcript of spa guests is the thing we must not keep.
+VOICE_CHATTER = {"speech-update", "conversation-update", "user-interrupted",
+                 "hang", "model-output", "voice-input", "transfer-destination-request",
+                 "language-change-detected", "phone-call-control"}
+
 
 class Hub:
     """Ledger + correlator + collectors + subscribers."""
@@ -63,8 +102,6 @@ class Hub:
         # dashboards cannot disagree about the same robot.
         self.judge = (BrainJudge(args.brain_url, args.brain_key)
                       if args.brain_url and args.brain_key else CosmosJudge())
-        if args.judge:
-            self.frames.start()          # keep a warm frame; judge latency only
         # The operator's guardrail file is the source of truth when present:
         # zones, speed caps, camera-off areas and the child rules all come from
         # the document the venue signs, not from code defaults.
@@ -78,6 +115,8 @@ class Hub:
         self.breaches: list[dict] = []
         self.sources: dict = {}
         self._n = 0
+        self.last_said: dict | None = None   # newest guest transcript, for attribution
+        self._voice_dropped = 0              # partials and chatter: counted, not stored
         if self.venue:
             pp = self.venue.person_policy()
             self.cor.pol.speed_cap_mps = self.venue.max_speed
@@ -87,6 +126,13 @@ class Hub:
             self.cor.pol.latch_s = pp["latch_s"]
             self.cor.pol.stale_s = pp["stale_frame_s"]
             self.frames.off = self.venue.camera_off_zones()
+        # Warm the frame cache only now. The camera-off zones have to be known
+        # BEFORE a background thread starts opening the camera, or the opening
+        # seconds of every run are grabbed under no privacy policy at all. The
+        # previous ordering called start() further up, before self.frames
+        # existed at all, so --judge died on an AttributeError at boot.
+        if args.judge:
+            self.frames.start()          # keep a warm frame; judge latency only
         self._replay()
         self.cor.expect("bridge")
         if args.guard:
@@ -192,11 +238,34 @@ class Hub:
 
     # -- the tap ---------------------------------------------------------
 
-    def handle_tool(self, name: str, args_: dict, raw: dict, call_id: str = "") -> dict:
-        """Record -> predict -> gate -> forward -> score. Returns the upstream reply."""
+    def handle_tool(self, name: str, args_: dict, raw: dict, call_id: str = "",
+                    forward=None, source: str = "vapi_tap", deny=None) -> dict:
+        """Record -> predict -> gate -> forward -> score. Returns the upstream reply.
+
+        `forward` and `deny` let a caller that is not Vapi reuse this exact
+        pipeline with its own wire shapes - the governing decision must not
+        depend on which door the command came through.
+        """
         corr = self.corr_id()
+        # WHO ASKED. The tap sees the tool call; only Vapi's transcript sees
+        # the sentence that caused it. With the voice sink wired, bind the two
+        # inside the chain: the utterance is re-entered against this action's
+        # corr with a pointer back to the original event, so the evidence for
+        # "a guest asked for this" is one hop and not a by-hand comparison of
+        # two timestamps months later.
+        said = self.last_said
+        age = round(time.time() - said["ts"], 1) if said else None
+        asked = {}
+        if said and age is not None and age <= SPEECH_WINDOW_S:
+            asked = {"asked": said["text"], "asked_age_s": age,
+                     "asked_seq": said["seq"], "call_id": said.get("call_id", "")}
+            self.emit("utterance", actor="guest", corr=corr,
+                      data={"text": said["text"], "basis": "vapi_transcript",
+                            "linked_seq": said["seq"], "age_s": age, "replayed": True,
+                            "call_id": said.get("call_id", "")})
         self.emit("intent", actor="agent", corr=corr,
-                  data={"tool": name, "args": args_, "source": "vapi_tap"})
+                  data={"tool": name, "args": args_, "source": source,
+                        "speech_seen": self.last_said is not None, **asked})
 
         decision, reason = "allow", ""
         pred = None
@@ -235,14 +304,17 @@ class Hub:
         self.emit("decision", actor="gate", corr=corr,
                   data={"decision": decision, "reason": reason, "tool": name})
         if decision == "deny":
+            if deny:
+                return deny(reason)
             return {"results": [{"toolCallId": call_id,
                                  "result": f"Refused: {reason}"}]}
 
         t0 = time.time()
         self._call_id = call_id
         before = dict(self.last_state)
-        self.emit("command", actor="agent", corr=corr, data={"tool": name, "args": args_})
-        reply, err = self._forward(raw)
+        self.emit("command", actor="agent", corr=corr,
+                  data={"tool": name, "args": args_, "source": source})
+        reply, err = (forward(raw) if forward else self._forward(raw))
         dt = time.time() - t0
 
         after = self._poll_bridge_once() or dict(self.last_state)
@@ -257,6 +329,190 @@ class Hub:
                   data={"tool": name, "duration_s": round(dt, 2), "end_pose": pose,
                         "error": err, **scored})
         return reply
+
+    # -- the robot's own REST surface, governed ---------------------------
+
+    def handle_rest(self, path: str, body: dict) -> tuple[int, dict]:
+        """A direct POST to the robot's REST surface, through the same gate.
+
+        The authority is a console rather than a guest; everything else about
+        the decision is identical, and it lands in the same ledger with
+        source=rest_direct so the record says which door was used.
+        """
+        up = {}
+
+        def fwd(_raw):
+            reply, err, code = self._forward_path(path, body)
+            up["code"] = code                 # the robot's own status code, kept
+            return reply, err
+
+        reply = self.handle_tool(REST_AS_TOOL[path], dict(body), {"rest_path": path},
+                                 call_id="", source="rest_direct", forward=fwd,
+                                 deny=lambda why: {"__refused__": why})
+        if "__refused__" in reply:
+            return 403, {"ok": False, "error": reply["__refused__"],
+                         "refused_by": "clawmetry", "path": path}
+        return up.get("code", 200), reply
+
+    def _forward_path(self, path: str, body: dict):
+        """POST to the robot verbatim. Returns (body, error, status).
+
+        A drop-in has to be transparent about failure too: the robot's own
+        status code and message go back to the caller unchanged, so a console
+        showing "cannot nod while not standing" keeps showing exactly that.
+        """
+        data = json.dumps(body).encode()
+        headers = {"content-type": "application/json"}
+        if self.args.token:
+            headers["authorization"] = f"Bearer {self.args.token}"
+        try:
+            req = urllib.request.Request(f"{self.args.upstream}{path}", data=data,
+                                         headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=self.args.timeout) as r:
+                return json.loads(r.read() or b"{}"), None, r.status
+        except urllib.error.HTTPError as e:
+            raw = e.read() or b""
+            try:
+                up = json.loads(raw)
+            except ValueError:
+                up = {"ok": False, "error": raw.decode(errors="replace")[:200]}
+            return up, f"HTTP {e.code}", e.code
+        except Exception as e:
+            return ({"ok": False, "error": f"robot endpoint unreachable: {e}"},
+                    str(e), 502)
+
+    def forward_readonly(self, path: str) -> tuple[int, bytes, str]:
+        """GET something that cannot move the robot, verbatim.
+
+        Recorded only on failure: logging a 2 Hz console poll as an event
+        would bury the ledger in noise, while a robot endpoint that has
+        started refusing is exactly what nobody notices.
+        """
+        headers = {}
+        if self.args.token:
+            headers["authorization"] = f"Bearer {self.args.token}"
+        try:
+            req = urllib.request.Request(f"{self.args.upstream}{path}", headers=headers)
+            with urllib.request.urlopen(req, timeout=10.0) as r:
+                return r.status, r.read(), r.headers.get("content-type", "application/json")
+        except urllib.error.HTTPError as e:
+            return e.code, (e.read() or b"{}"), "application/json"
+        except Exception as e:
+            self.emit("integrity", actor="system",
+                      data={"event": "passthrough_failed", "path": path, "error": str(e)})
+            return 502, json.dumps({"ok": False, "error": str(e)}).encode(), "application/json"
+
+    # -- the voice sink ---------------------------------------------------
+
+    def handle_vapi_event(self, payload: dict) -> dict:
+        """Vapi's server messages: the STT and LLM layer, in the vendor's words.
+
+        Stamped basis=vapi_self_report with their clock in src_ts, so the
+        ledger can show how far their clock sits from ours instead of
+        pretending there is a single timeline. Nothing here is treated as
+        instruction: it is a record of what a guest and a model said.
+        """
+        m = payload.get("message") or payload
+        typ = str(m.get("type") or "")
+        call = m.get("call") or {}
+        call_id = call.get("id") or m.get("callId") or ""
+        src_ts = m.get("timestamp")
+        if isinstance(src_ts, (int, float)) and src_ts > 1e11:
+            src_ts = src_ts / 1000.0          # Vapi stamps in milliseconds
+        elif not isinstance(src_ts, (int, float)):
+            src_ts = None
+
+        if typ.startswith("transcript"):
+            # Subscribing to finals only gives the type
+            # transcript[transcriptType="final"], where the field itself may be
+            # absent. Reading just the field would then drop every transcript
+            # on the configuration we actually want to run.
+            final = ('transcriptType="final"' in typ
+                     or str(m.get("transcriptType") or "") == "final")
+            if not final:
+                self._voice_dropped += 1
+                return {"ok": True, "stored": False, "reason": "partial"}
+            text = str(m.get("transcript") or "").strip()
+            if not text:
+                self._voice_dropped += 1
+                return {"ok": True, "stored": False, "reason": "empty"}
+            role = str(m.get("role") or "")
+            who = "guest" if role == "user" else "assistant"
+            kept = self._maybe_redact(text)
+            ev = self.emit("utterance", actor=who, src_ts=src_ts,
+                           data={"type": "transcript", "text": kept, "role": role,
+                                 "basis": "vapi_self_report", "call_id": call_id})
+            if who == "guest":
+                self.last_said = {"text": kept, "ts": ev["ts"],
+                                  "seq": ev["seq"], "call_id": call_id}
+            return {"ok": True, "stored": True, "seq": ev["seq"]}
+
+        if typ == "status-update":
+            ev = self.emit("utterance", actor="vapi", src_ts=src_ts,
+                           data={"type": "status-update", "status": m.get("status"),
+                                 "ended_reason": m.get("endedReason"),
+                                 "basis": "vapi_self_report", "call_id": call_id})
+            return {"ok": True, "stored": True, "seq": ev["seq"]}
+
+        if typ == "end-of-call-report":
+            # NO AUDIO, EVER. This report carries recording URLs. The venue
+            # forbids photography inside and we do not hold a pointer to a
+            # recording of a guest either: transcript text and timings only,
+            # and the fact that audio was offered and dropped is itself
+            # recorded so the omission is visible rather than assumed.
+            art = m.get("artifact") or {}
+            tr = str(m.get("transcript") or art.get("transcript") or "")
+            # THE VOICE STACK'S OWN TIMING. Vapi exposes no customer OTLP
+            # endpoint - observabilityPlan takes provider "langfuse" and
+            # nothing else, and that host must be public HTTPS, so it cannot
+            # be pointed at this Orin. Per-turn stage latencies arrive here
+            # instead, in milliseconds, measured on Vapi's servers: this is
+            # the STT -> endpointing -> LLM -> TTS breakdown, from the vendor,
+            # for the stretch of the pipeline we cannot instrument ourselves.
+            pm = art.get("performanceMetrics") or {}
+            stages = {k: pm.get(v) for k, v in (
+                ("stt_ms", "transcriberLatencyAverage"),
+                ("endpointing_ms", "endpointingLatencyAverage"),
+                ("llm_ms", "modelLatencyAverage"),
+                ("tts_ms", "voiceLatencyAverage"),
+                ("turn_ms", "turnLatencyAverage")) if pm.get(v) is not None}
+            if pm:
+                stages["turns_measured"] = len(pm.get("turnLatencies") or [])
+                stages["user_interrupted"] = pm.get("numUserInterrupted")
+            ev = self.emit("utterance", actor="vapi", src_ts=src_ts,
+                           data={"type": "end-of-call-report",
+                                 "ended_reason": m.get("endedReason"),
+                                 "duration_s": m.get("durationSeconds"),
+                                 "summary": self._maybe_redact(str(m.get("summary") or "")),
+                                 "transcript": self._maybe_redact(tr[:20000]),
+                                 "transcript_chars": len(tr),
+                                 "stage_latency_ms": stages or None,
+                                 "audio_dropped": bool(m.get("recordingUrl")
+                                                       or m.get("stereoRecordingUrl")
+                                                       or art.get("recordingUrl")
+                                                       or art.get("stereoRecordingUrl")),
+                                 "basis": "vapi_self_report", "call_id": call_id})
+            return {"ok": True, "stored": True, "seq": ev["seq"]}
+
+        if typ in VOICE_CHATTER:
+            self._voice_dropped += 1
+            return {"ok": True, "stored": False, "reason": "chatter"}
+
+        # An unrecognised message type is reported, not swallowed. Reading a
+        # shape we did not expect as though we understood it is exactly how a
+        # world-model stop verdict once arrived at the gate as an approval.
+        ev = self.emit("integrity", actor="system",
+                       data={"event": "voice_event_unrecognised", "type": typ,
+                             "keys": sorted(str(k) for k in m.keys())[:20],
+                             "call_id": call_id})
+        return {"ok": True, "stored": True, "seq": ev["seq"], "recognised": False}
+
+    def _maybe_redact(self, text: str) -> str:
+        """--redact-transcripts: keep the shape of what was said, not the words."""
+        if not getattr(self.args, "redact_transcripts", False) or not text:
+            return text
+        return (f"[redacted {len(text)} chars "
+                f"sha256:{hashlib.sha256(text.encode()).hexdigest()[:12]}]")
 
     def _scene(self) -> dict:
         s = self.last_state
@@ -273,6 +529,23 @@ class Hub:
                                          headers=headers, method="POST")
             with urllib.request.urlopen(req, timeout=self.args.timeout) as r:
                 return json.loads(r.read() or b"{}"), None
+        except urllib.error.HTTPError as e:
+            # THE ROBOT ANSWERED - with a refusal. Calling that "unreachable"
+            # is a lie told to the guest as well as the ledger: a 400 here is
+            # usually the robot saying it cannot do that from this posture,
+            # and that is the sentence the guest should hear.
+            body_bytes = e.read() or b""
+            try:
+                up = json.loads(body_bytes)
+            except ValueError:
+                up = {}
+            if isinstance(up, dict) and up.get("results"):
+                return up, f"HTTP {e.code}"
+            detail = ((up.get("error") or up.get("detail")) if isinstance(up, dict) else None) \
+                or body_bytes.decode(errors="replace")[:200] or f"HTTP {e.code}"
+            return ({"results": [{"toolCallId": self._call_id,
+                                  "result": f"The robot refused: {detail}"}]},
+                    f"HTTP {e.code}: {detail}")
         except Exception as e:
             # Forward failures are recorded, never swallowed, and never
             # reported upstream as success.
@@ -416,10 +689,47 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
         self._send(code, json.dumps(obj).encode())
 
+    def _authed(self) -> bool:
+        """True when no inbound token is set, or the caller presents it.
+
+        In a real deployment the tap has to be reachable from the internet,
+        because Vapi's cloud is what calls it - and it holds guest speech and a
+        gate in front of a robot. Three ways in, because there are three kinds
+        of caller: a bearer header (our own collectors and Vapi's tool calls,
+        which already send the robot's token), X-Vapi-Secret (what Vapi sends
+        with server messages), and ?k= for a browser, which is then handed a
+        cookie so the key stops appearing in every later URL.
+        """
+        want = self.hub.args.inbound_token
+        if not want:
+            return True
+        auth = self.headers.get("authorization") or ""
+        cand = [auth[7:] if auth[:7].lower() == "bearer " else auth,
+                self.headers.get("x-vapi-secret") or ""]
+        cand += urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("k", [])
+        for part in (self.headers.get("cookie") or "").split(";"):
+            kv = part.strip().split("=", 1)
+            if len(kv) == 2 and kv[0] == "cm_k":
+                cand.append(kv[1])
+        return any(hmac.compare_digest(c, want) for c in cand if c)
+
     def do_GET(self):
         p = self.path.split("?")[0]
+        if not self._authed():
+            return self._json(401, {"error": "unauthorized"})
         if p == "/":
-            return self._send(200, (HERE / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
+            body = (HERE / "dashboard.html").read_bytes()
+            self.send_response(200)
+            self.send_header("content-type", "text/html; charset=utf-8")
+            self.send_header("content-length", str(len(body)))
+            self.send_header("cache-control", "no-store")
+            if self.hub.args.inbound_token and "k=" in self.path:
+                # The page's own fetches cannot carry a header, so hand the
+                # browser a cookie and keep the key out of /api/... URLs.
+                self.send_header("set-cookie", f"cm_k={self.hub.args.inbound_token}; "
+                                               "Path=/; HttpOnly; SameSite=Lax")
+            self.end_headers()
+            return self.wfile.write(body)
         if p == "/api/state":
             return self._json(200, self.hub.snapshot())
         if p == "/api/ledger":
@@ -434,6 +744,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"configured": True, **pack})
         if p == "/api/events":
             return self._sse()
+        if p in PASSTHROUGH_GET:
+            code, body, ctype = self.hub.forward_readonly(self.path)
+            return self._send(code, body, ctype)
         return self._json(404, {"error": "not found"})
 
     def _sse(self):
@@ -468,6 +781,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = self.path.split("?")[0]
+        if not self._authed():
+            return self._json(401, {"error": "unauthorized"})
         n = int(self.headers.get("content-length") or 0)
         try:
             payload = json.loads(self.rfile.read(n) or b"{}")
@@ -488,6 +803,17 @@ class Handler(BaseHTTPRequestHandler):
                 out = self.hub.handle_tool(name, a, payload, c.get("id", ""))
                 results.extend(out.get("results") or [])
             return self._json(200, {"results": results})
+
+        if p in REST_AS_TOOL:
+            code, out = self.hub.handle_rest(p, payload if isinstance(payload, dict) else {})
+            return self._json(code, out)
+
+        if p == "/status":
+            code, body, ctype = self.hub.forward_readonly("/status")
+            return self._send(code, body, ctype)
+
+        if p in ("/vapi/events", "/vapi-events"):
+            return self._json(200, self.hub.handle_vapi_event(payload))
 
         if p == "/ingest":
             ev = self.hub.emit(payload.get("kind", "integrity"),
@@ -543,6 +869,13 @@ def main():
                                                    "from a .env so keys stay off the command "
                                                    "line and out of `ps`")
     ap.add_argument("--judge", action="store_true", help="enable the Cosmos world-model judge")
+    ap.add_argument("--inbound-token", default="",
+                    help="require this bearer (or X-Vapi-Secret, or ?k=) on every "
+                         "request. Set it whenever the tap is reachable from off "
+                         "the host: it holds guest speech and a gate in front of a "
+                         "robot. Prefer CLAWMETRY_INBOUND_TOKEN - argv is world-readable")
+    ap.add_argument("--redact-transcripts", action="store_true",
+                    help="store the length and a hash of what was said, not the words")
     a = ap.parse_args()
     if a.env_file:
         # Keys via file, never argv: anything on the command line is visible to
@@ -558,6 +891,10 @@ def main():
                     a.brain_key = v
                 elif k == "ROBOT_RTSP" and not a.rtsp:
                     a.rtsp = v
+    # Tokens from the environment by preference: every argument is visible to
+    # every user on the box through `ps`.
+    a.inbound_token = a.inbound_token or os.environ.get("CLAWMETRY_INBOUND_TOKEN", "")
+    a.token = a.token or os.environ.get("CLAWMETRY_UPSTREAM_TOKEN", "")
     if not a.state_url:
         a.state_url = a.upstream
         a.state_token = a.token
@@ -574,6 +911,13 @@ def main():
     print(f"clawmetry collector  http://{a.host}:{a.port}")
     print(f"  body={a.body}  tools->{a.upstream}  state->{a.state_url}  guard={a.guard or 'none'}")
     print(f"  cosmos={'on' if (a.judge and hub.judge.configured) else 'off'}  ledger={a.ledger}")
+    print(f"  voice sink POST /vapi/events  transcripts="
+          f"{'hashed only' if a.redact_transcripts else 'stored'}")
+    if a.inbound_token:
+        print("  inbound auth=on (bearer / X-Vapi-Secret / ?k=)")
+    elif a.host != "127.0.0.1":
+        print(f"  ! inbound auth=OFF and bound to {a.host}: anyone who can reach "
+              f"this port can read guest speech and refuse robot commands")
     if hub.venue:
         print(f"  venue={hub.venue.name} ({len(hub.venue.zones)} zones, "
               f"{'SIGNED by ' + hub.venue.signed_off_by if hub.venue.signed else 'NOT SIGNED OFF'})")

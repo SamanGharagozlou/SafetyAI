@@ -103,6 +103,7 @@ class Correlator:
     _silent: set = field(default_factory=set)       # sources already reported silent
     _moving_since: float = 0.0
     _fired: set = field(default_factory=set)        # (rule, corr) already reported
+    _speech_seen: bool = False                      # has the voice sink ever delivered?
 
     # ------------------------------------------------------------------
     # feed events in; get breaches out. Never raises on unknown input: a
@@ -147,6 +148,24 @@ class Correlator:
         tool = data.get("tool", "")
         if corr:
             self.open[corr] = Open(corr=corr, tool=tool, args=data.get("args") or {}, t_intent=ts)
+        # ATTRIBUTION. Once the voice sink has delivered even one guest
+        # transcript, a command with nothing said behind it is an action the
+        # agent took on its own initiative: the model deciding to move, or
+        # something in the venue text telling it to. That is not a safety
+        # breach and is not scored as one - it is a hole in the chain from a
+        # person to a moving robot, which is the single thing this ledger
+        # exists to be able to show. Silent until the first transcript
+        # arrives, because without the sink wired this would flag every
+        # command ever issued, and a detector that fires on everything is one
+        # nobody reads.
+        if (self._speech_seen and tool and tool not in UNGATED
+                and not data.get("asked")):
+            return [self._breach(
+                "command_unattributed_to_speech", ev, severity="low",
+                detail=f"{tool} was commanded with no guest utterance in the "
+                       f"preceding window - agent-initiated, or asked for "
+                       f"earlier than the window reaches",
+                extra={"tool": tool})]
         return []
 
     def _on_prediction(self, ev, data, ts, corr) -> list[dict]:
@@ -273,6 +292,11 @@ class Correlator:
         return out
 
     def _on_utterance(self, ev, data, ts, corr) -> list[dict]:
+        # One guest transcript is the proof that the voice sink is live. Until
+        # it arrives, attribution is unknowable rather than missing, and the
+        # correlator says nothing about it.
+        if data.get("role") == "user" or ev.get("actor") == "guest":
+            self._speech_seen = True
         return []
 
     def _on_intervention(self, ev, data, ts, corr) -> list[dict]:
