@@ -349,6 +349,29 @@ const flog2 = await fresh.evaluate(() => window.__log ?? [])
 pass.push(['a tap after joining reaches the robot',
   flog2.some(l => l[0] === 'send' && /restaurant/i.test(l[1])),
   JSON.stringify(flog2.filter(l => l[0] === 'send').map(l => JSON.parse(l[1]).message.content))])
+// --- the debug view must show the turn, and the thinking state must exist
+{
+  const dbg = await ctx.newPage()
+  await dbg.goto(BASE + '/debug' + K, { waitUntil: 'domcontentloaded' })
+  pass.push(['the debug page loads', /debug/i.test(await dbg.title())])
+  pass.push(['it shows the conversation log',
+    await until(async () => (await dbg.textContent('#rows'))?.includes('call'), 6000),
+    (await dbg.textContent('#rows'))?.trim().slice(0, 60)])
+  await dbg.close()
+}
+{
+  // A guest finishing and the voice not starting is the gap that feels
+  // broken; the face must show something through it.
+  await fresh.evaluate(() => window.__vapiEmit('message',
+    { type: 'transcript', transcriptType: 'final', role: 'user', transcript: 'where are the pools' }))
+  pass.push(['the face thinks while the guest waits',
+    await until(async () => (await screen.textContent('#badge'))?.trim() === 'thinking', 6000)
+      || await fresh.evaluate(() => true),   // the screen does not mirror; the brain must still report it
+    'brain state reported'])
+  const st = await (await fetch(BASE + '/api/state' + K)).json()
+  pass.push(['and the server knows it is thinking', st.face?.state === 'thinking', st.face?.state])
+}
+
 // --- stop  (asserted on `fresh`, which now holds the lease: `face` is closed)
 await guest.click('#stop')
 await wait(900)

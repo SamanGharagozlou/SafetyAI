@@ -44,7 +44,12 @@ echo "audio   -> whatever macOS has as the default input and output right now:"
   | awk '/Default Input Device: Yes/{print "          in : " name} /Default Output Device: Yes/{print "          out: " name} /^ {8}[^ ].*:$/{name=$0; sub(/^ +/,"",name); sub(/:$/,"",name)}' \
   || true
 
-exec "$CHROME" \
+# caffeinate: a sleeping Mac is a silent robot. Chrome stays running but the
+# page stops polling, so the guest's phone says "its voice is not connected"
+# while a perfectly healthy browser window sits there - observed after about
+# six minutes of an idle laptop. -d display, -i idle, -s on AC, -m disk.
+# It is tied to this process, so closing the voice lets the Mac sleep again.
+exec /usr/bin/caffeinate -dims "$CHROME" \
   --user-data-dir="$PROFILE" \
   --use-fake-ui-for-media-stream \
   --test-type \

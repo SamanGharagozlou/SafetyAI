@@ -213,6 +213,22 @@ const broadcast = event => {
  * drawing generates the thing that merely has to look right.
  */
 let faceState = { state: 'idle', caption: '', at: 0 }
+
+/**
+ * A TIMED LOG OF THE CONVERSATION, for /debug.
+ *
+ * "It does not answer for a long time" is unanswerable without knowing
+ * WHICH part is slow: the guest finishing, the transcriber settling, the
+ * model thinking, a tool call to the robot, or the voice starting. Each
+ * entry carries the gap since the previous one, so the slow step is the one
+ * with the large number next to it rather than a guess.
+ */
+const log = []
+const logAdd = e => {
+  const at = Date.now()
+  log.push({ ...e, at, gap: log.length ? at - log[log.length - 1].at : 0 })
+  if (log.length > 150) log.splice(0, log.length - 150)
+}
 let brainSeenAt = 0
 const brainUp = () => Date.now() - brainSeenAt < 30000   // a long poll returns at 20s
 
@@ -307,6 +323,13 @@ createServer(async (req, res) => {
 
     if (p === '/api/state') return json(res, 200, { ...publicState(), seq })
 
+    if (p === '/api/log') {
+      const since = Number(url.searchParams.get('since') ?? 0) || 0
+      return json(res, 200, { now: Date.now(), state: publicState(),
+                              entries: log.filter(e => e.at > since) })
+    }
+    if (p === '/debug') return void await page(res, 'debug.html', setCookie)
+
     // The face phone polls this. `since` is the last seq it has acted on, so
     // a dropped request costs nothing: the next one still carries the event.
     if (p === '/api/events') {
@@ -352,6 +375,11 @@ createServer(async (req, res) => {
       const changed = next.state !== faceState.state || next.caption !== faceState.caption
       faceState = next
       if (changed) broadcast({ type: 'face', state: next.state, caption: next.caption })
+      // The brain also ships discrete events for the debug view. They are
+      // separate from `state` because state is a level and these are edges.
+      if (Array.isArray(body.log)) for (const e of body.log.slice(0, 20)) {
+        logAdd({ kind: String(e.kind ?? 'note').slice(0, 20), text: String(e.text ?? '').slice(0, 400) })
+      }
       return json(res, 200, { ok: true, holding: holdsIt, live: session.live, name: session.name })
     }
 
@@ -432,6 +460,7 @@ createServer(async (req, res) => {
   const k = KEY ? `?k=${encodeURIComponent(KEY)}` : ''
   console.log(`\nRobot face   ->  ${PUBLIC_URL}/face${k}`)
   console.log(`Guest join   ->  ${PUBLIC_URL}/join${k}   (what the QR encodes)`)
+  console.log(`Debug        ->  ${PUBLIC_URL}/debug${k}`)
   console.log(`Key          ->  ${KEY ? 'set' : 'NOT SET - anyone with the URL can start the robot'}`)
   console.log(`Listening    ->  ${BIND}:${PORT}${BIND === '0.0.0.0' && !KEY ? '   ** every interface, no key **' : ''}`)
   console.log(`Assistant    ->  ${ASSISTANT_ID}`)
