@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Safe Service Robots · Autonomous Urban Services</title>
+
+<!-- Font: Montserrat only. One family, weights 400-800. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* ===========================================
+   THEME: "Alpine Night + Swiss Red" (Swiss flag palette: red + white)
+   Change these variables to re-skin the whole deck.
+   =========================================== */
+:root {
+    --night:   #0b1620;   /* deep alpine night */
+    --dusk:    #16303d;   /* glacier shadow */
+    --mist:    #cfe6ee;   /* glacier mist */
+    --text:    #eef6f8;
+    --text-dim:#9db4bd;
+    --accent:  #DA291C;   /* Swiss red: Pantone 485 C as shown on screen */
+    --ember:   #f2b880;   /* warm spa-lamp accent, use sparingly */
+    --alert:   #ff6b5e;   /* safety breach / lock state only */
+
+    --font-display: 'Montserrat', sans-serif;
+    --font-body:    'Montserrat', sans-serif;
+    --font-mono:    'Montserrat', sans-serif; /* same family on purpose */
+
+    --pad: 120px;                         /* slide padding at 1920x1080 */
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --stage-bg: #05090d;
+    --slide-bg: var(--night);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ===========================================
+   FIXED 16:9 STAGE: MANDATORY BASE STYLES (viewport-base.css)
+   =========================================== */
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--stage-bg, #000); }
+.deck-viewport { position: fixed; inset: 0; overflow: hidden; background: var(--stage-bg, #000); }
+.deck-stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; transform-origin: 0 0; background: var(--slide-bg, #fff); }
+.slide { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden; display: block; visibility: hidden; opacity: 0; pointer-events: none; background: var(--slide-bg, #fff); }
+.slide.active, .slide.visible { visibility: visible; opacity: 1; pointer-events: auto; z-index: 1; }
+img, video, canvas, svg { max-width: 100%; max-height: 100%; }
+.deck-controls { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 1000; }
+@media print {
+    html, body { width: 1920px; height: auto; overflow: visible; background: #fff; }
+    .deck-viewport { position: static; overflow: visible; background: #fff; }
+    .deck-stage { position: static; width: auto; height: auto; transform: none !important; background: none; }
+    .slide { position: relative; display: block !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; width: 1920px; height: 1080px; break-after: page; page-break-after: always; }
+    .slide:last-child { break-after: auto; page-break-after: auto; }
+    .deck-controls { display: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.2s !important; }
+}
+
+/* ===========================================
+   SHARED SLIDE PARTS
+   =========================================== */
+body { font-family: var(--font-body); color: var(--text); }
+
+/* Staggered reveal: add class="reveal" and style="--d:.3s" */
+.reveal { opacity: 0; transform: translateY(36px); transition: opacity 1s var(--ease), transform 1s var(--ease); transition-delay: var(--d, 0s); }
+.slide.visible .reveal { opacity: 1; transform: none; }
+
+.eyebrow { font-family: var(--font-body); font-weight: 600; font-size: 22px; letter-spacing: .16em; text-transform: uppercase; color: var(--mist); }
+.eyebrow::before { content: ''; display: inline-block; width: 14px; height: 14px; background: var(--accent); margin-right: 16px; }
+.src { font-family: var(--font-mono); font-size: 18px; color: var(--text-dim); letter-spacing: .02em; }
+
+/* Media slot: shows a labelled placeholder until the real file loads.
+   Usage: <div class="media"><div class="ph">label</div><img src="assets/x.jpg" onerror="this.remove()"></div> */
+.media { position: absolute; inset: 0; background:
+    radial-gradient(1200px 700px at 78% 22%, rgba(218,41,28,.18), transparent 60%),
+    linear-gradient(180deg, #10242f 0%, var(--night) 70%); }
+.media img { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: cover; }
+.ph { position: absolute; top: 56px; right: 64px; font-family: var(--font-mono); font-size: 18px; letter-spacing: .08em; color: var(--ember);
+      border: 1px dashed rgba(242,184,128,.6); padding: 12px 18px; border-radius: 6px; z-index: 0; }
+
+/* ===========================================
+   SLIDE 1: HOOK
+   =========================================== */
+.s-hook .veil { position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(11,22,32,.92) 0%, rgba(11,22,32,.62) 55%, rgba(11,22,32,.28) 100%),
+                linear-gradient(0deg, rgba(11,22,32,.85) 0%, transparent 45%); }
+.s-hook .ridge { position: absolute; left: 0; bottom: 0; width: 1920px; height: 1080px; opacity: 1; pointer-events: none; }
+.s-hook .steam i { position: absolute; border-radius: 50%; filter: blur(70px); background: rgba(218,41,28,.16);
+    animation: drift 18s ease-in-out infinite alternate; }
+.s-hook .steam i:nth-child(1) { width: 520px; height: 520px; right: 160px; top: 140px; }
+.s-hook .steam i:nth-child(2) { width: 380px; height: 380px; right: 520px; top: 420px; animation-duration: 24s; background: rgba(207,230,238,.10); }
+.s-hook .steam i:nth-child(3) { width: 300px; height: 300px; right: 60px; top: 520px; animation-duration: 21s; background: rgba(242,184,128,.09); }
+@keyframes drift { from { transform: translate(0,0) scale(1); } to { transform: translate(-60px,40px) scale(1.15); } }
+
+.s-hook .eyebrow { position: absolute; left: var(--pad); top: 88px; }
+.s-hook .stats { position: absolute; left: var(--pad); top: 200px; display: flex; gap: 190px; }
+.s-hook .num { font-family: var(--font-display); font-weight: 700; font-size: 230px; line-height: .95; letter-spacing: .01em; color: var(--text); }
+.s-hook .num em { font-style: normal; font-weight: 600; color: var(--accent); font-size: 140px; margin-left: 14px; letter-spacing: 0; }
+.s-hook .stat p { margin-top: 26px; font-size: 32px; line-height: 1.35; color: var(--mist); max-width: 520px; }
+.s-hook .ask { position: absolute; left: var(--pad); bottom: 150px; width: 1600px; font-family: var(--font-display); font-weight: 600;
+    font-size: 76px; line-height: 1.12; letter-spacing: -.005em; }
+.s-hook .ask i { font-style: normal; color: var(--accent); }
+.s-hook .src { position: absolute; left: var(--pad); bottom: 64px; }
+
+/* ===========================================
+   DECK CHROME (outside the stage design system)
+   =========================================== */
+.deck-controls { display: flex; align-items: center; gap: 18px; font-family: var(--font-mono); font-size: 14px; color: var(--text-dim);
+    background: rgba(5,9,13,.55); padding: 8px 16px; border-radius: 999px; backdrop-filter: blur(6px); opacity: .55; transition: opacity .3s; }
+.deck-controls:hover { opacity: 1; }
+.deck-controls button { background: none; border: 0; color: var(--text); font-size: 18px; cursor: pointer; padding: 2px 8px; }
+.progress { position: fixed; left: 0; bottom: 0; height: 3px; width: 0; background: var(--accent); z-index: 999; transition: width .5s var(--ease); }
+
+/* Inline editing (press E, or hover the top-left corner) */
+.edit-hotzone { position: fixed; top: 0; left: 0; width: 80px; height: 80px; z-index: 10000; cursor: pointer; }
+.edit-toggle, .save-btn { position: fixed; top: 14px; left: 14px; z-index: 10001; opacity: 0; pointer-events: none; transition: opacity .3s;
+    font: 500 14px var(--font-mono); background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+.save-btn { left: 90px; display: none; }
+.edit-toggle.show, .edit-toggle.active { opacity: 1; pointer-events: auto; }
+body.editing .save-btn { display: block; opacity: 1; pointer-events: auto; }
+body.editing [contenteditable="true"] { outline: 1px dashed rgba(218,41,28,.7); outline-offset: 6px; }
+</style>
+</head>
+<body>
+
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+    <!-- ===== SLIDE 1: HOOK (0:00-0:25) =====
+         Speaker: "Switzerland just had a record 43.9 million hotel overnight stays.
+         And 44% of hoteliers say they struggle to hire. When everyone arrives at once,
+         who answers their questions?" -->
+    <section class="slide s-hook active" aria-label="Hook">
+        <!-- Background photo slot. Drop the real file at assets/spa-entrance.jpg -->
+        <div class="media">
+            <div class="ph">PHOTO · assets/spa-entrance.jpg · thermal spa entrance</div>
+            <img src="assets/spa-entrance.jpg" alt="Entrance of the thermal spa" onerror="this.remove()">
+        </div>
+        <div class="veil"></div>
+
+        <!-- Quiet alpine ridgelines -->
+        <svg class="ridge" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 800 L180 690 L320 760 L520 620 L700 740 L900 650 L1100 780 L1320 630 L1520 740 L1720 670 L1920 760 V1080 H0Z" fill="rgba(255,255,255,.05)"/>
+            <path d="M0 900 L240 810 L420 870 L640 760 L860 860 L1080 790 L1300 880 L1560 770 L1760 840 L1920 800 V1080 H0Z" fill="rgba(207,230,238,.07)"/>
+        </svg>
+        <div class="steam" aria-hidden="true"><i></i><i></i><i></i></div>
+
+        <p class="eyebrow reveal" style="--d:.1s">Autonomous Urban Services</p>
+
+        <div class="stats">
+            <div class="stat reveal" style="--d:.35s">
+                <div class="num"><span data-count="43.9" data-dec="1">43.9</span><em>M</em></div>
+                <p>Swiss hotel overnight stays in 2025. A record.</p>
+            </div>
+            <div class="stat reveal" style="--d:.6s">
+                <div class="num"><span data-count="44" data-dec="0">44</span><em>%</em></div>
+                <p>of Swiss hoteliers report trouble hiring.</p>
+            </div>
+        </div>
+
+        <h1 class="ask reveal" style="--d:1s">When everyone arrives at once, <i>who answers their questions?</i></h1>
+        <p class="src reveal" style="--d:1.2s">Sources: Swiss Federal Statistical Office (2025 overnight stays) · HotellerieSuisse survey 2023, via SME Portal (kmu.admin.ch)</p>
+    </section>
+
+    <!-- NEXT SLIDE -->
+
+</main>
+</div>
+
+<!-- Chrome: counter + prev/next (outside the stage) -->
+<div class="deck-controls" role="navigation" aria-label="Slide controls">
+    <button id="prev" aria-label="Previous slide">‹</button>
+    <span id="counter">01 / 01</span>
+    <button id="next" aria-label="Next slide">›</button>
+</div>
+<div class="progress" id="progress"></div>
+
+<!-- Inline editing controls -->
+<div class="edit-hotzone"></div>
+<button class="edit-toggle" id="editToggle" title="Edit mode (E)">✏️ Edit</button>
+<button class="save-btn" id="saveBtn">Save HTML</button>
+
+<script>
+/* ===========================================
+   SLIDE CONTROLLER
+   Keys: arrows / space / PageUp / PageDown · swipe · mouse wheel · E = edit
+   =========================================== */
+class SlidePresentation {
+    constructor() {
+        this.stage = document.getElementById('deckStage');
+        this.refresh();
+        this.current = 0;
+        this.setupStageScale();
+        this.setupKeys();
+        this.setupTouch();
+        this.setupWheel();
+        document.getElementById('prev').onclick = () => this.go(-1);
+        document.getElementById('next').onclick = () => this.go(1);
+        this.show(0);
+    }
+    refresh() { this.slides = this.stage.querySelectorAll('.slide'); }
+
+    /* Scale the whole 1920x1080 stage to fit the window; never reflow */
+    setupStageScale() {
+        const fit = () => {
+            const f = Math.min(innerWidth / 1920, innerHeight / 1080);
+            const x = (innerWidth - 1920 * f) / 2, y = (innerHeight - 1080 * f) / 2;
+            this.stage.style.transform = `translate(${x}px, ${y}px) scale(${f})`;
+        };
+        fit(); addEventListener('resize', fit);
+    }
+    editing() { return document.body.classList.contains('editing'); }
+    setupKeys() {
+        addEventListener('keydown', e => {
+            if (this.editing()) return;
+            if (['ArrowRight','ArrowDown','PageDown',' '].includes(e.key)) { e.preventDefault(); this.go(1); }
+            if (['ArrowLeft','ArrowUp','PageUp'].includes(e.key)) { e.preventDefault(); this.go(-1); }
+            if (e.key === 'Home') this.show(0);
+            if (e.key === 'End') this.show(this.slides.length - 1);
+        });
+    }
+    setupTouch() {
+        let x0 = null;
+        addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
+        addEventListener('touchend', e => {
+            if (x0 === null || this.editing()) return;
+            const dx = e.changedTouches[0].clientX - x0;
+            if (Math.abs(dx) > 50) this.go(dx < 0 ? 1 : -1);
+            x0 = null;
+        });
+    }
+    setupWheel() {
+        let lock = false;
+        addEventListener('wheel', e => {
+            if (lock || this.editing() || Math.abs(e.deltaY) < 30) return;
+            lock = true; this.go(e.deltaY > 0 ? 1 : -1); setTimeout(() => lock = false, 700);
+        }, { passive: true });
+    }
+    go(d) { this.show(this.current + d); }
+    show(i) {
+        this.refresh();
+        this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+        this.slides.forEach((s, k) => { s.classList.toggle('active', k === this.current); s.classList.toggle('visible', k === this.current); });
+        const n = this.slides.length, pad = v => String(v).padStart(2, '0');
+        document.getElementById('counter').textContent = `${pad(this.current + 1)} / ${pad(n)}`;
+        document.getElementById('progress').style.width = ((this.current + 1) / n * 100) + '%';
+        this.countUp(this.slides[this.current]);
+    }
+    /* Count-up numbers: <span data-count="43.9" data-dec="1"> */
+    countUp(slide) {
+        const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        slide.querySelectorAll('[data-count]').forEach(el => {
+            const end = parseFloat(el.dataset.count), dec = +el.dataset.dec || 0;
+            if (reduce) { el.textContent = end.toFixed(dec); return; }
+            const t0 = performance.now() + 300, dur = 1600;
+            const tick = t => {
+                const p = Math.max(0, Math.min(1, (t - t0) / dur)), e = 1 - Math.pow(1 - p, 3);
+                el.textContent = (end * e).toFixed(dec);
+                if (p < 1) requestAnimationFrame(tick);
+            };
+            el.textContent = (0).toFixed(dec); requestAnimationFrame(tick);
+        });
+    }
+}
+const deck = new SlidePresentation();
+
+/* ===========================================
+   INLINE EDITING: press E (or hover top-left). "Save HTML" downloads the edited deck.
+   Note: copy the saved file over index.html to keep edits.
+   =========================================== */
+const editor = {
+    isActive: false,
+    toggleEditMode() {
+        this.isActive = !this.isActive;
+        document.body.classList.toggle('editing', this.isActive);
+        document.getElementById('editToggle').classList.toggle('active', this.isActive);
+        document.querySelectorAll('.slide h1, .slide h2, .slide h3, .slide p, .slide figcaption, .slide .eyebrow').forEach(el => {
+            this.isActive ? el.setAttribute('contenteditable', 'true') : el.removeAttribute('contenteditable');
+        });
+    },
+    save() {
+        const was = this.isActive; if (was) this.toggleEditMode();
+        const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+        a.download = 'index.html'; a.click();
+        if (was) this.toggleEditMode();
+    }
+};
+const hot = document.querySelector('.edit-hotzone'), tog = document.getElementById('editToggle');
+let hideT = null;
+const hideLater = () => hideT = setTimeout(() => { if (!editor.isActive) tog.classList.remove('show'); }, 400);
+hot.addEventListener('mouseenter', () => { clearTimeout(hideT); tog.classList.add('show'); });
+hot.addEventListener('mouseleave', hideLater);
+tog.addEventListener('mouseenter', () => clearTimeout(hideT));
+tog.addEventListener('mouseleave', hideLater);
+tog.addEventListener('click', () => editor.toggleEditMode());
+hot.addEventListener('click', () => editor.toggleEditMode());
+document.getElementById('saveBtn').addEventListener('click', () => editor.save());
+addEventListener('keydown', e => {
+    if ((e.key === 'e' || e.key === 'E') && !e.target.getAttribute('contenteditable')) editor.toggleEditMode();
+});
+</script>
+</body>
+</html>
