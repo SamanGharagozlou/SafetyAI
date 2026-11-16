@@ -91,6 +91,16 @@ await wait(1500)
 pass.push(['arming shows the stage', !(await face.isHidden('#stage'))])
 pass.push(['the cycle opens on the QR, so it can be scanned at once',
   await face.evaluate(() => document.getElementById('qrpanel').classList.contains('on'))])
+// A QR nobody can scan is worse than no QR: it was `example.invalid` once,
+// and every phone rejected it as a bad URL.
+const qrText = await face.evaluate(async () => {
+  const c = document.querySelector('#qr canvas'); if (!c) return ''
+  const m = await import('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/+esm')
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height)
+  return (m.default ?? m)(d.data, c.width, c.height)?.data ?? ''
+})
+pass.push(['the QR decodes to a reachable join URL on this origin',
+  qrText.startsWith(BASE) && qrText.includes('/join') && !/\.invalid/.test(qrText), qrText])
 pass.push(['QR encodes the join URL', (await face.locator('#qr canvas').count()) === 1
            || (await face.textContent('#qr-fallback'))?.includes('/join')])
 

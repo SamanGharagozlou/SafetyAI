@@ -372,7 +372,12 @@ function attachAnalyser(stream) {
  * ------------------------------------------------------------------ */
 if (DEMO) {
   show('stage')
-  renderQR(qs.get('qr') || 'https://example.invalid/join?demo')
+  // A placeholder domain here was a real bug: .invalid never resolves, so
+  // the demo screen showed a code that every phone rejected as a bad URL.
+  // Demo mode encodes this page's OWN join link, so the code on screen is
+  // always one that actually works.
+  renderQR(qs.get('qr') || new URL(
+    '/join' + (qs.get('k') ? `?k=${encodeURIComponent(qs.get('k'))}` : ''), location.origin).href)
   startIdleCycle()
   const script = [
     [1200, 'listening', ''],
